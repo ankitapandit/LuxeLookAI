@@ -22,3 +22,7 @@ Thumbs.db
 
 # HuggingFace model cache (large)
 ~/.cache/huggingface/
+
+#Logs
+.dev-logs/
+.dev-pids

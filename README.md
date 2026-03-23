@@ -59,10 +59,31 @@ Make sure these are installed on your machine:
 
 | Tool | Version | Install |
 |------|---------|---------|
-| Python | 3.10+ | https://python.org |
+| Python | 3.10–3.12 | https://python.org |
 | Node.js | 18+ | https://nodejs.org |
 | pip | latest | comes with Python |
 | npm | latest | comes with Node.js |
+| **uv** | latest | **recommended** — see below |
+
+### Recommended: install uv for fast Python dependency installs
+
+`uv` is a Rust-based pip replacement. On macOS, pip is noticeably slow because
+it resolves and downloads packages sequentially and macOS has slow disk I/O for
+thousands of small files. `uv` parallelises everything and uses a global cache,
+making installs **10–100x faster** (e.g. 30 seconds instead of 5 minutes).
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+The `./dev.sh setup` command will detect uv automatically if it's installed,
+and offer to install it for you if it isn't. pip is used as a fallback — everything
+works without uv, just slower.
+
+> **Python 3.13+ users:** `torch` wheels currently only exist up to Python 3.12.
+> If you have Python 3.13 or 3.14, `./dev.sh setup` with uv will automatically
+> download and use Python 3.12 for the venv — your system Python is unaffected.
+> Without uv, you'll need to install Python 3.12 manually.
 
 ---
 
@@ -105,102 +126,83 @@ Supabase is a free Postgres database with Auth and file Storage built in.
 
 ---
 
-## Step 2 — Set up the Backend
+## Step 2 — First-time setup (one command)
 
-### 2a. Create a virtual environment
-
-```bash
-cd backend
-python3 -m venv venv
-
-# On macOS/Linux:
-source venv/bin/activate
-
-# On Windows:
-venv\Scripts\activate
-```
-
-### 2b. Install dependencies
+From the **project root**, run:
 
 ```bash
-pip install -r requirements.txt
+chmod +x dev.sh   # make it executable (macOS/Linux only, once)
+./dev.sh setup
 ```
 
-> ⚠️ Note: `torch` and `transformers` are large packages (~2GB).
-> In mock mode (the default), they are not actually loaded at runtime.
-> They are listed as dependencies for when you switch to real AI mode.
-> If you want a lighter install for now, you can skip them:
-> `pip install fastapi uvicorn pydantic pydantic-settings python-jose supabase python-multipart openai numpy Pillow`
+This single command:
+- Creates the Python virtual environment in `backend/venv/`
+- Installs all Python dependencies from `requirements.txt`
+- Installs all Node dependencies via `npm install`
+- Copies `backend/.env.example → backend/.env`
+- Copies `frontend/.env.local.example → frontend/.env.local`
 
-### 2c. Configure environment variables
+> ⚠️ `torch` and `transformers` are large (~2GB). In mock mode (the default) they
+> are **not loaded at runtime** — so setup is fast. They only matter when you
+> switch `USE_MOCK_AI=false`.
 
-```bash
-cp .env.example .env
-```
+### 2a. Fill in your environment variables
 
-Open `.env` and fill in your values:
+After setup, open **`backend/.env`** and fill in:
 
 ```env
+# Leave these as placeholders until you have real Supabase credentials:
 SUPABASE_URL=https://your-project-id.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_KEY=your-service-role-key
+
 OPENAI_API_KEY=sk-your-key        # leave as-is for mock mode
-JWT_SECRET=any-long-random-string  # e.g. openssl rand -hex 32
-USE_MOCK_AI=true                   # keeps things runnable without real keys
+JWT_SECRET=any-long-random-string  # generate with: openssl rand -hex 32
+USE_MOCK_AUTH=true                 # no Supabase needed while true
+USE_MOCK_AI=true                   # no OpenAI/CLIP needed while true
 ```
 
-### 2d. Start the backend server
-
-```bash
-uvicorn main:app --reload --port 8000
-```
-
-You should see:
-```
-INFO:     Uvicorn running on http://127.0.0.1:8000
-INFO:     Application startup complete.
-```
-
-Open [http://localhost:8000/docs](http://localhost:8000/docs) — you'll see the full interactive API docs (Swagger UI). ✅
-
----
-
-## Step 3 — Set up the Frontend
-
-### 3a. Install dependencies
-
-```bash
-cd ../frontend
-npm install
-```
-
-### 3b. Configure environment variables
-
-```bash
-cp .env.local.example .env.local
-```
-
-Open `.env.local`:
+And **`frontend/.env.local`**:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co  # only needed when USE_MOCK_AUTH=false
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-### 3c. Start the frontend dev server
+---
+
+## Step 3 — Start everything
 
 ```bash
-npm run dev
+./dev.sh
 ```
 
-You should see:
+You'll see:
+
 ```
-▲ Next.js 14.2.3
-- Local: http://localhost:3000
+✓ Backend running  → http://localhost:8000
+✓ Frontend running → http://localhost:3000
+
+  App      → http://localhost:3000
+  API docs → http://localhost:8000/docs
+  Logs     → ./dev.sh logs
+  Stop     → ./dev.sh stop
 ```
 
-Open [http://localhost:3000](http://localhost:3000) ✅
+### Other commands
+
+| Command | What it does |
+|---|---|
+| `./dev.sh setup` | First-time install (venv, npm, .env files) |
+| `./dev.sh` | Start backend + frontend |
+| `./dev.sh backend` | Start backend only |
+| `./dev.sh frontend` | Start frontend only |
+| `./dev.sh stop` | Stop all running services |
+| `./dev.sh logs` | Show recent logs from both services |
+
+Logs are written to `.dev-logs/backend.log` and `.dev-logs/frontend.log`.
+Live tail: `tail -f .dev-logs/*.log`
 
 ---
 

@@ -141,6 +141,14 @@ def get_user_items(user_id: str) -> List[Dict[str, Any]]:
     return _get_items_real(user_id)
 
 
+def delete_item(item_id: str, user_id: str) -> bool:
+    """Delete an item. Returns True if deleted, False if not found."""
+    settings = get_settings()
+    if settings.use_mock_auth:
+        return _delete_item_mock(item_id, user_id)
+    return _delete_item_real(item_id, user_id)
+
+
 def correct_item_tags(item_id: str, user_id: str, corrections: Dict) -> Optional[Dict]:
     """
     Apply user corrections (category and/or color) to an existing item.

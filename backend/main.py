@@ -11,7 +11,7 @@ from routers import auth, clothing, events, recommendations, feedback
 
 # ── App Initialization ──────────────────────────────────────────────────────
 app = FastAPI(
-    title="LuxeLook AI API",
+    title="LuxeLook AI",
     description="AI-powered personal stylist backend",
     version="1.0.0",
 )
