@@ -26,6 +26,34 @@ import {
 import { AlertCircle, Upload, Trash2, ShirtIcon, Loader, CheckCircle, Pencil, X, Pipette } from "lucide-react";
 import toast from "react-hot-toast";
 
+// Maps any color value → a human-readable name.
+// For preset keys ("black", "navy") returns the label directly.
+// For custom hex values, finds the nearest preset color by RGB distance.
+function resolveColorName(color: string): string {
+  if (!color) return "";
+  // Preset key → label
+  const preset = SOLID_COLORS.find(c => c.key === color);
+  if (preset) return preset.label;
+  if (color === "pattern") return "Pattern";
+  // Custom hex → nearest preset by Euclidean RGB distance
+  if (color.startsWith("#") && color.length === 7) {
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    let nearest = SOLID_COLORS[0];
+    let minDist = Infinity;
+    for (const c of SOLID_COLORS) {
+      const pr = parseInt(c.hex.slice(1, 3), 16);
+      const pg = parseInt(c.hex.slice(3, 5), 16);
+      const pb = parseInt(c.hex.slice(5, 7), 16);
+      const dist = Math.sqrt((r-pr)**2 + (g-pg)**2 + (b-pb)**2);
+      if (dist < minDist) { minDist = dist; nearest = c; }
+    }
+    return `~${nearest.label}`;  // ~ prefix signals it's approximate
+  }
+  return color;
+}
+
 // ── Preset solid colors (pattern removed — handled separately) ────────────────
 const SOLID_COLORS: { key: string; hex: string; label: string }[] = [
   { key: "black",  hex: "#1a1a1a", label: "Black"  },
@@ -700,7 +728,7 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
   return (
     <div className="card" style={{ overflow: "hidden", position: "relative" }}>
       <div style={{ aspectRatio: "3/4", overflow: "hidden", background: "var(--surface)", position: "relative" }}>
-        <img src={item.image_url} alt={`${item.color} ${item.category}`}
+        <img src={item.image_url} alt={`${item.category} - ${resolveColorName(item.color || "")}`}
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
           onError={e => { (e.target as HTMLImageElement).src = `https://placehold.co/300x400/F5F0E8/8A8580?text=${encodeURIComponent(item.category)}`; }}
         />
@@ -714,7 +742,7 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
         <div style={{ padding: "12px" }}>
           <p style={{ fontWeight: 500, fontSize: "14px", textTransform: "capitalize", marginBottom: "4px" }}>
             <span style={{ display: "inline-block", width: "10px", height: "10px", borderRadius: "50%", background: colorDisplay, marginRight: "6px", verticalAlign: "middle", border: "1px solid var(--border)" }} />
-            {item.color} {item.category}
+            {item.category} - {resolveColorName(item.color || "")}
           </p>
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
             {item.season && <span style={{ fontSize: "11px", color: "var(--muted)", textTransform: "capitalize" }}>{item.season}</span>}

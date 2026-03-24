@@ -8,7 +8,7 @@ Controlled by USE_MOCK_AUTH in .env.
 from __future__ import annotations
 import logging
 import uuid
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from config import get_settings
 from ml.llm import parse_occasion
@@ -76,3 +76,21 @@ def get_event(event_id: str, user_id: str) -> Dict[str, Any]:
         return _get_event_mock(event_id, user_id)
     return _get_event_real(event_id, user_id)
 
+
+def get_user_events(user_id: str) -> List[Dict[str, Any]]:
+    """Fetch all events for a user, newest first."""
+    settings = get_settings()
+    if settings.use_mock_auth:
+        from utils.mock_db_store import select_all
+        events = select_all(TABLE, {"user_id": user_id})
+        return sorted(events, key=lambda e: e.get("created_at", ""), reverse=True)
+    else:
+        from utils.db import get_supabase
+        return (
+            get_supabase().table(TABLE)
+            .select("*")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .execute()
+            .data
+        )

@@ -185,6 +185,12 @@ export async function createEvent(rawText: string): Promise<Event> {
   return data;
 }
 
+/** Fetch all events for the current user, newest first. */
+export async function getEvents(): Promise<Event[]> {
+  const { data } = await api.get<Event[]>("/events/list");
+  return data;
+}
+
 // ── Recommendations ───────────────────────────────────────────────────────
 
 export interface OutfitSuggestion {
@@ -213,6 +219,12 @@ export async function generateOutfits(
     event_id: eventId,
     top_n: topN,
   });
+  return data;
+}
+
+/** Fetch previously generated suggestions for an event. */
+export async function getSuggestions(eventId: string): Promise<OutfitSuggestion[]> {
+  const { data } = await api.get<OutfitSuggestion[]>(`/recommend/suggestions/${eventId}`);
   return data;
 }
 

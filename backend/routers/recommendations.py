@@ -74,3 +74,21 @@ def generate_outfits(
 
     return {"event": event, "suggestions": suggestions}
 
+
+@router.get("/suggestions/{event_id}")
+def get_suggestions(event_id: str, user_id: str = Depends(get_current_user_id)):
+    """Fetch previously generated outfit suggestions for an event."""
+    settings = get_settings()
+    if settings.use_mock_auth:
+        from utils.mock_db_store import select_all
+        return select_all("outfit_suggestions", {"event_id": event_id, "user_id": user_id})
+    else:
+        from utils.db import get_supabase
+        return (
+            get_supabase().table("outfit_suggestions")
+            .select("*")
+            .eq("event_id", event_id)
+            .eq("user_id", user_id)
+            .execute()
+            .data
+        )

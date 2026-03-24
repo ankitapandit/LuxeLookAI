@@ -37,11 +37,49 @@ _MOCK_EXPLANATIONS = [
 
 
 def _mock_parse_occasion(raw_text: str) -> Dict[str, Any]:
-    """Return a stable mock occasion struct based on text length."""
-    idx = len(raw_text) % len(_MOCK_OCCASIONS)
-    result = _MOCK_OCCASIONS[idx].copy()
-    logger.debug(f"[MOCK] Parsed occasion: {result}")
-    return result
+    """Keyword-based mock — much more accurate than cycling hardcoded stubs."""
+    text = raw_text.lower()
+
+    # Venue / setting
+    indoor_words  = ["club", "lounge", "bar", "restaurant", "indoor", "office",
+                     "gallery", "museum", "gala", "wedding", "hall", "venue"]
+    outdoor_words = ["park", "beach", "garden", "outdoor", "festival",
+                     "rooftop", "bbq", "picnic", "hiking"]
+    setting = "indoor"  if any(w in text for w in indoor_words)  else \
+              "outdoor" if any(w in text for w in outdoor_words) else "mixed"
+
+    # Temperature
+    cold_words = ["cold", "winter", "freezing", "chilly", "coat", "night",
+                  "january", "february", "november", "december"]
+    cool_words = ["cool", "autumn", "fall", "october", "march", "evening"]
+    hot_words  = ["hot", "summer", "beach", "july", "august", "sunny"]
+    temp = "cold"  if any(w in text for w in cold_words) else \
+           "cool"  if any(w in text for w in cool_words) else \
+           "hot"   if any(w in text for w in hot_words)  else "warm"
+
+    # Occasion + formality
+    if any(w in text for w in ["black tie", "gala", "awards", "formal dinner", "wedding"]):
+        occasion, formality = "formal", 0.90
+    elif any(w in text for w in ["interview", "conference", "business", "meeting", "office"]):
+        occasion, formality = "business", 0.75
+    elif any(w in text for w in ["club", "lounge", "party", "farewell", "birthday",
+                                   "celebration", "cocktail", "drinks", "night out"]):
+        occasion, formality = "party", 0.62
+    elif any(w in text for w in ["dinner", "restaurant", "date", "brunch"]):
+        occasion, formality = "smart_casual", 0.58
+    elif any(w in text for w in ["beach", "bbq", "picnic", "casual", "hangout", "chill"]):
+        occasion, formality = "casual", 0.20
+    elif any(w in text for w in ["gym", "hike", "run", "sport", "workout", "athletic"]):
+        occasion, formality = "athletic", 0.10
+    else:
+        occasion, formality = "casual", 0.35
+
+    return {
+        "occasion_type":       occasion,
+        "formality_level":     formality,
+        "setting":             setting,
+        "temperature_context": temp,
+    }
 
 
 def _mock_explain_outfit(items: List[Dict]) -> str:
@@ -60,28 +98,45 @@ def _real_parse_occasion(raw_text: str) -> Dict[str, Any]:
     from openai import OpenAI
 
     client  = OpenAI(api_key=get_settings().openai_api_key)
-    prompt  = f"""
-You are a fashion-event analyst. Parse the following occasion description and return ONLY a JSON object.
+    prompt = f"""You are an expert fashion stylist who understands dress codes, venues, body type, fashion trend forecasts and history, color theory and social occasions. Extract structured data from this event description.
 
-Occasion: "{raw_text}"
+    Event: "{raw_text}"
 
-Return JSON with these exact keys:
-{{
-  "occasion_type":       "<one of: formal, casual, business, party, date, outdoor, wedding, other>",
-  "formality_level":     <float 0.0 to 1.0>,
-  "temperature_context": "<indoor | outdoor | mixed | unknown>",
-  "setting":             "<brief venue description e.g. 'restaurant', 'beach', 'office'>"
-}}
+    Return ONLY valid JSON with exactly these fields:
+    {{
+      "occasion_type": "one of: formal, business, smart_casual, casual, party, outdoor, athletic",
+      "formality_level": <float 0.0-1.0 where 0=very casual, 0.5=smart casual, 0.8=formal, 1.0=black tie>,
+      "setting": "one of: indoor, outdoor, mixed",
+      "temperature_context": "one of: hot, warm, cool, cold"
+    }}
 
-Return ONLY the JSON. No explanation.
-"""
+    Rules:
+    - A club, lounge, bar, restaurant, gala, wedding = indoor
+    - Park, beach, festival, garden = outdoor  
+    - Office, conference = indoor
+    - If weather/season hints at cold (night, winter, November-February) → temperature_context = cold or cool
+    - A farewell party, birthday, club night = party, formality 0.55-0.7
+    - Black tie, gala, awards = formal, formality 0.85-1.0
+    - Beach bbq, picnic, casual hangout = casual, formality 0.1-0.3
+    - Work meeting, conference = business, formality 0.7-0.85
+    - 'fancy', 'dress up', 'dressy', 'upscale', 'lounge', 'rooftop bar' → increase formality by 0.10-0.15
+    - 'bar/lounge' + 'fancy dress up' = formality_level 0.75-0.80, occasion_type party
+    - cold night at indoor venue = temperature_context cold, setting indoor
+
+    Return only the JSON object with no markdown, no code fences, no extra text."""
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
     )
     raw = response.choices[0].message.content.strip()
-    return json.loads(raw)
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    raw = raw.strip()
+    result = json.loads(raw)
+    return result
 
 
 def _real_explain_outfit(items: List[Dict], occasion: Dict) -> str:

@@ -46,6 +46,7 @@ def get_current_user_id(
             token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
         )
         user_id: Optional[str] = payload.get("sub")
+
         if user_id is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                                 detail="Invalid token payload")

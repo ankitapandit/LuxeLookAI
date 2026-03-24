@@ -64,12 +64,19 @@ SEASON_LABELS: List[Tuple[str, str]] = [
 ]
 
 # Formality: weighted average across 5 numeric levels → continuous 0–1 score
+# FORMALITY_LABELS: List[Tuple[float, str]] = [
+#     (0.95, "very formal luxury eveningwear — black tie, gown, tuxedo, formal suit"),
+#     (0.75, "smart formal clothing — business formal, blazer, dress shirt, tailored trousers"),
+#     (0.55, "smart casual clothing — neat, polished but relaxed — chinos, blouse, casual dress"),
+#     (0.30, "casual everyday clothing — comfortable, relaxed — jeans, t-shirt, casual top"),
+#     (0.10, "very casual loungewear or sportswear — athletic, gym wear, streetwear, hoodies"),
+# ]
 FORMALITY_LABELS: List[Tuple[float, str]] = [
-    (0.95, "very formal luxury eveningwear — black tie, gown, tuxedo, formal suit"),
-    (0.75, "smart formal clothing — business formal, blazer, dress shirt, tailored trousers"),
-    (0.55, "smart casual clothing — neat, polished but relaxed — chinos, blouse, casual dress"),
-    (0.30, "casual everyday clothing — comfortable, relaxed — jeans, t-shirt, casual top"),
-    (0.10, "very casual loungewear or sportswear — athletic, gym wear, streetwear, hoodies"),
+    (0.95, "a formal evening gown, tuxedo, tailored suit or black tie attire with luxurious fabric and fine detailing"),
+    (0.78, "a smart formal blouse, tailored trousers, blazer, structured dress or button-down shirt suitable for office or formal dinner"),
+    (0.62, "a smart casual top, fitted dress, stylish knit, neat chinos or polished casual wear suitable for a restaurant or party"),
+    (0.38, "casual everyday clothing such as a plain t-shirt, jeans, relaxed fit top or simple comfortable garment"),
+    (0.12, "very casual sportswear, loungewear, hoodie, athletic wear, gym clothes or street casual clothing"),
 ]
 
 ACCESSORY_LABELS: List[Tuple[str, str]] = [
@@ -174,6 +181,19 @@ def _real_tag(image_bytes: bytes) -> Dict[str, Any]:
     color,    color_conf = _classify(image, COLOR_LABELS)
     season,   _          = _classify(image, SEASON_LABELS)
     formality_score      = _compute_formality_score(image)
+
+    # Category-based formality floor — prevents obviously dressable items
+    # from being scored too casually by CLIP
+    CATEGORY_FORMALITY_FLOOR = {
+        "tops": 0.42,  # blouses/shirts are at least smart casual
+        "bottoms": 0.40,
+        "dresses": 0.55,  # dresses default to at least smart casual
+        "shoes": 0.45,
+        "outerwear": 0.50,
+        "accessories": 0.40,
+    }
+    floor = CATEGORY_FORMALITY_FLOOR.get(category, 0.0)
+    formality_score = max(formality_score, floor)
 
     logger.debug(
         f"CLIP results → category:{category}({cat_conf:.2f}) "

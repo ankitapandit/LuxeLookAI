@@ -5,11 +5,11 @@
  */
 
 import { useState } from "react";
-import { useRouter } from "next/router";
+// import { useRouter } from "next/router";
 import Head from "next/head";
 import Navbar from "@/components/layout/Navbar";
-import { createEvent, generateOutfits } from "@/services/api";
-import { CalendarDays, Sparkles, ArrowRight } from "lucide-react";
+import { createEvent, generateOutfits, getWardrobeItems, rateOutfit, OutfitSuggestion, ClothingItem } from "@/services/api";
+import { CalendarDays, Sparkles, ArrowRight, Info } from "lucide-react";
 import toast from "react-hot-toast";
 
 // Example prompts to inspire the user
@@ -22,11 +22,14 @@ const EXAMPLES = [
 ];
 
 export default function EventsPage() {
-  const router       = useRouter();
+  // const router       = useRouter();
   const [text, setText]     = useState("");
   const [loading, setLoading] = useState(false);
   const [step, setStep]       = useState<"input" | "parsed">("input");
   const [parsedEvent, setParsedEvent] = useState<any>(null);
+  const [suggestions,  setSuggestions]  = useState<OutfitSuggestion[]>([]);
+  const [wardrobeMap,  setWardrobeMap]  = useState<Record<string, ClothingItem>>({});
+  const [hover,        setHover]        = useState<Record<string, number>>({});
 
   async function handleCreateEvent() {
     if (!text.trim()) return;
@@ -47,18 +50,30 @@ export default function EventsPage() {
   async function handleGenerateOutfits() {
     if (!parsedEvent) return;
     setLoading(true);
-
+    setSuggestions([]);
     try {
-      // Step 2: Generate outfits for the parsed event
-      const result = await generateOutfits(parsedEvent.id, 3);
-      // Pass data to outfits page via router state
-      router.push({
-        pathname: "/outfits",
-        query: { eventId: parsedEvent.id },
-      });
+      const [outfitData, items] = await Promise.all([
+        generateOutfits(parsedEvent.id, 5),
+        getWardrobeItems(),
+      ]);
+      const map: Record<string, ClothingItem> = {};
+      items.forEach(i => { map[i.id] = i; });
+      setWardrobeMap(map);
+      setSuggestions(outfitData.suggestions);
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || "Could not generate outfits");
+    } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleRate(outfitId: string, rating: number) {
+    try {
+      await rateOutfit(outfitId, rating);
+      setSuggestions(prev => prev.map(s => s.id === outfitId ? { ...s, user_rating: rating } : s));
+      toast.success("Rating saved!");
+    } catch {
+      toast.error("Could not save rating");
     }
   }
 
@@ -84,7 +99,7 @@ export default function EventsPage() {
           <textarea
             className="input"
             value={text}
-            onChange={(e) => { setText(e.target.value); setStep("input"); setParsedEvent(null); }}
+            onChange={(e) => { setText(e.target.value); setStep("input"); setParsedEvent(null); setSuggestions([]); }}
             placeholder="e.g. 'Rooftop cocktail party this Friday evening, smart casual'"
             rows={4}
             style={{ resize: "vertical", lineHeight: 1.6 }}
@@ -150,9 +165,82 @@ export default function EventsPage() {
                 style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
               >
                 <Sparkles size={16} />
-                {loading ? "Generating outfits…" : "Generate My Outfits"}
+                {loading && suggestions.length === 0 ? "Generating outfits…" : suggestions.length > 0 ? "Regenerate" : "Generate My Outfits"}
                 {!loading && <ArrowRight size={16} />}
               </button>
+            </div>
+          )}
+
+          {/* ── Generating spinner ── */}
+          {loading && step === "parsed" && suggestions.length === 0 && (
+            <div style={{ textAlign: "center", padding: "40px 0" }}>
+              <div style={{
+                width: "40px", height: "40px", margin: "0 auto 16px",
+                border: "3px solid var(--border)", borderTop: "3px solid var(--gold)",
+                borderRadius: "50%", animation: "spin 0.8s linear infinite",
+              }} />
+              <p style={{ fontWeight: 600, fontSize: "15px", color: "var(--charcoal)", marginBottom: "12px" }}>
+                Building your perfect outfits…
+              </p>
+              <div style={{ width: "200px", height: "3px", background: "var(--border)", borderRadius: "2px", margin: "0 auto" }}>
+                <div style={{ height: "100%", borderRadius: "2px", background: "var(--gold)", animation: "progress 3s ease-in-out infinite" }} />
+              </div>
+              <style>{`
+                @keyframes spin     { to { transform: rotate(360deg); } }
+                @keyframes progress { from { width: 20% } to { width: 85% } }
+              `}</style>
+            </div>
+          )}
+
+          {/* ── Outfit suggestions ── */}
+          {suggestions.length > 0 && (
+            <div style={{ marginTop: "40px" }}>
+              <h2 style={{ fontSize: "22px", fontFamily: "Playfair Display, serif", marginBottom: "24px", color: "var(--charcoal)" }}>
+                Your Looks
+              </h2>
+              <div style={{ display: "flex", gap: "20px", overflowX: "auto", paddingBottom: "12px" }}>
+                {suggestions.map((s, idx) => (
+                  <div key={s.id} style={{ minWidth: "340px", maxWidth: "380px", flexShrink: 0 }}>
+                    <div className="card fade-up" style={{ padding: "24px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
+                        <span style={{ fontSize: "11px", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Look #{idx + 1}</span>
+                        <span className="score-badge">{Math.round(s.score * 100)}% match</span>
+                      </div>
+                      <div style={{ display: "flex", gap: "12px", marginBottom: "20px", overflowX: "auto" }}>
+                        {[...s.item_ids, ...(s.accessory_ids || [])].map(id => wardrobeMap[id]).filter(Boolean).map(item => (
+                          <div key={item.id} style={{ flexShrink: 0, width: s.accessory_ids?.includes(item.id) ? "90px" : "130px" }}>
+                            <div style={{ borderRadius: "8px", overflow: "hidden", background: "var(--surface)", aspectRatio: s.accessory_ids?.includes(item.id) ? "1/1" : "3/4", border: "1px solid var(--border)" }}>
+                              <img src={item.image_url} alt={item.category}
+                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                onError={e => { (e.target as HTMLImageElement).src = `https://via.placeholder.com/200x300/F5F0E8/8A8580?text=${encodeURIComponent(item.category)}`; }}
+                              />
+                            </div>
+                            <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px", textAlign: "center", textTransform: "capitalize" }}>{item.category}</p>
+                          </div>
+                      ))}
+                    </div>
+                    </div>
+                    <div style={{ background: "var(--surface)", borderRadius: "8px", padding: "14px", marginBottom: "16px", display: "flex", gap: "8px" }}>
+                      <Info size={15} color="var(--gold)" style={{ flexShrink: 0, marginTop: "2px" }} />
+                      <p style={{ fontSize: "14px", color: "var(--ink)", lineHeight: 1.6 }}>{s.explanation}</p>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <span style={{ fontSize: "13px", color: "var(--muted)" }}>Rate this look:</span>
+                      <div style={{ display: "flex", gap: "4px" }}>
+                        {[1,2,3,4,5].map(star => (
+                          <span key={star}
+                            onMouseEnter={() => setHover(prev => ({ ...prev, [s.id]: star }))}
+                            onMouseLeave={() => setHover(prev => ({ ...prev, [s.id]: 0 }))}
+                            onClick={() => handleRate(s.id, star)}
+                            style={{ cursor: "pointer", fontSize: "20px", color: star <= (hover[s.id] || s.user_rating || 0) ? "var(--gold)" : "var(--border)" }}
+                          >★</span>
+                        ))}
+                      </div>
+                      {s.user_rating && <span style={{ fontSize: "13px", color: "var(--muted)" }}>You rated {s.user_rating}/5</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

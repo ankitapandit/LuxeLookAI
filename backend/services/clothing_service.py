@@ -80,14 +80,15 @@ def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
     storage_path = f"{user_id}/{item_id}/{filename}"
 
     db.storage.from_(STORAGE_BUCKET).upload(storage_path, image_bytes)
-    image_url = db.storage.from_(STORAGE_BUCKET).get_public_url(storage_path)
+    image_url = db.storage.from_(STORAGE_BUCKET).get_public_url(storage_path).rstrip("?")
 
     tags = tag_clothing_item(image_url, image_bytes)
     if manual_tags:
         tags.update(manual_tags)
 
     embedding = generate_embedding(image_url, image_bytes)
-
+    print(f"DEBUG embedding type={type(embedding)} val[:3]={embedding[:3]}")
+    vec_str = "[" + ",".join(str(x) for x in embedding) + "]"
     row = {
         "id":                item_id,
         "user_id":           user_id,
@@ -99,7 +100,7 @@ def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
         "season":            tags.get("season"),
         "formality_score":   tags.get("formality_score"),
         "image_url":         image_url,
-        "embedding_vector":  embedding,
+        "embedding_vector": vec_str,
     }
     result = db.table(TABLE).insert(row).execute()
     return result.data[0]
@@ -107,8 +108,17 @@ def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
 
 def _get_items_real(user_id: str) -> List[Dict]:
     from utils.db import get_supabase
+    import json
     db = get_supabase()
-    return db.table(TABLE).select("*").eq("user_id", user_id).execute().data
+    items = db.table(TABLE).select("*").eq("user_id", user_id).execute().data
+    # Parse embedding_vector from string back to list if needed
+    for item in items:
+        if isinstance(item.get("embedding_vector"), str):
+            try:
+                item["embedding_vector"] = [float(x) for x in ev.strip("[]").split(",")]
+            except Exception:
+                item["embedding_vector"] = None
+    return items
 
 
 def _delete_item_real(item_id: str, user_id: str) -> bool:

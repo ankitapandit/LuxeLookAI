@@ -30,10 +30,10 @@ logger = logging.getLogger(__name__)
 # ── Scoring weights (tunable) ─────────────────────────────────────────────────
 WEIGHTS = {
     "color":            0.20,
-    "formality":        0.35,
-    "season":           0.25,
+    "formality":        0.25,
+    "season":           0.30,
     "embedding":        0.15,
-    "user_preference":  0.05,
+    "user_preference":  0.10,
 }
 
 # ── Formality threshold — items within this band are considered compatible ───

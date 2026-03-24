@@ -27,9 +27,17 @@ def _signup_mock(email: str, password: str) -> str:
 def _signup_real(email: str, password: str) -> str:
     """Use Supabase Auth — requires valid Supabase credentials in .env."""
     from utils.db import get_supabase
+    from config import get_settings
+    s = get_settings()
     db = get_supabase()
+    print(f"DEBUG url={s.supabase_url}")
+    print(f"DEBUG key={s.supabase_service_key[:20]}...")
     result = db.auth.sign_up({"email": email, "password": password})
-    return result.user.id
+    user_id = result.user.id
+    print(f"DEBUG user_id={user_id}")
+    # Insert into public users table to satisfy foreign key
+    db.table("users").upsert({"id": user_id, "email": email}, on_conflict="id").execute()
+    return user_id
 
 
 def _login_mock(email: str, password: str) -> str:
@@ -41,6 +49,7 @@ def _login_real(email: str, password: str) -> str:
     from utils.db import get_supabase
     db = get_supabase()
     result = db.auth.sign_in_with_password({"email": email, "password": password})
+    print("login", result.user.id)
     return result.user.id
 
 
