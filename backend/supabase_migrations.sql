@@ -1,0 +1,148 @@
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- LuxeLook AI — Supabase Manual Changes
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- This file documents every change made directly in the Supabase dashboard
+-- or SQL Editor across all versions. Run sections in order on a fresh project.
+-- Safe to re-run — all statements use IF NOT EXISTS / OR REPLACE / ON CONFLICT.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v1.1 — Initial schema (from schema.sql)
+-- Run backend/schema.sql first for base tables, indexes and RLS.
+-- The changes below are additions made after the initial schema was applied.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v1.2 — Auth trigger + RLS policies + column additions
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Auto-insert into public.users when a new Supabase Auth user signs up.
+-- Prevents foreign key violations on clothing_items, events etc.
+create or replace function public.handle_new_user()
+returns trigger
+security definer
+set search_path = public
+language plpgsql
+as $$
+begin
+  insert into public.users (id, email)
+  values (new.id, new.email)
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
+-- Manually backfill any existing auth users who signed up before the trigger
+insert into public.users (id, email)
+select id, email from auth.users
+on conflict (id) do nothing;
+
+-- Make the users FK deferrable to avoid timing issues during signup
+alter table public.users
+  drop constraint if exists users_id_fkey;
+
+alter table public.users
+  add constraint users_id_fkey
+  foreign key (id)
+  references auth.users(id)
+  on delete cascade
+  deferrable initially deferred;
+
+-- RLS: allow service role to insert into all tables
+-- (backend uses service role key which should bypass RLS,
+-- but Supabase sometimes requires explicit policies)
+
+create policy "Service role can insert users"
+  on public.users for insert
+  to service_role
+  with check (true);
+
+create policy "Service role can insert clothing"
+  on public.clothing_items for insert
+  to service_role
+  with check (true);
+
+create policy "Service role can update clothing"
+  on public.clothing_items for update
+  to service_role
+  using (true);
+
+create policy "Service role can insert events"
+  on public.events for insert
+  to service_role
+  with check (true);
+
+create policy "Service role can insert outfit suggestions"
+  on public.outfit_suggestions for insert
+  to service_role
+  with check (true);
+
+create policy "Service role can update outfit suggestions"
+  on public.outfit_suggestions for update
+  to service_role
+  using (true);
+
+-- pattern column on clothing_items (added after initial schema)
+alter table public.clothing_items
+  add column if not exists pattern text;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v1.3 — User profile columns
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Extended user profile fields
+alter table public.users
+  add column if not exists body_type        text,
+  add column if not exists height           float,
+  add column if not exists weight           float,
+  add column if not exists complexion       text,
+  add column if not exists face_shape       text,
+  add column if not exists hairstyle        text,
+  add column if not exists preferred_styles jsonb default '{}';
+
+-- RLS: allow users to update their own profile
+-- (may already exist from schema.sql — safe to skip if duplicate error)
+do $$ begin
+  create policy "Users can update own profile"
+    on public.users for update
+    using (auth.uid() = id);
+exception when duplicate_object then null;
+end $$;
+
+-- RLS: allow service role to update users table
+create policy "Service role can update users"
+  on public.users for update
+  to service_role
+  using (true);
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Storage bucket
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Run manually in Supabase dashboard → Storage if not already done:
+--
+-- 1. Create bucket named exactly: clothing-images
+--    Set public = false (private bucket)
+--    Or run: update storage.buckets set public = false where name = 'clothing-images';
+--
+-- 2. Add upload policy in Storage → clothing-images → Policies:
+--    CREATE POLICY "User uploads to own folder"
+--    ON storage.objects FOR INSERT
+--    WITH CHECK (
+--      auth.uid()::text = (storage.foldername(name))[1]
+--    );
+--
+-- 3. Add read policy:
+--    CREATE POLICY "User reads own files"
+--    ON storage.objects FOR SELECT
+--    USING (
+--      auth.uid()::text = (storage.foldername(name))[1]
+--    );
