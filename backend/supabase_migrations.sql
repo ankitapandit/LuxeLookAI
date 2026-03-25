@@ -123,6 +123,11 @@ create policy "Service role can update users"
   to service_role
   using (true);
 
+-- RLS: allow user to update users table
+create policy "Users can update own profile"
+  on public.users for update
+  using (auth.uid() = id);
+
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Storage bucket
@@ -146,3 +151,68 @@ create policy "Service role can update users"
 --    USING (
 --      auth.uid()::text = (storage.foldername(name))[1]
 --    );
+
+-- Add  photo_url to users and create a bucket to store them
+alter table public.users
+  add column if not exists photo_url text;
+
+-- Create bucket: profile-photos (private)
+-- Storage → New bucket → name: profile-photos, public: false
+-- Add upload policy: auth.uid()::text = (storage.foldername(name))[1]
+-- Add read policy:   auth.uid()::text = (storage.foldername(name))[1]
+
+-- Create bucket: profile-photos (public: true)
+update storage.buckets set public = true where name = 'profile-photos';
+
+-- Restrict uploads to owner's folder only (prevents writing to other users' paths)
+-- Storage → profile-photos → Policies → New policy:
+-- INSERT: auth.uid()::text = (storage.foldername(name))[1]
+-- UPDATE: auth.uid()::text = (storage.foldername(name))[1]
+-- DELETE: auth.uid()::text = (storage.foldername(name))[1]
+-- SELECT: no restriction needed (bucket is public)
+
+-- Allow authenticated users to upload to their own folder only
+create policy "Users can upload own profile photo"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'profile-photos'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Allow authenticated users to update their own photo (upsert)
+create policy "Users can update own profile photo"
+  on storage.objects for update
+  to authenticated
+  using (
+    bucket_id = 'profile-photos'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Allow authenticated users to delete their own photo
+create policy "Users can delete own profile photo"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'profile-photos'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+--   Update the column name to clarify metric of column
+alter table public.users rename column height to height_cm;
+alter table public.users rename column weight to weight_kg;
+
+create policy "Users can upload own profile photo"
+  on storage.objects for insert to authenticated
+  with check (
+    bucket_id = 'profile-photos'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+create policy "Service role can upload profile photos"
+  on storage.objects for insert to service_role
+  with check (true);
+
+create policy "Service role can update profile photos"
+  on storage.objects for update to service_role
+  using (bucket_id = 'profile-photos');

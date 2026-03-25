@@ -194,3 +194,52 @@ def explain_outfit(items: List[Dict], occasion: Dict) -> str:
     if settings.use_mock_ai:
         return _mock_explain_outfit(items)
     return _real_explain_outfit(items, occasion)
+
+
+# ── Face Detection ──────────────────────────────────────────────────────────
+def detect_face_shape(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
+    """
+    Detect face shape from an image using GPT-4o Vision.
+    Returns {"face_shape": str|None, "confidence": str, "reason": str}
+    """
+    settings = get_settings()
+    if settings.use_mock_ai:
+        return {"face_shape": None, "confidence": "low", "reason": "Mock mode — face detection skipped"}
+    try:
+        import base64, json
+        from openai import OpenAI
+        client = OpenAI(api_key=get_settings().openai_api_key)
+        b64 = base64.b64encode(image_bytes).decode()
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            max_tokens=150,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime_type};base64,{b64}"}
+                    },
+                    {
+                        "type": "text",
+                        "text": """Analyse the face in this photo and identify the face shape.
+                        Return ONLY valid JSON, no markdown, no code fences:
+                        {
+                          "face_shape": "one of: oval, round, square, heart, diamond, oblong",
+                          "confidence": "high or medium or low",
+                          "reason": "one concise sentence"
+                        }
+                        If no face is clearly visible return:
+                        {"face_shape": null, "confidence": "low", "reason": "No face detected"}"""
+                    }
+                ]
+            }]
+        )
+        raw = resp.choices[0].message.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        return json.loads(raw.strip())
+    except Exception as e:
+        return {"face_shape": None, "confidence": "low", "reason": f"Detection failed: {str(e)}"}

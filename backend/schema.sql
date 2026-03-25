@@ -14,8 +14,13 @@ create table if not exists users (
   email                    text not null,
   body_type                text,
   height                   float,
+  weight                   float,
+  complexion                text,
+  face_shape                text,
+  hairstyle                text,
   preferred_styles         jsonb default '{}',
   disliked_styles          jsonb default '{}',
+  is_pro                   boolean default false,
   favorite_photo_embedding vector(512),   -- CLIP embedding of user's style photo
   created_at               timestamptz default now()
 );

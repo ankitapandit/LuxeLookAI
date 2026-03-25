@@ -6,7 +6,7 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { logout, isLoggedIn } from "@/services/api";
-import { Sparkles, ShirtIcon, CalendarDays, LogOut } from "lucide-react";
+import { Sparkles, ShirtIcon, CalendarDays, LogOut, User } from "lucide-react";
 
 export default function Navbar() {
   const router = useRouter();
@@ -57,6 +57,7 @@ export default function Navbar() {
           <NavLink href="/wardrobe" icon={<ShirtIcon size={16} />} label="Wardrobe" active={router.pathname === "/wardrobe"} />
           <NavLink href="/outfits"  icon={<Sparkles size={16} />}   label="Outfits"  active={router.pathname === "/outfits"} />
           <NavLink href="/events"   icon={<CalendarDays size={16} />} label="Events" active={router.pathname === "/events"} />
+          <NavLink href="/profile"   icon={<User size={16} />} label="Profile" active={router.pathname === "/profile"} />
 
           <button
             onClick={handleLogout}

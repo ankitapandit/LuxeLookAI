@@ -7,13 +7,76 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Version Summary
 
-| Version | Date       | Description                                              |
-|---------|------------|----------------------------------------------------------|
-| 1.0.0   | 2026-03-16 | Initial upload — base codebase                           |
-| 1.1.0   | 2026-03-16 | Development environment and dependency fixes             |
+| Version | Date       | Description                                              	  |
+|---------|------------|--------------------------------------------------------------|
+| 1.0.0   | 2026-03-16 | Initial upload — base codebase                           	  |
+| 1.1.0   | 2026-03-16 | Development environment and dependency fixes             	  |
 | 1.2.0   | 2026-03-24 | Real mode support, UI overhaul, occasion/outfit improvements |
-| 1.3.0   | 2026-03-24 | Supabase migrations file					              |
-| 1.4.0   | TBD        | Next release                                             |
+| 1.3.0   | 2026-03-24 | Supabase migrations file					              	  |
+| 1.4.0   | 2026-03-25 | User profile page and personalization foundations            |
+| 1.5.0   | TBD        | Next release                                                 |
+
+---
+
+## [1.4.0] - 2026-03-25
+
+### Added
+- User profile page (/profile) with full personalization form
+- GET /profile and PUT /profile backend endpoints with mock and real Supabase paths
+- POST /profile/photo endpoint — uploads to profile-photos Supabase Storage bucket,
+  triggers GPT-4o Vision face shape detection, cleans up old photos before upload
+- Profile link added to Navbar
+- UserProfile and UpdateProfileRequest Pydantic schemas
+- photo_url and face_shape columns added to users table
+- getProfile() and updateProfile() API functions in frontend
+- Body type inline calculator — bust/waist/hip inputs with scored matching,
+  top-2 results shown on borderline cases with confidence note
+- Complexion inline guide — 3-question identifier (vein color, sun reaction,
+  skin depth) with scored matching and slash notation for ambiguous results
+  e.g. "medium / olive"
+- Face shape auto-detection via GPT-4o Vision on profile photo upload —
+  auto-fills field on high confidence, shows review banner on medium confidence,
+  prompts manual tool on low confidence / no face detected
+- FaceShapeTool component — canvas-based landmark tool, user places 8 numbered
+  points on their photo (top, temples, cheeks, jaw corners, chin), side-by-side
+  reference diagram, drag to reposition points, calculates shape from geometry
+- PhotoCropper component — modal canvas cropper with circular crop area,
+  pan by dragging, zoom via scroll wheel or +/- buttons with slider,
+  exports cropped blob before upload
+- Height field with cm / in unit toggle — converts on switch, stores cm
+- Weight field with kg / lbs unit toggle — converts on switch, stores kg
+- Hairstyle split into two categories: texture (straight/wavy/curly/coily)
+  and length (short/medium/long), each independently selectable, stored as
+  comma-separated string e.g. "wavy, long"
+- Body type, complexion and face shape collapsible guide charts
+- Height and weight range validation before save (50–250cm, 20–300kg)
+- Unit preference persisted in localStorage across sessions
+- profile-photos Supabase Storage bucket with RLS policies for upload,
+  update, delete and service role access
+- detect_face_shape() function in ml/llm.py using GPT-4o Vision
+
+### Changed
+- height and weight columns renamed to height_cm and weight_kg in users table
+  for clarity — trickled through schemas, API types and profile page
+- Profile photo upload now shows PhotoCropper modal before uploading —
+  user adjusts crop and zoom, cropped blob is uploaded instead of raw file
+- Old profile photos deleted from storage before each new upload
+- Face shape field populated automatically from photo upload when confidence
+  is sufficient, otherwise prompts user to use landmark tool
+
+### Fixed
+- Storage upload failing due to wrong bucket name reference
+- Profile photo not loading in FaceShapeTool on page reload — fixed by
+  fetching image as blob to avoid canvas CORS taint
+- FaceShapeTool useEffect not firing when photoUrl set after mount — fixed
+  by removing canvasRef dependency from effect condition
+- Supabase storage upsert RLS failure — UPDATE policy missing with_check clause
+- Old photos accumulating in bucket on re-upload — list + delete before upload
+
+### Deferred
+- favorite_photo_embedding — CLIP processing of profile photo for style matching
+- PRO tier gating UI — all profile fields editable for now, lock/upgrade prompt
+  deferred to future version when payment system is in place
 
 ---
 

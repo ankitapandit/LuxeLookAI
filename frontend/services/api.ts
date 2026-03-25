@@ -235,4 +235,38 @@ export async function rateOutfit(outfitId: string, rating: number): Promise<void
   await api.post("/feedback/rate-outfit", { outfit_id: outfitId, rating });
 }
 
+// ── Profile ──────────────────────────────────────────────────────────────
+
 export default api;
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  body_type?: string;
+  height_cm?: number;
+  weight_kg?: number;
+  complexion?: string;
+  face_shape?: string;
+  hairstyle?: string;
+  photo_url?: string;
+  is_pro: boolean;
+}
+
+export interface UpdateProfileRequest {
+  body_type?: string;
+  height_cm?: number;
+  weight_kg?: number;
+  complexion?: string;
+  face_shape?: string;
+  hairstyle?: string;
+}
+
+export async function getProfile(): Promise<UserProfile> {
+  const { data } = await api.get<UserProfile>("/profile/");
+  return data;
+}
+
+export async function updateProfile(payload: UpdateProfileRequest): Promise<UserProfile> {
+  const { data } = await api.put<UserProfile>("/profile/", payload);
+  return data;
+}

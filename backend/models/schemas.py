@@ -37,9 +37,24 @@ class UserProfile(BaseModel):
     id: UUID
     email: str
     body_type: Optional[str] = None
-    height: Optional[float] = None
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    complexion: Optional[str] = None
+    face_shape: Optional[str] = None
+    hairstyle: Optional[str] = None
     preferred_styles: Optional[dict] = None
     disliked_styles: Optional[dict] = None
+    photo_url: Optional[str] = None
+    is_pro: bool = False
+
+
+class UpdateProfileRequest(BaseModel):
+    body_type:  Optional[str]   = None
+    height_cm:     Optional[float] = None
+    weight_kg:     Optional[float] = None
+    complexion: Optional[str]   = None
+    face_shape: Optional[str]   = None
+    hairstyle:  Optional[str]   = None
 
 
 # ── Clothing Items ────────────────────────────────────────────────────────────

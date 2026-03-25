@@ -87,7 +87,6 @@ def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
         tags.update(manual_tags)
 
     embedding = generate_embedding(image_url, image_bytes)
-    print(f"DEBUG embedding type={type(embedding)} val[:3]={embedding[:3]}")
     vec_str = "[" + ",".join(str(x) for x in embedding) + "]"
     row = {
         "id":                item_id,
