@@ -93,8 +93,9 @@ export default function OutfitsPage() {
       items.forEach(i => { map[i.id] = i; });
       setWardrobeMap(map);
       setSuggestionsMap(prev => ({ ...prev, [evId]: outfitData.suggestions }));
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Failed to generate outfits");
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } } };
+      toast.error(e?.response?.data?.detail || "Failed to generate outfits");
     } finally {
       setGeneratingMap(prev => ({ ...prev, [evId]: false }));
     }

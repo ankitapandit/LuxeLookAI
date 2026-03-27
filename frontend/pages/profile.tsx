@@ -483,8 +483,8 @@ export default function ProfilePage() {
         toast("No face detected in photo — face shape not updated", { icon: "ℹ️", duration: 4000 });
         setShowFaceTool(true);
       }
-    } catch (err: any) {
-      toast.error(err?.message || "Could not upload photo — please try again");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Could not upload photo — please try again");
       // Revert preview on failure
       setPhotoPreview(profile?.photo_url || null);
     } finally {
@@ -583,8 +583,8 @@ export default function ProfilePage() {
         toast("No face detected — mark your face shape manually", { icon: "ℹ️", duration: 4000 });
         setShowFaceTool(true);
       }
-    } catch (err: any) {
-      toast.error(err?.message || "Could not upload photo — please try again");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Could not upload photo — please try again");
       setPhotoPreview(profile?.photo_url || null);
       URL.revokeObjectURL(previewUrl);
     } finally {
@@ -752,7 +752,7 @@ export default function ProfilePage() {
                     borderRadius: "6px", display: "flex", gap: "8px", alignItems: "center" }}>
                     <AlertCircle size={14} color="#D97706" />
                     <p style={{ fontSize: "12px", color: "#92400E", margin: 0 }}>
-                      Measurements look out of range — check you're using {heightUnit === "in" ? "inches" : "cm"} consistently
+                      Measurements look out of range — check you&apos;re using {heightUnit === "in" ? "inches" : "cm"} consistently
                     </p>
                   </div>
                 )}

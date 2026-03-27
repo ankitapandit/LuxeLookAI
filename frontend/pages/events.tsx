@@ -45,8 +45,9 @@ export default function EventsPage() {
       items.forEach(i => { map[i.id] = i; });
       setWardrobeMap(map);
       setSuggestions(outfitData.suggestions);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Could not generate outfit suggestions");
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } } };
+      toast.error(e?.response?.data?.detail || "Could not generate outfit suggestions");
     } finally {
       setLoading(false);
     }
@@ -65,8 +66,9 @@ export default function EventsPage() {
       items.forEach(i => { map[i.id] = i; });
       setWardrobeMap(map);
       setSuggestions(outfitData.suggestions);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Could not regenerate outfits");
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } } };
+      toast.error(e?.response?.data?.detail || "Could not regenerate outfits");
     } finally {
       setLoading(false);
     }
@@ -92,7 +94,7 @@ export default function EventsPage() {
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
             <CalendarDays size={24} color="var(--gold)" />
             <h1 style={{ fontSize: "36px", color: "var(--charcoal)" }}>
-              What's the occasion?
+              What&apos;s the occasion?
             </h1>
           </div>
           <p style={{ color: "var(--muted)", fontSize: "16px", marginBottom: "40px" }}>

@@ -88,7 +88,7 @@ export default function Home() {
             }}
           >
             LuxeLook AI is your personal stylist — powered by computer vision
-            and AI. Tell us the occasion. We'll build the perfect outfit from
+            and AI. Tell us the occasion. We&apos;ll build the perfect outfit from
             your own wardrobe.
           </p>
 

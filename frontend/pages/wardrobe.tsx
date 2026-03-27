@@ -560,7 +560,7 @@ function ReviewPanel({
             <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", background: "#FFF8E7", border: "1px solid #F0D080", borderRadius: "8px", padding: "10px 12px", marginBottom: "16px" }}>
               <AlertCircle size={15} color="#B8860B" style={{ flexShrink: 0, marginTop: "1px" }} />
               <p style={{ fontSize: "13px", color: "#7A5C00", lineHeight: 1.4 }}>
-                AI couldn't analyse this image — defaults pre-filled. Please review before saving.
+                AI couldn&apos;t analyse this image — defaults pre-filled. Please review before saving.
               </p>
             </div>
           )}
