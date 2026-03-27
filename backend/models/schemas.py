@@ -68,6 +68,7 @@ class ClothingItemCreate(BaseModel):
     pattern: Optional[str] = None         # stripes | plaid | floral | polka_dots | animal_print | geometric | abstract
     season: Optional[str] = None          # spring | summer | fall | winter | all
     formality_score: Optional[float] = None  # 0.0 (casual) → 1.0 (formal)
+    descriptors: Optional[dict] = {}
 
 
 class ClothingItem(ClothingItemCreate):
@@ -76,6 +77,7 @@ class ClothingItem(ClothingItemCreate):
     image_url: str
     embedding_vector: Optional[List[float]] = None  # 512-dim CLIP vector
     created_at: datetime
+    descriptors: Optional[dict] = {}
 
     class Config:
         from_attributes = True

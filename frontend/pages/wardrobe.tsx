@@ -165,6 +165,110 @@ const PATTERNS: { key: string; label: string; svg: string }[] = [
   },
 ];
 
+const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
+  // ── Tops ────────────────────────────────────────────────────────────────────
+  tops: {
+    fabric_type:   ["cotton","polyester","nylon","spandex","rayon","linen","denim",
+                    "satin","silk","chiffon","mesh","lace","knit","wool"],
+    neckline:      ["crew","round","V-neck","square","scoop","sweetheart","off-shoulder",
+                    "halter","high neck","turtleneck","collar","cowl","asymmetrical"],
+    sleeve_length: ["sleeveless","cap","short","3/4","long"],
+    sleeve_style:  ["puff","bishop","balloon","bell","raglan","batwing","cold shoulder","flutter"],
+    fit:           ["slim","regular","relaxed","loose","oversized","bodycon",
+                    "tailored","A-line","fit & flare","wrap"],
+    length:        ["crop","regular","longline"],
+    closure:       ["pullover","button-front","zip-up","wrap","open front"],
+    hemline:       ["straight","curved","asymmetrical","high-low","peplum","ruffle hem"],
+    strap_type:    ["strapless","spaghetti","wide","adjustable","racerback","cross-back","halter"],
+    back_style:    ["open back","low back","keyhole","strappy","tie-back","zipper back"],
+    detailing:     ["ruffles","pleats","ruched","smocked","tiered","draped",
+                    "cut-out","slit","bow","knot","lace-up","fringe","embroidery"],
+    elasticity:    ["non-stretch","slight stretch","medium stretch","high stretch"],
+    sheer:         ["opaque","semi-sheer","sheer"],
+    pattern:       ["solid","floral","striped","graphic","abstract","tie-dye","plaid","animal print"],
+  },
+  // ── Dresses ─────────────────────────────────────────────────────────────────
+  dresses: {
+    fabric_type:   ["cotton","polyester","nylon","spandex","rayon","linen","denim",
+                    "satin","silk","chiffon","mesh","lace","knit","wool"],
+    neckline:      ["crew","round","V-neck","square","scoop","sweetheart","off-shoulder",
+                    "halter","high neck","turtleneck","collar","cowl","asymmetrical"],
+    sleeve_length: ["sleeveless","cap","short","3/4","long"],
+    sleeve_style:  ["puff","bishop","balloon","bell","raglan","batwing","cold shoulder","flutter"],
+    fit:           ["slim","regular","relaxed","loose","oversized","bodycon",
+                    "tailored","A-line","fit & flare","wrap"],
+    length:        ["crop","regular","longline","mini","midi","maxi"],
+    closure:       ["pullover","button-front","zip-up","wrap","open front"],
+    hemline:       ["straight","curved","asymmetrical","high-low","peplum","ruffle hem"],
+    strap_type:    ["strapless","spaghetti","wide","adjustable","racerback","cross-back","halter"],
+    back_style:    ["open back","low back","keyhole","strappy","tie-back","zipper back"],
+    detailing:     ["ruffles","pleats","ruched","smocked","tiered","draped",
+                    "cut-out","slit","bow","knot","lace-up","fringe","embroidery"],
+    elasticity:    ["non-stretch","slight stretch","medium stretch","high stretch"],
+    sheer:         ["opaque","semi-sheer","sheer"],
+    pattern:       ["solid","floral","striped","graphic","abstract","tie-dye","plaid","animal print"],
+  },
+  // ── Outerwear ───────────────────────────────────────────────────────────────
+  outerwear: {
+    fabric_type:        ["cotton","polyester","nylon","spandex","rayon","linen","denim",
+                         "satin","silk","chiffon","mesh","lace","knit","wool"],
+    neckline:           ["crew","round","V-neck","square","scoop","sweetheart","off-shoulder",
+                         "halter","high neck","turtleneck","collar","cowl","asymmetrical"],
+    sleeve_length:      ["sleeveless","cap","short","3/4","long"],
+    sleeve_style:       ["puff","bishop","balloon","bell","raglan","batwing","cold shoulder","flutter"],
+    fit:                ["slim","regular","relaxed","loose","oversized","bodycon",
+                         "tailored","A-line","fit & flare","wrap"],
+    length:             ["crop","regular","longline"],
+    closure:            ["pullover","button-front","zip-up","wrap","open front"],
+    hemline:            ["straight","curved","asymmetrical","high-low","peplum","ruffle hem"],
+    back_style:         ["open back","low back","keyhole","strappy","tie-back","zipper back"],
+    detailing:          ["ruffles","pleats","ruched","smocked","tiered","draped",
+                         "cut-out","slit","bow","knot","lace-up","fringe","embroidery"],
+    elasticity:         ["non-stretch","slight stretch","medium stretch","high stretch"],
+    sheer:              ["opaque","semi-sheer","sheer"],
+    pattern:            ["solid","floral","striped","graphic","abstract","tie-dye","plaid","animal print"],
+    insulation:         ["lightweight","midweight","heavyweight","insulated","down-filled"],
+    weather_resistance: ["water-resistant","waterproof","windproof"],
+  },
+  // ── Bottoms ─────────────────────────────────────────────────────────────────
+  bottoms: {
+    fabric_type:     ["denim","cotton","polyester","linen","knit","leather"],
+    waist_position:  ["high","mid","low","drop","empire"],
+    waist_structure: ["elastic","drawstring","belted","paperbag","corset"],
+    fit:             ["slim","straight","relaxed","loose","wide-leg","flared"],
+    leg_opening:     ["skinny","straight","wide","flare","bootcut","tapered","barrel"],
+    length:          ["shorts","mini","midi","maxi","capri","ankle","full-length"],
+    distressing:     ["clean","distressed","ripped","frayed","washed"],
+    elasticity:      ["non-stretch","slight stretch","medium stretch","high stretch"],
+    sheer:           ["opaque","semi-sheer"],
+    pattern:         ["solid","plaid","striped","floral"],
+  },
+  // ── Shoes ───────────────────────────────────────────────────────────────────
+  shoes: {
+    shoe_type:   ["heels","sneakers","sandals","boots","flats","loafers",
+                  "pumps","mules","platforms","mary janes"],
+    toe_shape:   ["round","pointed","square","open-toe","peep-toe"],
+    heel_height: ["flat","low","mid","high","platform"],
+    heel_type:   ["stiletto","block","wedge","kitten","cone","spool","chunky","sculptural"],
+    closure:     ["slip-on","lace-up","buckle","zip","velcro","strappy"],
+    fit:         ["regular","wide","narrow"],
+    material:    ["leather","suede","canvas","synthetic","fabric"],
+    pattern:     ["solid","animal print","textured","colorblock"],
+  },
+  // ── Accessories ─────────────────────────────────────────────────────────────
+  accessories: {
+    accessory_type: ["handbag","tote","clutch","backpack","crossbody","belt",
+                     "scarf","hat","sunglasses","jewelry","watch"],
+    size:           ["mini","small","medium","large","oversized"],
+    material:       ["leather","fabric","straw","metal","synthetic"],
+    style:          ["structured","slouchy","minimalist","embellished","logo"],
+    closure:        ["zipper","magnetic","snap","drawstring"],
+    strap_type:     ["top handle","crossbody","shoulder","chain"],
+  },
+};
+
+const COMMON_DESCRIPTORS: Record<string, string[]> = {};  // all attributes are now per-category
+
 function svgToDataUrl(svg: string) {
   return `data:image/svg+xml;base64,${btoa(svg)}`;
 }
@@ -189,6 +293,8 @@ export default function WardrobePage() {
   const [hasPattern,     setHasPattern]     = useState(false);
   const [step,           setStep]           = useState<"idle"|"analysing"|"review"|"saving">("idle");
   const [filter,         setFilter]         = useState("all");
+  const [descriptors, setDescriptors] = useState<Record<string, string>>({});
+  const [duplicate, setDuplicate] = useState<TagPreview["duplicate"]>(null);
 
   useEffect(() => {
     Promise.all([getWardrobeItems(), getTagOptions()])
@@ -217,6 +323,8 @@ export default function WardrobePage() {
         setHasPattern(false);
         setCorrectedPattern("");
       }
+      setDescriptors(tags.descriptors || {});
+      setDuplicate(tags.duplicate || null);
       setStep("review");
     } catch {
       toast.error("AI tagging failed — please try again");
@@ -239,6 +347,7 @@ export default function WardrobePage() {
         category: correctedCat  !== aiTags.category ? correctedCat  : undefined,
         color:    finalColor    !== aiTags.color    ? finalColor    : undefined,
         pattern:  hasPattern ? (correctedPattern || undefined) : undefined,
+        descriptors: Object.keys(descriptors).length > 0 ? descriptors : undefined,
       });
       setItems(prev => [newItem, ...prev]);
       toast.success("Item added to wardrobe!");
@@ -252,11 +361,13 @@ export default function WardrobePage() {
     setPendingFile(null); setPendingPreview(null); setAiTags(null);
     setCorrectedCat(""); setCorrectedColor(""); setCorrectedPattern("");
     setHasPattern(false); setStep("idle");
+    setDescriptors({});
+    setDuplicate(null);
   }
 
-  async function handleCorrect(itemId: string, category: string, color: string) {
+  async function handleCorrect(itemId: string, category: string, color: string, pattern: string, descriptors: Record<string, string>) {
     try {
-      const updated = await correctItem(itemId, { category, color });
+      const updated = await correctItem(itemId, { category, color, pattern: pattern || undefined, descriptors: Object.keys(descriptors).length > 0 ? descriptors : undefined });
       setItems(prev => prev.map(i => i.id === itemId ? { ...i, ...updated } : i));
       toast.success("Updated!");
     } catch { toast.error("Could not update item"); }
@@ -321,10 +432,21 @@ export default function WardrobePage() {
             correctedColor={correctedColor}
             hasPattern={hasPattern}
             correctedPattern={correctedPattern}
+            descriptors={descriptors}
+            duplicate={duplicate}
             onCatChange={setCorrectedCat}
             onColorChange={setCorrectedColor}
             onPatternToggle={setHasPattern}
             onPatternChange={setCorrectedPattern}
+            onDescriptorChange={(key, val) =>
+              setDescriptors((prev: Record<string, string>) => ({ ...prev, [key]: val }))}
+            onReplaceExisting={async () => {
+              if (!duplicate) return;
+              await handleDelete(duplicate.id);
+              setDuplicate(null);
+              handleConfirm();
+            }}
+            onKeepBoth={() => setDuplicate(null)}
             onConfirm={handleConfirm}
             onCancel={resetWizard}
           />
@@ -363,7 +485,7 @@ export default function WardrobePage() {
             {visible.map(item => (
               <ItemCard key={item.id} item={item} tagOptions={tagOptions}
                 onDelete={() => handleDelete(item.id)}
-                onCorrect={(cat, color) => handleCorrect(item.id, cat, color)}
+                onCorrect={(cat, color, pattern, descriptors) => handleCorrect(item.id, cat, color, pattern, descriptors)}
               />
             ))}
           </div>
@@ -382,7 +504,9 @@ export default function WardrobePage() {
 function ReviewPanel({
   previewUrl, aiTags, tagOptions,
   correctedCat, correctedColor, hasPattern, correctedPattern,
+  descriptors, duplicate,
   onCatChange, onColorChange, onPatternToggle, onPatternChange,
+  onDescriptorChange, onReplaceExisting, onKeepBoth,
   onConfirm, onCancel,
 }: {
   previewUrl: string;
@@ -396,10 +520,15 @@ function ReviewPanel({
   onColorChange: (v: string) => void;
   onPatternToggle: (v: boolean) => void;
   onPatternChange: (v: string) => void;
+  descriptors: Record<string, string>;
+  onDescriptorChange: (key: string, val: string) => void;
+  duplicate?: TagPreview["duplicate"];
+  onReplaceExisting: () => void;
+  onKeepBoth: () => void;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const catChanged   = correctedCat   !== aiTags.category;
+  const catChanged = correctedCat !== aiTags.category;
   const colorChanged = (hasPattern ? "pattern" : correctedColor) !== aiTags.color;
   const aiUnavailable = !!aiTags.needs_review;
 
@@ -433,6 +562,64 @@ function ReviewPanel({
               <p style={{ fontSize: "13px", color: "#7A5C00", lineHeight: 1.4 }}>
                 AI couldn't analyse this image — defaults pre-filled. Please review before saving.
               </p>
+            </div>
+          )}
+
+          {/* Duplicate warning */}
+          {duplicate && (
+            <div style={{
+              background: "#FFF8E7", border: "1px solid #F0D080",
+              borderRadius: "8px", padding: "14px", marginBottom: "16px",
+            }}>
+              <p style={{ fontSize: "13px", fontWeight: 600, color: "#7A5C00", marginBottom: "12px" }}>
+                This item looks like a duplicate ({Math.round(duplicate.score * 100)}% similar)
+              </p>
+
+              {/* Side-by-side comparison */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "12px" }}>
+                <div style={{ textAlign: "center" }}>
+                  <p style={{ fontSize: "11px", color: "var(--muted)", marginBottom: "6px",
+                    textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>
+                    New
+                  </p>
+                  <img src={previewUrl} alt="new item"
+                    style={{ width: "100%", aspectRatio: "3/4", objectFit: "cover",
+                      borderRadius: "6px", border: "2px solid #D97706" }} />
+                  <p style={{ fontSize: "12px", color: "var(--ink)", marginTop: "4px",
+                    textTransform: "capitalize" }}>
+                    {correctedCat} · {correctedColor}
+                  </p>
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <p style={{ fontSize: "11px", color: "var(--muted)", marginBottom: "6px",
+                    textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>
+                    Existing
+                  </p>
+                  <img src={duplicate.image_url} alt="existing item"
+                    style={{ width: "100%", aspectRatio: "3/4", objectFit: "cover",
+                      borderRadius: "6px", border: "1px solid var(--border)" }} />
+                  <p style={{ fontSize: "12px", color: "var(--ink)", marginTop: "4px",
+                    textTransform: "capitalize" }}>
+                    {duplicate.category} · {duplicate.color}
+                  </p>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button onClick={onReplaceExisting}
+                  style={{ flex: 1, fontSize: "12px", fontWeight: 600, padding: "7px 12px",
+                    borderRadius: "6px", border: "none", background: "#D97706",
+                    color: "white", cursor: "pointer" }}>
+                  Replace existing
+                </button>
+                <button onClick={onKeepBoth}
+                  style={{ flex: 1, fontSize: "12px", padding: "7px 12px",
+                    borderRadius: "6px", border: "1px solid var(--border)",
+                    background: "white", color: "var(--muted)", cursor: "pointer" }}>
+                  Keep both
+                </button>
+              </div>
             </div>
           )}
 
@@ -480,7 +667,21 @@ function ReviewPanel({
               <PatternPicker selected={correctedPattern} onSelect={onPatternChange} />
             )}
           </div>
+          {/* Style details — collapsible */}
+          {(() => {
+            const catKey = correctedCat.toLowerCase();
+            const catDescriptors = CATEGORY_DESCRIPTORS[catKey] || {};
+            const allDescriptors = { ...catDescriptors, ...COMMON_DESCRIPTORS };
+            if (!Object.keys(allDescriptors).length) return null;
 
+            return (
+              <StyleDetailsSection
+                allDescriptors={allDescriptors}
+                descriptors={descriptors}
+                onDescriptorChange={onDescriptorChange}
+              />
+            );
+          })()}
           {/* Actions */}
           <div style={{ display: "flex", gap: "10px" }}>
             <button className="btn-primary" onClick={onConfirm} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -529,7 +730,10 @@ function ImageEyedropper({ previewUrl, onColorPicked, onPatternToggle }: {
     const y = Math.floor((e.clientY - rect.top)  * scaleY);
     const ctx = canvasRef.current.getContext("2d");
     if (!ctx) return;
-    const [r, g, b] = ctx.getImageData(x, y, 1, 1).data;
+    const data = ctx.getImageData(x, y, 1, 1).data;
+    const r = data[0];
+    const g = data[1];
+    const b = data[2];
     const hex = `#${r.toString(16).padStart(2,"0")}${g.toString(16).padStart(2,"0")}${b.toString(16).padStart(2,"0")}`;
     setPickedHex(hex);
     onColorPicked(hex);          // pass custom hex directly as the color value
@@ -697,20 +901,174 @@ function PatternPicker({ selected, onSelect }: { selected: string; onSelect: (k:
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// StyleDetailsSection — dropdown with name + inline SVG swatch
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function StyleDetailsSection({ allDescriptors, descriptors, onDescriptorChange }: {
+  allDescriptors: Record<string, string[]>;
+  descriptors: Record<string, string>;
+  onDescriptorChange: (key: string, val: string) => void;
+}) {
+  const [activeGroup, setActiveGroup] = useState<string | null>(null);
+  const [showAddPicker, setShowAddPicker] = useState(false);
+
+  const filledEntries = Object.entries(descriptors).filter(([, v]) => v);
+  const emptyGroups   = Object.keys(allDescriptors).filter(k => !descriptors[k]);
+
+  function handleTagClick(key: string) {
+    setShowAddPicker(false);
+    setActiveGroup(prev => prev === key ? null : key);
+  }
+
+  function handleRemove(key: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    onDescriptorChange(key, "");
+    if (activeGroup === key) setActiveGroup(null);
+  }
+
+  return (
+    <div style={{ marginBottom: "20px" }}>
+      <p style={{ fontSize: "11px", fontWeight: 600, color: "var(--muted)",
+        textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "8px" }}>
+        Style details
+      </p>
+
+      {/* Filled tags */}
+      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+        {filledEntries.map(([key, val]) => (
+          <div key={key}>
+            <button
+              onClick={() => handleTagClick(key)}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: "5px",
+                padding: "4px 10px", fontSize: "12px", borderRadius: "20px",
+                cursor: "pointer", textTransform: "capitalize",
+                border: `1px solid ${activeGroup === key ? "var(--charcoal)" : "var(--border)"}`,
+                background: activeGroup === key ? "var(--charcoal)" : "var(--surface)",
+                color: activeGroup === key ? "white" : "var(--ink)",
+                transition: "all 0.12s",
+              }}>
+              {val}
+              <span
+                onClick={e => handleRemove(key, e)}
+                style={{ fontSize: "11px", opacity: 0.6, lineHeight: 1, cursor: "pointer" }}>
+                ×
+              </span>
+            </button>
+
+            {/* Inline group picker — shown below the clicked tag */}
+            {activeGroup === key && (
+              <div style={{
+                marginTop: "6px", padding: "10px 12px",
+                background: "white", borderRadius: "8px",
+                border: "1px solid var(--border)",
+              }}>
+                <p style={{ fontSize: "11px", color: "var(--muted)",
+                  textTransform: "capitalize", marginBottom: "8px", fontWeight: 600 }}>
+                  {key.replace(/_/g, " ")}
+                </p>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  {(allDescriptors[key] || []).map(opt => (
+                    <button key={opt}
+                      onClick={() => {
+                        if (opt !== val) onDescriptorChange(key, opt);
+                        setActiveGroup(null);
+                      }}
+                      style={{
+                        padding: "4px 12px", fontSize: "12px", borderRadius: "20px",
+                        cursor: "pointer", textTransform: "capitalize",
+                        border: `1px solid ${val === opt ? "var(--charcoal)" : "var(--border)"}`,
+                        background: val === opt ? "var(--charcoal)" : "white",
+                        color: val === opt ? "white" : "var(--ink)",
+                        transition: "all 0.12s",
+                      }}>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {/* + Add detail button */}
+        {emptyGroups.length > 0 && (
+          <button
+            onClick={() => { setShowAddPicker(p => !p); setActiveGroup(null); }}
+            style={{
+              padding: "4px 10px", fontSize: "12px", borderRadius: "20px",
+              cursor: "pointer", border: "1px dashed var(--border)",
+              background: "transparent", color: "var(--muted)",
+            }}>
+            + Add detail
+          </button>
+        )}
+
+        {filledEntries.length === 0 && !showAddPicker && (
+          <p style={{ fontSize: "12px", color: "var(--muted)" }}>
+            No style details detected — click Add detail to fill manually
+          </p>
+        )}
+      </div>
+
+      {/* Add detail accordion */}
+      {showAddPicker && (
+        <div style={{
+          marginTop: "10px", padding: "12px",
+          background: "white", borderRadius: "8px",
+          border: "1px solid var(--border)",
+          display: "flex", flexDirection: "column", gap: "12px",
+        }}>
+          {emptyGroups.map(key => (
+            <div key={key}>
+              <p style={{ fontSize: "11px", color: "var(--muted)",
+                textTransform: "capitalize", marginBottom: "6px", fontWeight: 600 }}>
+                {key.replace(/_/g, " ")}
+              </p>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                {(allDescriptors[key] || []).map(opt => (
+                  <button key={opt}
+                    onClick={() => {
+                      onDescriptorChange(key, opt);
+                      if (opt !== descriptors[key]) setShowAddPicker(false);
+                    }}
+                    style={{
+                      padding: "4px 12px", fontSize: "12px", borderRadius: "20px",
+                      cursor: "pointer", textTransform: "capitalize",
+                      border: "1px solid var(--border)",
+                      background: "white", color: "var(--ink)",
+                      transition: "all 0.12s",
+                    }}>
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ItemCard with inline edit (category + color only — no season/formality)
+// ItemCard — popup edit modal + delete confirmation
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
   item: ClothingItem;
   tagOptions: TagOptions;
   onDelete: () => void;
-  onCorrect: (cat: string, color: string) => void;
+  onCorrect: (cat: string, color: string, pattern: string, descriptors: Record<string, string>) => void;
 }) {
-  const [editing,   setEditing]   = useState(false);
-  const [editCat,   setEditCat]   = useState(item.category);
-  const [editColor, setEditColor] = useState(item.color || "");
+  const [editing,         setEditing]         = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [editCat,         setEditCat]         = useState(item.category);
+  const [editColor,       setEditColor]       = useState(item.color || "");
+  const [editPattern,     setEditPattern]     = useState(item.pattern || "");
+  const [editDescriptors, setEditDescriptors] = useState<Record<string, string>>(item.descriptors || {});
 
   const formalityLabel =
     item.formality_score !== undefined
@@ -720,32 +1078,68 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
       : "Loungewear"
       : null;
 
-  // Resolve display color: preset key → hex, custom hex → use directly, pattern → gradient
-  const colorDisplay = COLOR_HEX[editColor]
-    ?? (editColor === "pattern" ? "linear-gradient(135deg,#e8a0a0 25%,#4a90c4 75%)" : undefined)
-    ?? (editColor.startsWith("#") ? editColor : "#ccc");
+  const colorDisplay = COLOR_HEX[item.color || ""]
+    ?? ((item.color || "") === "pattern" ? "linear-gradient(135deg,#e8a0a0 25%,#4a90c4 75%)" : undefined)
+    ?? ((item.color || "").startsWith("#") ? item.color : "#ccc");
+
+  function openEdit() {
+    setEditCat(item.category);
+    setEditColor(item.color || "");
+    setEditPattern(item.pattern || "");
+    setEditDescriptors(item.descriptors || {});
+    setEditing(true);
+  }
 
   return (
-    <div className="card" style={{ overflow: "hidden", position: "relative" }}>
-      <div style={{ aspectRatio: "3/4", overflow: "hidden", background: "var(--surface)", position: "relative" }}>
-        <img src={item.image_url} alt={`${item.category} - ${resolveColorName(item.color || "")}`}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          onError={e => { (e.target as HTMLImageElement).src = `https://placehold.co/300x400/F5F0E8/8A8580?text=${encodeURIComponent(item.category)}`; }}
-        />
-        <div className="card-actions" style={{ position: "absolute", top: "8px", right: "8px", display: "flex", flexDirection: "column", gap: "4px", opacity: 0, transition: "opacity 0.2s ease" }}>
-          <ActionBtn onClick={() => { setEditing(e => !e); setEditCat(item.category); setEditColor(item.color || ""); }} icon={<Pencil size={13} />} />
-          <ActionBtn onClick={onDelete} icon={<Trash2 size={13} color="#DC2626" />} />
-        </div>
-      </div>
+    <>
+      <div className="card" style={{ overflow: "hidden", position: "relative" }}>
+        <div style={{ aspectRatio: "3/4", overflow: "hidden", background: "var(--surface)", position: "relative" }}>
+          <img src={item.image_url} alt={`${item.category} - ${resolveColorName(item.color || "")}`}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            onError={e => { (e.target as HTMLImageElement).src = `https://placehold.co/300x400/F5F0E8/8A8580?text=${encodeURIComponent(item.category)}`; }}
+          />
+          <div className="card-actions" style={{ position: "absolute", top: "8px", right: "8px", display: "flex", flexDirection: "column", gap: "4px", opacity: 0, transition: "opacity 0.2s ease" }}>
+            <ActionBtn onClick={openEdit} icon={<Pencil size={13} />} />
+            <ActionBtn onClick={() => setConfirmingDelete(true)} icon={<Trash2 size={13} color="#DC2626" />} />
+          </div>
 
-      {!editing && (
+          {/* Delete confirmation overlay */}
+          {confirmingDelete && (
+            <div style={{
+              position: "absolute", inset: 0, background: "rgba(0,0,0,0.65)",
+              display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: "10px", padding: "16px",
+            }}>
+              <p style={{ color: "white", fontSize: "13px", fontWeight: 600, textAlign: "center" }}>
+                Remove this item?
+              </p>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={() => { setConfirmingDelete(false); onDelete(); }}
+                  style={{ padding: "6px 16px", borderRadius: "6px", border: "none", background: "#DC2626", color: "white", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+                  Delete
+                </button>
+                <button
+                  onClick={() => setConfirmingDelete(false)}
+                  style={{ padding: "6px 16px", borderRadius: "6px", border: "1px solid rgba(255,255,255,0.4)", background: "transparent", color: "white", fontSize: "12px", cursor: "pointer" }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div style={{ padding: "12px" }}>
           <p style={{ fontWeight: 500, fontSize: "14px", textTransform: "capitalize", marginBottom: "4px" }}>
-            <span style={{ display: "inline-block", width: "10px", height: "10px", borderRadius: "50%", background: colorDisplay, marginRight: "6px", verticalAlign: "middle", border: "1px solid var(--border)" }} />
+            <span style={{ display: "inline-block", width: "10px", height: "10px", borderRadius: "50%", background: colorDisplay as string, marginRight: "6px", verticalAlign: "middle", border: "1px solid var(--border)" }} />
             {item.category} - {resolveColorName(item.color || "")}
           </p>
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-            {item.season && <span style={{ fontSize: "11px", color: "var(--muted)", textTransform: "capitalize" }}>{item.season}</span>}
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+            {item.season && (
+              <span style={{ fontSize: "11px", color: "var(--muted)", textTransform: "capitalize" }}>
+                {item.season}
+              </span>
+            )}
             {formalityLabel && (
               <span className="formality-pill" style={{
                 background: (item.formality_score||0) > 0.6 ? "#1C191720" : "#8B9E7E22",
@@ -753,48 +1147,140 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
               }}>{formalityLabel}</span>
             )}
           </div>
-        </div>
-      )}
 
+          {item.descriptors && Object.keys(item.descriptors).length > 0 && (
+            <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
+              {Object.values(item.descriptors as Record<string, string>)
+                .filter(Boolean)
+                .map((val, i) => (
+                  <span key={i} style={{
+                    fontSize: "10px", padding: "2px 8px", borderRadius: "20px",
+                    background: "var(--surface)", border: "1px solid var(--border)",
+                    color: "var(--muted)", textTransform: "capitalize",
+                  }}>
+                    {val}
+                  </span>
+                ))}
+            </div>
+          )}
+        </div>
+
+        <style>{`.card:hover .card-actions { opacity: 1 !important; }`}</style>
+      </div>
+
+      {/* ── Edit modal popup ── */}
       {editing && (
-        <div style={{ padding: "12px", background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
-          <p style={{ fontSize: "11px", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "10px" }}>Edit tags</p>
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={() => setEditing(false)}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000 }}
+          />
 
-          <label style={{ fontSize: "11px", color: "var(--muted)", display: "block", marginBottom: "4px" }}>Category</label>
-          <select value={editCat} onChange={e => setEditCat(e.target.value)}
-            style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "13px", marginBottom: "12px", textTransform: "capitalize", background: "white" }}>
-            {tagOptions.categories.map(c => <option key={c} value={c} style={{ textTransform: "capitalize" }}>{c}</option>)}
-          </select>
+          {/* Modal */}
+          <div style={{
+            position: "fixed", top: "50%", left: "50%",
+            transform: "translate(-50%, -50%)",
+            zIndex: 1001, background: "white", borderRadius: "12px",
+            width: "min(520px, 92vw)", maxHeight: "88vh",
+            display: "flex", flexDirection: "column",
+            boxShadow: "0 24px 64px rgba(0,0,0,0.25)",
+            overflow: "hidden",
+          }}>
+            {/* Header */}
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+              <div>
+                <p style={{ fontWeight: 600, fontSize: "15px", color: "var(--charcoal)" }}>Edit Tags</p>
+                <p style={{ color: "var(--muted)", fontSize: "12px", textTransform: "capitalize" }}>
+                  {item.category} · {resolveColorName(item.color || "")}
+                </p>
+              </div>
+              <button onClick={() => setEditing(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: "4px" }}>
+                <X size={18} />
+              </button>
+            </div>
 
-          <label style={{ fontSize: "11px", color: "var(--muted)", display: "block", marginBottom: "6px" }}>Colour</label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginBottom: "8px" }}>
-            {SOLID_COLORS.map(c => (
-              <button key={c.key} title={c.label} onClick={() => setEditColor(c.key)} style={{
-                width: "22px", height: "22px", borderRadius: "50%", background: c.hex,
-                border: editColor === c.key ? "3px solid var(--charcoal)" : "2px solid transparent",
-                cursor: "pointer",
-              }} />
-            ))}
-          </div>
-          {/* Mini custom colour input for card edit */}
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "12px" }}>
-            <input type="color" value={editColor.startsWith("#") ? editColor : "#ffffff"}
-              onChange={e => setEditColor(e.target.value)}
-              style={{ width: "28px", height: "28px", border: "1px solid var(--border)", borderRadius: "4px", cursor: "pointer", padding: "2px" }} />
-            <span style={{ fontSize: "11px", color: "var(--muted)" }}>or pick custom</span>
-          </div>
+            {/* Scrollable body */}
+            <div style={{ padding: "20px", overflowY: "auto", flex: 1 }}>
+              <label style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "6px" }}>Category</label>
+              <select value={editCat} onChange={e => setEditCat(e.target.value)}
+                className="input" style={{ padding: "8px 12px", fontSize: "14px", marginBottom: "20px", textTransform: "capitalize" }}>
+                {tagOptions.categories.map(c => <option key={c} value={c} style={{ textTransform: "capitalize" }}>{c}</option>)}
+              </select>
 
-          <div style={{ display: "flex", gap: "6px" }}>
-            <button onClick={() => { onCorrect(editCat, editColor); setEditing(false); }}
-              className="btn-primary" style={{ padding: "6px 14px", fontSize: "12px" }}>Save</button>
-            <button onClick={() => setEditing(false)}
-              className="btn-secondary" style={{ padding: "6px 14px", fontSize: "12px" }}>Cancel</button>
+              <label style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "8px" }}>Colour</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
+                {SOLID_COLORS.map(c => (
+                  <button key={c.key} title={c.label} onClick={() => setEditColor(c.key)} style={{
+                    width: "26px", height: "26px", borderRadius: "50%", background: c.hex,
+                    border: editColor === c.key ? "3px solid var(--charcoal)" : "2px solid transparent",
+                    outline: editColor === c.key ? "2px solid var(--cream)" : "none",
+                    cursor: "pointer",
+                  }} />
+                ))}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "20px" }}>
+                <input type="color" value={editColor.startsWith("#") ? editColor : "#ffffff"}
+                  onChange={e => setEditColor(e.target.value)}
+                  style={{ width: "32px", height: "32px", border: "1px solid var(--border)", borderRadius: "6px", cursor: "pointer", padding: "2px" }} />
+                <span style={{ fontSize: "12px", color: "var(--muted)" }}>or pick custom</span>
+              </div>
+
+              <label style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "8px" }}>Pattern</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "20px" }}>
+                {PATTERNS.map(p => (
+                  <button key={p.key} title={p.label} onClick={() => setEditPattern(editPattern === p.key ? "" : p.key)}
+                    style={{ padding: "4px 12px", borderRadius: "20px", fontSize: "12px", cursor: "pointer",
+                      border: editPattern === p.key ? "2px solid var(--charcoal)" : "1px solid var(--border)",
+                      background: editPattern === p.key ? "var(--charcoal)" : "white",
+                      color: editPattern === p.key ? "white" : "var(--muted)", textTransform: "capitalize" }}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
+              {(() => {
+                const catKey = editCat.toLowerCase().replace(/\s+/g, "");
+                const catDescriptors = CATEGORY_DESCRIPTORS[catKey] || {};
+                const allDescriptors = { ...catDescriptors, ...COMMON_DESCRIPTORS };
+                if (!Object.keys(allDescriptors).length) return null;
+                return (
+                  <div>
+                    <label style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "10px" }}>Style Details</label>
+                    {Object.entries(allDescriptors).map(([key, opts]) => (
+                      <div key={key} style={{ marginBottom: "12px" }}>
+                        <p style={{ fontSize: "11px", color: "var(--muted)", textTransform: "capitalize", marginBottom: "6px" }}>{key.replace(/_/g, " ")}</p>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                          {(opts as string[]).map(opt => (
+                            <button key={opt} onClick={() => setEditDescriptors(prev => ({ ...prev, [key]: prev[key] === opt ? "" : opt }))}
+                              style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "11px", cursor: "pointer",
+                                border: editDescriptors[key] === opt ? "2px solid var(--charcoal)" : "1px solid var(--border)",
+                                background: editDescriptors[key] === opt ? "var(--charcoal)" : "white",
+                                color: editDescriptors[key] === opt ? "white" : "var(--ink)", textTransform: "capitalize" }}>
+                              {opt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: "8px", flexShrink: 0, background: "white" }}>
+              <button
+                onClick={() => { onCorrect(editCat, editColor, editPattern, editDescriptors); setEditing(false); }}
+                className="btn-primary" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <CheckCircle size={14} /> Save
+              </button>
+              <button onClick={() => setEditing(false)} className="btn-secondary">Cancel</button>
+            </div>
           </div>
-        </div>
+        </>
       )}
-
-      <style>{`.card:hover .card-actions { opacity: 1 !important; }`}</style>
-    </div>
+    </>
   );
 }
 

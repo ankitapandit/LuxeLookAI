@@ -243,6 +243,7 @@ def _fallback_tags() -> Dict[str, Any]:
         "formality_score":   0.5,
         "needs_review":      True,   # ← key: frontend shows manual form
         "ai_confidence":     {},
+        "descriptors": {},
     }
 
 
@@ -280,6 +281,7 @@ def _mock_tag(image_url: str) -> Dict[str, Any]:
         "formality_score":   round(rng.uniform(0.0, 1.0), 2),
         "needs_review":      True,
         "ai_confidence":     {},
+        "descriptors": {},
     }
 
 
@@ -299,17 +301,30 @@ def tag_clothing_item(image_url: str, image_bytes: bytes = None) -> Dict[str, An
 
     if settings.use_mock_ai:
         logger.debug("[MOCK] Tagging item — returning random tags, not reading image")
-        return _mock_tag(image_url)
+        tags = _mock_tag(image_url)
+        from ml.llm import _mock_describe_clothing
+        tags["descriptors"] = _mock_describe_clothing(tags["category"])
+        return tags
 
     if image_bytes is None:
         raise ValueError("image_bytes is required when USE_MOCK_AI=false")
 
     try:
-        return _real_tag(image_bytes)
+        tags = _real_tag(image_bytes)
     except Exception as e:
         # CLIP unavailable — degrade gracefully, let user fill tags manually
         logger.warning(f"CLIP tagging failed → falling back to manual review. Reason: {e}")
-        return _fallback_tags()
+        tags = _fallback_tags()
+
+    # Descriptor detection — best-effort, never fails the upload
+    try:
+        from ml.llm import describe_clothing
+        tags["descriptors"] = describe_clothing(image_bytes, tags["category"])
+    except Exception as e:
+        logger.warning(f"Descriptor detection failed: {e}")
+        tags["descriptors"] = {}
+
+    return tags
 
 
 def get_taggable_options() -> Dict[str, Any]:

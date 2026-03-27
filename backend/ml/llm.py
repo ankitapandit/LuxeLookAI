@@ -154,14 +154,14 @@ def _real_explain_outfit(items: List[Dict], occasion: Dict) -> str:
         for i in items
     )
     prompt = f"""
-You are a professional stylist. Explain in 2-3 sentences why this outfit works for the occasion.
-
-Occasion: {occasion.get('occasion_type')} ({occasion.get('setting')})
-Formality level: {occasion.get('formality_level')}
-Items: {item_summaries}
-
-Be specific, warm, and concise. No bullet points.
-"""
+            You are a professional stylist. Explain in 2-3 sentences why this outfit works for the occasion.
+            
+            Occasion: {occasion.get('occasion_type')} ({occasion.get('setting')})
+            Formality level: {occasion.get('formality_level')}
+            Items: {item_summaries}
+            
+            Be specific, warm, and concise. No bullet points.
+            """
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
@@ -243,3 +243,219 @@ def detect_face_shape(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict
         return json.loads(raw.strip())
     except Exception as e:
         return {"face_shape": None, "confidence": "low", "reason": f"Detection failed: {str(e)}"}
+
+# ── Clothing descriptor definitions ──────────────────────────────────────────
+
+CATEGORY_DESCRIPTORS = {
+    # ── Tops ──────────────────────────────────────────────────────────────────
+    "tops": {
+        "fabric_type":   ["cotton", "polyester", "nylon", "spandex", "rayon", "linen", "denim",
+                          "satin", "silk", "chiffon", "mesh", "lace", "knit", "wool"],
+        "neckline":      ["crew", "round", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
+                          "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
+        "sleeve_length": ["sleeveless", "cap", "short", "3/4", "long"],
+        "sleeve_style":  ["puff", "bishop", "balloon", "bell", "raglan", "batwing", "cold shoulder", "flutter"],
+        "fit":           ["slim", "regular", "relaxed", "loose", "oversized", "bodycon",
+                          "tailored", "A-line", "fit & flare", "wrap"],
+        "length":        ["crop", "regular", "longline"],
+        "closure":       ["pullover", "button-front", "zip-up", "wrap", "open front"],
+        "hemline":       ["straight", "curved", "asymmetrical", "high-low", "peplum", "ruffle hem"],
+        "strap_type":    ["strapless", "spaghetti", "wide", "adjustable", "racerback", "cross-back", "halter"],
+        "back_style":    ["open back", "low back", "keyhole", "strappy", "tie-back", "zipper back"],
+        "detailing":     ["ruffles", "pleats", "ruched", "smocked", "tiered", "draped",
+                          "cut-out", "slit", "bow", "knot", "lace-up", "fringe", "embroidery"],
+        "elasticity":    ["non-stretch", "slight stretch", "medium stretch", "high stretch"],
+        "sheer":         ["opaque", "semi-sheer", "sheer"],
+        "pattern":       ["solid", "floral", "striped", "graphic", "abstract", "tie-dye", "plaid", "animal print"],
+    },
+    # ── Dresses ───────────────────────────────────────────────────────────────
+    "dresses": {
+        "fabric_type":   ["cotton", "polyester", "nylon", "spandex", "rayon", "linen", "denim",
+                          "satin", "silk", "chiffon", "mesh", "lace", "knit", "wool"],
+        "neckline":      ["crew", "round", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
+                          "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
+        "sleeve_length": ["sleeveless", "cap", "short", "3/4", "long"],
+        "sleeve_style":  ["puff", "bishop", "balloon", "bell", "raglan", "batwing", "cold shoulder", "flutter"],
+        "fit":           ["slim", "regular", "relaxed", "loose", "oversized", "bodycon",
+                          "tailored", "A-line", "fit & flare", "wrap"],
+        "length":        ["crop", "regular", "longline", "mini", "midi", "maxi"],
+        "closure":       ["pullover", "button-front", "zip-up", "wrap", "open front"],
+        "hemline":       ["straight", "curved", "asymmetrical", "high-low", "peplum", "ruffle hem"],
+        "strap_type":    ["strapless", "spaghetti", "wide", "adjustable", "racerback", "cross-back", "halter"],
+        "back_style":    ["open back", "low back", "keyhole", "strappy", "tie-back", "zipper back"],
+        "detailing":     ["ruffles", "pleats", "ruched", "smocked", "tiered", "draped",
+                          "cut-out", "slit", "bow", "knot", "lace-up", "fringe", "embroidery"],
+        "elasticity":    ["non-stretch", "slight stretch", "medium stretch", "high stretch"],
+        "sheer":         ["opaque", "semi-sheer", "sheer"],
+        "pattern":       ["solid", "floral", "striped", "graphic", "abstract", "tie-dye", "plaid", "animal print"],
+    },
+    # ── Outerwear ─────────────────────────────────────────────────────────────
+    "outerwear": {
+        "fabric_type":        ["cotton", "polyester", "nylon", "spandex", "rayon", "linen", "denim",
+                               "satin", "silk", "chiffon", "mesh", "lace", "knit", "wool"],
+        "neckline":           ["crew", "round", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
+                               "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
+        "sleeve_length":      ["sleeveless", "cap", "short", "3/4", "long"],
+        "sleeve_style":       ["puff", "bishop", "balloon", "bell", "raglan", "batwing", "cold shoulder", "flutter"],
+        "fit":                ["slim", "regular", "relaxed", "loose", "oversized", "bodycon",
+                               "tailored", "A-line", "fit & flare", "wrap"],
+        "length":             ["crop", "regular", "longline"],
+        "closure":            ["pullover", "button-front", "zip-up", "wrap", "open front"],
+        "hemline":            ["straight", "curved", "asymmetrical", "high-low", "peplum", "ruffle hem"],
+        "back_style":         ["open back", "low back", "keyhole", "strappy", "tie-back", "zipper back"],
+        "detailing":          ["ruffles", "pleats", "ruched", "smocked", "tiered", "draped",
+                               "cut-out", "slit", "bow", "knot", "lace-up", "fringe", "embroidery"],
+        "elasticity":         ["non-stretch", "slight stretch", "medium stretch", "high stretch"],
+        "sheer":              ["opaque", "semi-sheer", "sheer"],
+        "pattern":            ["solid", "floral", "striped", "graphic", "abstract", "tie-dye", "plaid", "animal print"],
+        "insulation":         ["lightweight", "midweight", "heavyweight", "insulated", "down-filled"],
+        "weather_resistance": ["water-resistant", "waterproof", "windproof"],
+    },
+    # ── Bottoms ───────────────────────────────────────────────────────────────
+    "bottoms": {
+        "fabric_type":     ["denim", "cotton", "polyester", "linen", "knit", "leather"],
+        "waist_position":  ["high", "mid", "low", "drop", "empire"],
+        "waist_structure": ["elastic", "drawstring", "belted", "paperbag", "corset"],
+        "fit":             ["slim", "straight", "relaxed", "loose", "wide-leg", "flared"],
+        "leg_opening":     ["skinny", "straight", "wide", "flare", "bootcut", "tapered", "barrel"],
+        "length":          ["shorts", "mini", "midi", "maxi", "capri", "ankle", "full-length"],
+        "distressing":     ["clean", "distressed", "ripped", "frayed", "washed"],
+        "elasticity":      ["non-stretch", "slight stretch", "medium stretch", "high stretch"],
+        "sheer":           ["opaque", "semi-sheer"],
+        "pattern":         ["solid", "plaid", "striped", "floral"],
+    },
+    # ── Shoes ─────────────────────────────────────────────────────────────────
+    "shoes": {
+        "shoe_type":   ["heels", "sneakers", "sandals", "boots", "flats", "loafers",
+                        "pumps", "mules", "platforms", "mary janes"],
+        "toe_shape":   ["round", "pointed", "square", "open-toe", "peep-toe"],
+        "heel_height": ["flat", "low", "mid", "high", "platform"],
+        "heel_type":   ["stiletto", "block", "wedge", "kitten", "cone", "spool", "chunky", "sculptural"],
+        "closure":     ["slip-on", "lace-up", "buckle", "zip", "velcro", "strappy"],
+        "fit":         ["regular", "wide", "narrow"],
+        "material":    ["leather", "suede", "canvas", "synthetic", "fabric"],
+        "pattern":     ["solid", "animal print", "textured", "colorblock"],
+    },
+    # ── Accessories ───────────────────────────────────────────────────────────
+    "accessories": {
+        "accessory_type": ["handbag", "tote", "clutch", "backpack", "crossbody", "belt",
+                           "scarf", "hat", "sunglasses", "jewelry", "watch"],
+        "size":           ["mini", "small", "medium", "large", "oversized"],
+        "material":       ["leather", "fabric", "straw", "metal", "synthetic"],
+        "style":          ["structured", "slouchy", "minimalist", "embellished", "logo"],
+        "closure":        ["zipper", "magnetic", "snap", "drawstring"],
+        "strap_type":     ["top handle", "crossbody", "shoulder", "chain"],
+    },
+}
+
+COMMON_DESCRIPTORS: dict = {}  # all attributes are now per-category
+
+
+def describe_clothing(image_bytes: bytes, category: str, mime_type: str = "image/jpeg") -> dict:
+    """
+    Use GPT-4o Vision to identify clothing descriptors from an image.
+    Returns a dict of descriptor key → detected value.
+    e.g. {"silhouette": "A-line", "neckline": "V-neck", "back": "backless", "fit": "fitted"}
+    """
+    settings = get_settings()
+    if settings.use_mock_ai:
+        return _mock_describe_clothing(category)
+
+    cat = category.lower().rstrip("s")  # normalise e.g. "dresses" → "dress"
+    # Find matching key
+    cat_key = next((k for k in CATEGORY_DESCRIPTORS if k.startswith(cat) or cat in k), None)
+    cat_descriptors = CATEGORY_DESCRIPTORS.get(cat_key or "", {})
+    all_descriptors = {**cat_descriptors, **COMMON_DESCRIPTORS}
+
+    if not all_descriptors:
+        return {}
+
+    # Build descriptor options string for prompt
+    options_text = "\n".join(
+        f'- "{key}": one of {values}'
+        for key, values in all_descriptors.items()
+    )
+
+    try:
+        import base64, json
+        from openai import OpenAI
+        client = OpenAI(api_key=get_settings().openai_api_key)
+        b64 = base64.b64encode(image_bytes).decode()
+
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            max_tokens=300,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime_type};base64,{b64}"}
+                    },
+                    {
+                        "type": "text",
+                        "text": f"""Analyse this {category} clothing item and identify its descriptors.
+                        Return ONLY valid JSON, no markdown, no code fences.
+                        Choose the best matching value for each key from the options given.
+                        If a descriptor is not clearly visible or applicable, omit it.
+                        
+                        Descriptor options:
+                        {options_text}
+                        
+                        Return format example:
+                        {{"silhouette": "A-line", "neckline": "V-neck", "back": "backless"}}"""
+                    }
+                ]
+            }]
+        )
+
+        raw = resp.choices[0].message.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        return json.loads(raw.strip())
+
+    except Exception as e:
+        return {}
+
+
+def _mock_describe_clothing(category: str) -> dict:
+    """Deterministic mock descriptors for local dev."""
+    cat = category.lower()
+    if "dress" in cat:
+        return {
+            "fabric_type": "polyester", "neckline": "V-neck", "sleeve_length": "sleeveless",
+            "fit": "A-line", "length": "midi",
+            "hemline": "straight", "strap_type": "spaghetti",
+            "back_style": "zipper back", "detailing": "none",
+            "elasticity": "medium stretch", "sheer": "opaque", "pattern": "solid",
+        }
+    if "top" in cat:
+        return {
+            "fabric_type": "cotton", "neckline": "crew", "sleeve_length": "short",
+            "sleeve_style": "raglan", "fit": "regular", "length": "regular",
+            "closure": "pullover", "hemline": "straight",
+            "elasticity": "slight stretch", "sheer": "opaque", "pattern": "solid",
+        }
+    if "bottom" in cat:
+        return {
+            "fabric_type": "denim", "waist_position": "high", "waist_structure": "belted",
+            "fit": "straight", "leg_opening": "straight",
+            "length": "full-length", "distressing": "clean",
+            "elasticity": "slight stretch", "sheer": "opaque", "pattern": "solid",
+        }
+    if "outer" in cat:
+        return {
+            "fabric_type": "wool", "neckline": "collar", "sleeve_length": "long",
+            "sleeve_style": "raglan", "fit": "tailored", "length": "longline",
+            "closure": "button-front", "hemline": "straight",
+            "pattern": "solid", "insulation": "midweight",
+        }
+    if "shoe" in cat:
+        return {
+            "shoe_type": "sneakers", "toe_shape": "round",
+            "heel_height": "flat", "closure": "lace-up",
+            "fit": "regular", "material": "canvas", "pattern": "solid",
+        }
+    return {"fabric_type": "cotton", "fit": "regular"}

@@ -216,3 +216,29 @@ create policy "Service role can upload profile photos"
 create policy "Service role can update profile photos"
   on storage.objects for update to service_role
   using (bucket_id = 'profile-photos');
+
+alter table public.clothing_items
+  add column if not exists descriptors jsonb default '{}';
+
+-- Audit and soft-delete columns for clothing_items
+alter table public.clothing_items
+  add column if not exists updated_at   timestamptz default now(),
+  add column if not exists deleted_at   timestamptz default null,
+  add column if not exists is_active    boolean     default true;
+
+-- Auto-update updated_at on any row change
+create or replace function public.set_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists clothing_items_updated_at on public.clothing_items;
+create trigger clothing_items_updated_at
+  before update on public.clothing_items
+  for each row execute procedure public.set_updated_at();
+
+-- Soft delete: filter inactive items from all queries
+-- Note: update get_user_items() to filter is_active = true

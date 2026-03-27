@@ -34,7 +34,7 @@ def tag_options():
 @router.post("/tag-preview")
 async def tag_preview(
     file: UploadFile = File(..., description="Clothing image to analyse"),
-    _user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
 ):
     """
     Run AI tagging on an uploaded image and return the predicted tags.
@@ -61,10 +61,19 @@ async def tag_preview(
         "Loungewear"
     )
 
+    # Check for duplicate before returning.
+    # Pass the detected colour so items that differ only in colour are NOT flagged.
+    from services.clothing_service import find_duplicate
+    duplicate = find_duplicate(user_id=user_id, image_bytes=image_bytes, new_color=tags.get("color"))
+
+    from ml.llm import describe_clothing
+    descriptors = describe_clothing(image_bytes, tags.get("category", "tops"), file.content_type or "image/jpeg")
+
     return {
         **tags,
+        "descriptors": descriptors,
         "formality_label": formality_label,
-        # needs_review is already in tags — True = AI failed/mock, show full manual form
+        "duplicate": duplicate,
     }
 
 

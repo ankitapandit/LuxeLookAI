@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import Head from "next/head";
 import Navbar from "@/components/layout/Navbar";
 import { FaceShapeTool } from "@/components/FaceShapeTool";
+import { PhotoCropper } from "@/components/PhotoCropper";
 import { getProfile, updateProfile, UserProfile } from "@/services/api";
 import { User, ChevronDown, ChevronUp, Camera, AlertCircle, CheckCircle } from "lucide-react";
 import toast from "react-hot-toast";
@@ -333,6 +334,7 @@ export default function ProfilePage() {
   const [loading,        setLoading]        = useState(true);
   const [saving,         setSaving]         = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [cropFile, setCropFile] = useState<File | null>(null);
   const [photoPreview,   setPhotoPreview]   = useState<string | null>(null);
   const [faceDetected,   setFaceDetected]   = useState<{ shape: string; confidence: string; reason: string } | null>(null);
   const [showFaceTool, setShowFaceTool] = useState(false);
@@ -435,6 +437,10 @@ export default function ProfilePage() {
       return;
     }
 
+    // Show cropper instead of uploading directly
+    setCropFile(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
     // Show preview immediately
     const reader = new FileReader();
     reader.onload = ev => setPhotoPreview(ev.target?.result as string);
@@ -529,6 +535,60 @@ export default function ProfilePage() {
       toast.error("Could not save profile — please try again");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleCropComplete(blob: Blob) {
+    setCropFile(null);
+    setPhotoUploading(true);
+    setFaceDetected(null);
+
+    // Show preview immediately from blob
+    const previewUrl = URL.createObjectURL(blob);
+    setPhotoPreview(previewUrl);
+
+    try {
+      const formData = new FormData();
+      formData.append("photo", blob, "profile.jpg");
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/profile/photo`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${localStorage.getItem("luxelook_token")}` },
+          body: formData,
+        }
+      );
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.detail || "Upload failed");
+      }
+
+      const data = await res.json();
+      setPhotoPreview(data.photo_url);
+      URL.revokeObjectURL(previewUrl);
+      toast.success("Photo uploaded!");
+
+      if (data.face_shape && data.face_confidence !== "low") {
+        setFaceDetected({
+          shape:      data.face_shape,
+          confidence: data.face_confidence,
+          reason:     data.face_reason || "",
+        });
+        if (data.face_confidence === "high") {
+          setFaceShape(data.face_shape);
+          toast.success(`Face shape detected: ${data.face_shape}`, { duration: 4000 });
+        }
+      } else if (data.face_shape === null) {
+        toast("No face detected — mark your face shape manually", { icon: "ℹ️", duration: 4000 });
+        setShowFaceTool(true);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Could not upload photo — please try again");
+      setPhotoPreview(profile?.photo_url || null);
+      URL.revokeObjectURL(previewUrl);
+    } finally {
+      setPhotoUploading(false);
     }
   }
 
@@ -914,6 +974,30 @@ export default function ProfilePage() {
         </button>
 
       </main>
+      {/* Photo crop modal */}
+      {cropFile && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 1000,
+          background: "rgba(0,0,0,0.6)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "24px",
+        }}
+          onClick={(e) => { if (e.target === e.currentTarget) setCropFile(null); }}
+        >
+          <div style={{
+            background: "#FFFFFF",
+            borderRadius: "16px", padding: "24px",
+            width: "100%", maxWidth: "400px",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+          }}>
+            <PhotoCropper
+              file={cropFile}
+              onCrop={handleCropComplete}
+              onCancel={() => setCropFile(null)}
+            />
+          </div>
+        </div>
+      )}
     </>
   );
 }

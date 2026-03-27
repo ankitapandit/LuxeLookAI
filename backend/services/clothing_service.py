@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 TABLE = "clothing_items"
 STORAGE_BUCKET = "clothing-images"
+DUPLICATE_THRESHOLD = 0.95
 
 
 # ── Mock implementation ───────────────────────────────────────────────────────
@@ -57,6 +58,7 @@ def _upload_mock(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
         "formality_score":   tags.get("formality_score"),
         "image_url":         image_url,
         "embedding_vector":  embedding,
+        "descriptors": item.descriptors or {},
     }
     return insert(TABLE, row)
 
@@ -100,6 +102,7 @@ def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
         "formality_score":   tags.get("formality_score"),
         "image_url":         image_url,
         "embedding_vector": vec_str,
+        "descriptors": tags.get("descriptors") or manual_tags.get("descriptors") or {},
     }
     result = db.table(TABLE).insert(row).execute()
     return result.data[0]
@@ -109,7 +112,7 @@ def _get_items_real(user_id: str) -> List[Dict]:
     from utils.db import get_supabase
     import json
     db = get_supabase()
-    items = db.table(TABLE).select("*").eq("user_id", user_id).execute().data
+    items = db.table(TABLE).select("*, embedding_vector").eq("user_id", user_id).execute().data
     # Parse embedding_vector from string back to list if needed
     for item in items:
         if isinstance(item.get("embedding_vector"), str):
@@ -123,8 +126,24 @@ def _get_items_real(user_id: str) -> List[Dict]:
 def _delete_item_real(item_id: str, user_id: str) -> bool:
     from utils.db import get_supabase
     db = get_supabase()
+    # result = db.table(TABLE).delete().eq("id", item_id).eq("user_id", user_id).execute()
+    # return len(result.data) > 0
+    # Fetch image_url before deleting
+    item = db.table(TABLE).select("image_url").eq("id", item_id).eq("user_id", user_id).single().execute()
+    if not item.data:
+        return False
+    # Delete from storage
+    image_url = item.data.get("image_url", "")
+    if image_url:
+        try:
+            # Extract path from URL — everything after /clothing-images/
+            path = image_url.split("/clothing-images/")[-1].split("?")[0]
+            db.storage.from_("clothing-images").remove([path])
+        except Exception as e:
+            print(f"DEBUG storage delete failed: {e}")  # non-blocking
+    # Delete from table
     result = db.table(TABLE).delete().eq("id", item_id).eq("user_id", user_id).execute()
-    return len(result.data) > 0
+    return bool(result.data)
 
 
 # ── Public interface ──────────────────────────────────────────────────────────
@@ -185,7 +204,68 @@ def correct_item_tags(item_id: str, user_id: str, corrections: Dict) -> Optional
             .update(corrections)
             .eq("id", item_id)
             .eq("user_id", user_id)
+            .select()
             .execute()
         )
         return result.data[0] if result.data else None
 
+
+def find_duplicate(user_id: str, image_bytes: bytes, new_color: Optional[str] = None) -> Optional[dict]:
+    """
+    Compare new image embedding against all existing user items.
+    Returns the most similar item if similarity >= DUPLICATE_THRESHOLD, else None.
+
+    new_color: the AI-detected colour of the incoming item.  When supplied,
+    candidates whose stored colour differs are skipped — same cut in a
+    different colour is NOT a duplicate (e.g. blue jeans vs black jeans).
+    """
+    settings = get_settings()
+    if not settings.use_mock_ai:
+        from ml.embeddings import generate_embedding, cosine_similarity
+        from utils.db import get_supabase
+        import json
+
+        new_embedding = generate_embedding("", image_bytes)
+
+        # Query embedding vectors directly via rpc/raw — pgvector excluded from select("*")
+        db = get_supabase()
+        result = db.table("clothing_items").select(
+            "id, category, color, image_url, embedding_vector"
+        ).eq("user_id", user_id).execute()
+
+        existing = result.data
+
+        best_match = None
+        best_score = 0.0
+
+        for item in existing:
+            # Skip items that differ in colour — same style in a different
+            # colour is intentionally a distinct wardrobe piece.
+            if new_color and item.get("color") and item["color"].lower() != new_color.lower():
+                continue
+
+            ev = item.get("embedding_vector")
+            if not ev:
+                continue
+            # Handle both string and list formats
+            if isinstance(ev, str):
+                try:
+                    ev = json.loads(ev)
+                except Exception:
+                    continue
+            if not isinstance(ev, list) or len(ev) == 0:
+                continue
+            score = cosine_similarity(new_embedding, ev)
+            if score > best_score:
+                best_score = score
+                best_match = item
+
+        if best_score >= DUPLICATE_THRESHOLD and best_match:
+            return {
+                "id": best_match["id"],
+                "category": best_match["category"],
+                "color": best_match.get("color", ""),
+                "image_url": best_match.get("image_url", ""),
+                "score": round(best_score, 3),
+            }
+    return None
