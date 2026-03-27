@@ -169,12 +169,12 @@ export function FaceShapeTool({ photoUrl, onResult }: FaceShapeToolProps) {
           setImgReady(true);
           URL.revokeObjectURL(localUrl);
         };
-        img.onerror = (e) => {
+        img.onerror = () => {
           setImgReady(false);
         };
         img.src = localUrl;
       })
-      .catch(e => {
+      .catch(() => {
         setImgReady(false);
       });
   }, [photoUrl]);
@@ -276,28 +276,6 @@ function handleMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
 function handleMouseUp() {
     setDragging(null);
 }
-
-  function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (!canvasRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const scaleX = canvasRef.current.width  / rect.width;
-    const scaleY = canvasRef.current.height / rect.height;
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top)  * scaleY;
-
-    // Check if clicking near an existing point to remove it
-    const hit = points.find(p => Math.sqrt((p.x - x) ** 2 + (p.y - y) ** 2) < 14);
-    if (hit) {
-      setPoints(prev => prev.filter(p => p.id !== hit.id));
-      setResult(null);
-      return;
-    }
-
-    // Place next point
-    if (!nextId) return;
-    setPoints(prev => [...prev, { id: nextId, x, y }]);
-    setResult(null);
-  }
 
   function handleCalculate() {
     const res = calcFaceShape(points);

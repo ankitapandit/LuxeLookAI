@@ -7,14 +7,175 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Version Summary
 
-| Version | Date       | Description                                              	  |
+| Version | Date       | Description                                                  |
 |---------|------------|--------------------------------------------------------------|
-| 1.0.0   | 2026-03-16 | Initial upload — base codebase                           	  |
-| 1.1.0   | 2026-03-16 | Development environment and dependency fixes             	  |
+| 1.0.0   | 2026-03-16 | Initial upload — base codebase                               |
+| 1.1.0   | 2026-03-16 | Development environment and dependency fixes                 |
 | 1.2.0   | 2026-03-24 | Real mode support, UI overhaul, occasion/outfit improvements |
-| 1.3.0   | 2026-03-24 | Supabase migrations file					              	  |
+| 1.3.0   | 2026-03-24 | Supabase migrations file                                     |
 | 1.4.0   | 2026-03-25 | User profile page and personalization foundations            |
-| 1.5.0   | TBD        | Next release                                                 |
+| 1.5.0   | 2026-03-25 | Clothing descriptors, duplicate detection, wardrobe hygiene  |
+| 1.6.0   | 2026-03-27 | Descriptor overhaul, outfit templates, UX fixes              |
+
+---
+
+## [1.6.0] - 2026-03-27
+
+### Added
+- Four outfit templates in recommender — engine now builds candidates across
+  top+bottom+shoes, top+bottom+outerwear+shoes, dress+shoes, and
+  dress+outerwear+shoes; selects the highest-scoring outfit per template first,
+  then fills remaining slots with overflow combos ranked by score; previously
+  outerwear was never included in any generated suggestion
+- Hemline descriptor attribute for tops, dresses and outerwear —
+  straight, curved, asymmetrical, high-low, peplum, ruffle hem
+- Strap Type descriptor for tops and dresses —
+  strapless, spaghetti, wide, adjustable, racerback, cross-back, halter;
+  spaghetti strap moved here from neckline
+- Detailing descriptor for tops, dresses and outerwear —
+  ruffles, pleats, ruched, smocked, tiered, draped, cut-out, slit, bow,
+  knot, lace-up, fringe, embroidery; replaces the generic embellishment field
+- Insulation and weather_resistance descriptor attributes for outerwear only
+- Distressing descriptor for bottoms — clean, distressed, ripped, frayed, washed
+- Leg Opening attribute for bottoms replacing the previous silhouette field —
+  skinny, straight, wide, flare, bootcut, tapered, barrel
+- Accessory closure attribute — zipper, magnetic, snap, drawstring
+- Accessory strap_type attribute — top handle, crossbody, shoulder, chain
+
+### Changed
+- CATEGORY_DESCRIPTORS fully overhauled in both llm.py and wardrobe.tsx aligned
+  to a consolidated fashion taxonomy cross-referenced against WGSN, Zara, SSENSE,
+  Revolve, Fashionpedia and Pinterest style guides:
+  - Fabric lists trimmed to 14 canonical materials consistent across sources;
+    elastane, velvet, jersey, tulle, organza, cashmere removed
+  - Neckline aligned: asymmetrical added; spaghetti strap moved to strap_type;
+    one-shoulder and bardot removed
+  - Shoe descriptor shoe_style renamed to shoe_type
+  - Heel types rationalised to 8 categories: stiletto, block, wedge, kitten,
+    cone, spool, chunky, sculptural
+  - Shoe ankle_height removed (covered by shoe_type values)
+  - Bottom waistband and rise collapsed into waist_structure and waist_position
+  - COMMON_DESCRIPTORS emptied — all attributes now explicitly per-category
+- _mock_describe_clothing() updated to match new descriptor schema for all
+  categories (tops, dresses, outerwear, bottoms, shoes)
+- Events page UX collapsed from two steps into one — "Generate Outfit
+  Suggestions" button now parses the occasion and generates outfits in a single
+  backend flow; the intermediate "Occasion Parsed" card showing occasion type,
+  formality, setting and temperature is no longer displayed to the user
+- Wardrobe item edit tags now opens as a centred modal popup with backdrop
+  instead of stretching inline below the card
+- Wardrobe item delete now shows an inline confirmation overlay on the card
+  before removing; previously deleted immediately on click
+- README Recommendation Engine section updated to document the four outfit
+  templates and updated First Run steps
+
+### Fixed
+- PATCH /clothing/item/{id} returning 404 on valid items — supabase-py v2
+  requires .select() chained after .update() to return the updated row;
+  without it result.data was always [], causing correct_item_tags() to return
+  None and the route to raise 404
+- Stale setStep and setParsedEvent references in events.tsx textarea onChange
+  and example prompt onClick handlers left over from the two-step refactor —
+  replaced with setEventId and setSuggestions resets
+
+---
+
+## [1.5.0] - 2026-03-25
+
+### Added
+- Clothing descriptor system — per-category attributes covering fabric, neckline,
+  sleeve length, sleeve style, fit, length, closure, back style, elasticity,
+  sheer and pattern for tops, dresses and outerwear; waist position, waist
+  structure, fit, leg opening, length, elasticity and pattern for bottoms;
+  shoe type, toe shape, heel height, heel type, closure, fit and material for
+  shoes; type, size, material and style for accessories
+- describe_clothing() in ml/llm.py — GPT-4o Vision analyses an uploaded photo
+  and returns a descriptor dict keyed by the category's attribute set;
+  best-effort, never blocks upload on failure
+- CATEGORY_DESCRIPTORS dict in ml/llm.py defining valid values per attribute per
+  category; mirrored as a TypeScript const in wardrobe.tsx — both layers kept in
+  sync as single sources of truth per tier
+- COMMON_DESCRIPTORS dict (fabric_feel, embellishment) merged into allDescriptors
+  alongside category-specific keys in the review and edit flows
+- tag_clothing_item() now calls describe_clothing() after CLIP tagging in real
+  mode; in mock mode calls _mock_describe_clothing() to populate deterministic
+  fixture data; _fallback_tags() includes empty descriptors dict so the key is
+  always present on the return value
+- descriptors field added to ClothingItemCreate and ClothingItem Pydantic schemas
+  in models/schemas.py
+- descriptors and duplicate fields added to TypeScript TagPreview interface;
+  descriptors added to ClothingItem interface, uploadClothingItem overrides and
+  correctItem corrections in frontend/services/api.ts
+- StyleDetailsSection component in wardrobe.tsx — shows AI-detected descriptor
+  tags as filled chips in the review and edit panels; clicking a chip opens an
+  inline option picker for that group; "+ Add detail" accordion lists all empty
+  groups for the selected category
+- Descriptor tags rendered on wardrobe item cards below season and formality pills
+- Duplicate photo detection in tag_preview — generates CLIP embedding of incoming
+  image, compares via cosine similarity against all existing user items
+  (threshold 0.95); colour-aware: candidates whose stored colour differs from the
+  new item's detected colour are skipped, so the same cut in a different colour
+  (e.g. blue jeans vs black jeans) is not flagged
+- find_duplicate() in clothing_service.py implementing the above; queries
+  embedding_vector column explicitly to work around pgvector exclusion from
+  Supabase select("*"); returns id, category, color, image_url and score of
+  the best match, or None if below threshold
+- DUPLICATE_THRESHOLD = 0.95 constant in clothing_service.py
+- Side-by-side duplicate comparison panel in wardrobe review flow — shows new
+  photo alongside existing matched photo with similarity percentage;
+  "Replace existing" deletes the old item before saving, "Keep both" proceeds
+  with no deletion
+- Storage cleanup on item delete — _delete_item_real() fetches image_url before
+  row deletion, extracts the storage path from the URL, removes the object from
+  the clothing-images bucket; failure is non-blocking (logged, does not abort)
+- descriptors jsonb column on clothing_items table (default '{}') in
+  supabase_migrations.sql
+- updated_at timestamptz column on clothing_items with default now() and
+  auto-update trigger set_updated_at() that fires before every row update
+- deleted_at and is_active columns added to clothing_items for future soft-delete
+  support (hard delete is still used; columns present for migration continuity)
+- PhotoCropper component (frontend/components/PhotoCropper.tsx) — modal canvas
+  cropper with circular crop area, pan by dragging, zoom via scroll wheel or
+  pinch, +/− buttons and a range slider; exports a cropped JPEG blob for upload
+- Profile photo upload now intercepts the file input, opens the PhotoCropper
+  modal for crop and zoom adjustment, then uploads the resulting blob instead
+  of the raw file; handleCropComplete() manages the upload, preview, face shape
+  response handling and error rollback
+
+### Changed
+- tag_preview endpoint now calls find_duplicate() and describe_clothing() and
+  returns descriptors and duplicate in the response alongside existing fields
+- _user_id parameter in tag_preview renamed to user_id — was previously unused
+  but is now required for duplicate detection across the user's wardrobe
+- _get_items_real() changed from select("*") to select("*, embedding_vector") —
+  pgvector columns are excluded from the wildcard select in Supabase, causing
+  embedding_vector to silently return null; explicit column name fixes this for
+  the wardrobe fetch used in recommendations
+- descriptors field persisted in _upload_mock() and _upload_real() row dicts so
+  the column is populated on every new upload path
+- Occasion removed from wardrobe descriptor set — occasion context is determined
+  at event time by the LLM and is not stored as a static clothing attribute
+
+### Fixed
+- pgvector embedding_vector column not returned by Supabase select("*") —
+  fixed by selecting the column explicitly in both _get_items_real() and
+  find_duplicate(); previously embedding_vector was always null in real mode,
+  making embedding similarity scores meaningless in the recommender
+- TOKENIZERS_PARALLELISM fork-safety warning logged on every backend startup —
+  suppressed by setting TOKENIZERS_PARALLELISM=false in backend/.env;
+  config.py updated with model_config extra="ignore" to allow the extra env var
+- TS2802 set is not iterable error in wardrobe.tsx eyedropper canvas pixel read —
+  replaced destructuring of ImageData with explicit index access [0],[1],[2]
+- TS2353 Object literal may only specify known properties — descriptors was not
+  in the uploadClothingItem overrides type; added to both uploadClothingItem and
+  correctItem in api.ts
+
+### Deferred
+- Soft delete query filter — is_active and deleted_at columns are present in the
+  schema but get_user_items() does not yet filter by is_active; deferred until
+  the full soft-delete flow (restore UI, audit log) is implemented
+- Duplicate detection in mock mode — skipped because mock embeddings are random
+  hashes and would produce meaningless similarity scores
 
 ---
 

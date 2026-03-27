@@ -279,33 +279,74 @@ def generate_outfit_suggestions(
     buckets = filter_candidates(user_items, occasion)
     accessories = buckets.pop("accessories", [])
 
-    # ── Build candidate core combinations ────────────────────────────────
-    # Option A: top + bottom + shoes
-    # Option B: dress + shoes
-    candidate_cores: List[List[Dict]] = []
+    tops_list    = buckets.get("tops",      [])
+    bottoms_list = buckets.get("bottoms",   [])
+    shoes_list   = buckets.get("shoes",     [])
+    dresses_list = buckets.get("dresses",   [])
+    outer_list   = buckets.get("outerwear", [])
 
-    for top in buckets.get("tops", []):
-        for bottom in buckets.get("bottoms", []):
-            for shoes in buckets.get("shoes", []):
-                candidate_cores.append([top, bottom, shoes])
+    # ── Build candidate cores grouped by template ─────────────────────────
+    # Template A: top + bottom + shoes
+    # Template B: top + bottom + outerwear + shoes
+    # Template C: dress + shoes
+    # Template D: dress + outerwear + shoes
+    template_combos: Dict[str, List[List[Dict]]] = {
+        "top_bottom_shoes":           [],
+        "top_bottom_outerwear_shoes": [],
+        "dress_shoes":                [],
+        "dress_outerwear_shoes":      [],
+    }
 
-    for dress in buckets.get("dresses", []):
-        for shoes in buckets.get("shoes", []):
-            candidate_cores.append([dress, shoes])
+    for top in tops_list:
+        for bottom in bottoms_list:
+            for shoe in shoes_list:
+                template_combos["top_bottom_shoes"].append([top, bottom, shoe])
 
-    if not candidate_cores:
+    for top in tops_list:
+        for bottom in bottoms_list:
+            for outer in outer_list:
+                for shoe in shoes_list:
+                    template_combos["top_bottom_outerwear_shoes"].append([top, bottom, outer, shoe])
+
+    for dress in dresses_list:
+        for shoe in shoes_list:
+            template_combos["dress_shoes"].append([dress, shoe])
+
+    for dress in dresses_list:
+        for outer in outer_list:
+            for shoe in shoes_list:
+                template_combos["dress_outerwear_shoes"].append([dress, outer, shoe])
+
+    # ── Pick the best outfit per template, then fill to top_n ────────────
+    # Priority: one unique template type per slot; overflow fills remaining
+    best_per_template: List[tuple] = []   # (score, core_items)
+    overflow: List[tuple] = []            # (score, core_items) — runner-ups
+
+    for tname, combos in template_combos.items():
+        if not combos:
+            continue
+        scored = sorted(
+            [(score_outfit(c, occasion), c) for c in combos],
+            key=lambda x: x[0], reverse=True,
+        )
+        best_per_template.append(scored[0])          # best of this template
+        overflow.extend(scored[1:])                  # the rest
+
+    if not best_per_template:
         logger.warning("Not enough items to form a complete outfit.")
         return []
 
-    # ── Score all candidates ──────────────────────────────────────────────
-    scored_cores = [
-        (score_outfit(core, occasion), core)
-        for core in candidate_cores
-    ]
-    scored_cores.sort(key=lambda x: x[0], reverse=True)
+    # Sort the per-template bests by score and take up to top_n
+    best_per_template.sort(key=lambda x: x[0], reverse=True)
+    top_cores = list(best_per_template[:top_n])
 
-    # Take top N distinct core outfits
-    top_cores = scored_cores[:top_n]
+    # If still short of top_n, pad with best overflow combos
+    if len(top_cores) < top_n and overflow:
+        overflow.sort(key=lambda x: x[0], reverse=True)
+        for entry in overflow:
+            if len(top_cores) >= top_n:
+                break
+            top_cores.append(entry)
 
     # ── Assemble final suggestions ────────────────────────────────────────
     suggestions = []

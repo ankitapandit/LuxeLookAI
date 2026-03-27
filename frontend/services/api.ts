@@ -72,6 +72,7 @@ export interface ClothingItem {
   formality_score?: number;
   image_url: string;
   created_at: string;
+  descriptors?: Record<string, string>;
 }
 
 /** AI-predicted tags returned from the preview endpoint, before saving. */
@@ -85,6 +86,8 @@ export interface TagPreview {
   formality_label: string;     // human-readable e.g. "Smart casual"
   needs_review: boolean;       // true = AI failed/mocked → show full manual form
   ai_confidence: Record<string, number>;
+  descriptors?: Record<string, string>;
+  duplicate?: { id: string; category: string; color: string; image_url: string; score: number; } | null;
 }
 
 /**
@@ -118,7 +121,7 @@ export async function tagPreview(file: File): Promise<TagPreview> {
  */
 export async function uploadClothingItem(
   file: File,
-  overrides?: { category?: string; color?: string; pattern?: string; season?: string; formality_label?: string }
+  overrides?: { category?: string; color?: string; pattern?: string; season?: string; formality_label?: string; descriptors?: Record<string, string> }
 ): Promise<ClothingItem> {
   const form = new FormData();
   form.append("file", file);
@@ -143,7 +146,7 @@ export async function getTagOptions(): Promise<TagOptions> {
 /** Correct any tags on an already-saved item. */
 export async function correctItem(
   itemId: string,
-  corrections: { category?: string; color?: string; pattern?: string; season?: string; formality_label?: string }
+  corrections: { category?: string; color?: string; pattern?: string; season?: string; formality_label?: string; descriptors?: Record<string, string>  }
 ): Promise<ClothingItem> {
   const params = new URLSearchParams();
   if (corrections.category)        params.append("category",        corrections.category);

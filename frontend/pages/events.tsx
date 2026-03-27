@@ -9,7 +9,7 @@ import { useState } from "react";
 import Head from "next/head";
 import Navbar from "@/components/layout/Navbar";
 import { createEvent, generateOutfits, getWardrobeItems, rateOutfit, OutfitSuggestion, ClothingItem } from "@/services/api";
-import { CalendarDays, Sparkles, ArrowRight, Info } from "lucide-react";
+import { CalendarDays, Sparkles, Info } from "lucide-react";
 import toast from "react-hot-toast";
 
 // Example prompts to inspire the user
@@ -22,46 +22,53 @@ const EXAMPLES = [
 ];
 
 export default function EventsPage() {
-  // const router       = useRouter();
-  const [text, setText]     = useState("");
-  const [loading, setLoading] = useState(false);
-  const [step, setStep]       = useState<"input" | "parsed">("input");
-  const [parsedEvent, setParsedEvent] = useState<any>(null);
-  const [suggestions,  setSuggestions]  = useState<OutfitSuggestion[]>([]);
-  const [wardrobeMap,  setWardrobeMap]  = useState<Record<string, ClothingItem>>({});
-  const [hover,        setHover]        = useState<Record<string, number>>({});
+  const [text,        setText]        = useState("");
+  const [loading,     setLoading]     = useState(false);
+  const [eventId,     setEventId]     = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
+  const [wardrobeMap, setWardrobeMap] = useState<Record<string, ClothingItem>>({});
+  const [hover,       setHover]       = useState<Record<string, number>>({});
 
-  async function handleCreateEvent() {
+  async function handleGenerate() {
     if (!text.trim()) return;
-    setLoading(true);
-
-    try {
-      // Step 1: Create event (LLM parses the occasion)
-      const event = await createEvent(text);
-      setParsedEvent(event);
-      setStep("parsed");
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Could not parse occasion");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleGenerateOutfits() {
-    if (!parsedEvent) return;
     setLoading(true);
     setSuggestions([]);
     try {
+      // Parse occasion + generate outfits in one seamless flow — no intermediate card shown
+      const event = await createEvent(text);
+      setEventId(event.id);
       const [outfitData, items] = await Promise.all([
-        generateOutfits(parsedEvent.id, 5),
+        generateOutfits(event.id, 5),
         getWardrobeItems(),
       ]);
       const map: Record<string, ClothingItem> = {};
       items.forEach(i => { map[i.id] = i; });
       setWardrobeMap(map);
       setSuggestions(outfitData.suggestions);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Could not generate outfits");
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } } };
+      toast.error(e?.response?.data?.detail || "Could not generate outfit suggestions");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRegenerate() {
+    if (!eventId) return;
+    setLoading(true);
+    setSuggestions([]);
+    try {
+      const [outfitData, items] = await Promise.all([
+        generateOutfits(eventId, 5),
+        getWardrobeItems(),
+      ]);
+      const map: Record<string, ClothingItem> = {};
+      items.forEach(i => { map[i.id] = i; });
+      setWardrobeMap(map);
+      setSuggestions(outfitData.suggestions);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } } };
+      toast.error(e?.response?.data?.detail || "Could not regenerate outfits");
     } finally {
       setLoading(false);
     }
@@ -87,7 +94,7 @@ export default function EventsPage() {
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
             <CalendarDays size={24} color="var(--gold)" />
             <h1 style={{ fontSize: "36px", color: "var(--charcoal)" }}>
-              What's the occasion?
+              What&apos;s the occasion?
             </h1>
           </div>
           <p style={{ color: "var(--muted)", fontSize: "16px", marginBottom: "40px" }}>
@@ -99,7 +106,7 @@ export default function EventsPage() {
           <textarea
             className="input"
             value={text}
-            onChange={(e) => { setText(e.target.value); setStep("input"); setParsedEvent(null); setSuggestions([]); }}
+            onChange={(e) => { setText(e.target.value); setEventId(null); setSuggestions([]); }}
             placeholder="e.g. 'Rooftop cocktail party this Friday evening, smart casual'"
             rows={4}
             style={{ resize: "vertical", lineHeight: 1.6 }}
@@ -114,7 +121,7 @@ export default function EventsPage() {
               {EXAMPLES.map((ex) => (
                 <button
                   key={ex}
-                  onClick={() => { setText(ex); setStep("input"); setParsedEvent(null); }}
+                  onClick={() => { setText(ex); setEventId(null); setSuggestions([]); }}
                   style={{
                     background: "white",
                     border: "1px solid var(--border)",
@@ -134,45 +141,16 @@ export default function EventsPage() {
 
           <button
             className="btn-primary"
-            onClick={handleCreateEvent}
+            onClick={handleGenerate}
             disabled={!text.trim() || loading}
-            style={{ width: "100%" }}
+            style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
           >
-            {loading && step === "input" ? "Parsing with AI…" : "Parse Occasion"}
+            <Sparkles size={16} />
+            {loading ? "Generating outfit suggestions…" : "Generate Outfit Suggestions"}
           </button>
 
-          {/* ── Parsed event card ──────────────────────────────────────── */}
-          {step === "parsed" && parsedEvent && (
-            <div
-              className="card fade-up"
-              style={{ marginTop: "32px", padding: "24px" }}
-            >
-              <p style={{ fontSize: "12px", color: "var(--gold)", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "16px" }}>
-                ✓ Occasion parsed
-              </p>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
-                <InfoRow label="Occasion type" value={parsedEvent.occasion_type} />
-                <InfoRow label="Formality" value={`${Math.round(parsedEvent.formality_level * 100)}%`} />
-                <InfoRow label="Setting" value={parsedEvent.setting || "—"} />
-                <InfoRow label="Temperature" value={parsedEvent.temperature_context || "—"} />
-              </div>
-
-              <button
-                className="btn-gold"
-                onClick={handleGenerateOutfits}
-                disabled={loading}
-                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
-              >
-                <Sparkles size={16} />
-                {loading && suggestions.length === 0 ? "Generating outfits…" : suggestions.length > 0 ? "Regenerate" : "Generate My Outfits"}
-                {!loading && <ArrowRight size={16} />}
-              </button>
-            </div>
-          )}
-
           {/* ── Generating spinner ── */}
-          {loading && step === "parsed" && suggestions.length === 0 && (
+          {loading && (
             <div style={{ textAlign: "center", padding: "40px 0" }}>
               <div style={{
                 width: "40px", height: "40px", margin: "0 auto 16px",
@@ -193,11 +171,20 @@ export default function EventsPage() {
           )}
 
           {/* ── Outfit suggestions ── */}
-          {suggestions.length > 0 && (
+          {suggestions.length > 0 && !loading && (
             <div style={{ marginTop: "40px" }}>
-              <h2 style={{ fontSize: "22px", fontFamily: "Playfair Display, serif", marginBottom: "24px", color: "var(--charcoal)" }}>
-                Your Looks
-              </h2>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>
+                <h2 style={{ fontSize: "22px", fontFamily: "Playfair Display, serif", color: "var(--charcoal)" }}>
+                  Your Looks
+                </h2>
+                <button
+                  className="btn-secondary"
+                  onClick={handleRegenerate}
+                  style={{ fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                >
+                  <Sparkles size={13} /> Regenerate
+                </button>
+              </div>
               <div style={{ display: "flex", gap: "20px", overflowX: "auto", paddingBottom: "12px" }}>
                 {suggestions.map((s, idx) => (
                   <div key={s.id} style={{ minWidth: "340px", maxWidth: "380px", flexShrink: 0 }}>
@@ -249,15 +236,3 @@ export default function EventsPage() {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p style={{ fontSize: "11px", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "4px" }}>
-        {label}
-      </p>
-      <p style={{ fontWeight: 500, color: "var(--charcoal)", textTransform: "capitalize" }}>
-        {value}
-      </p>
-    </div>
-  );
-}
