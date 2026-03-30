@@ -20,7 +20,7 @@ export default function Navbar() {
   return (
     <nav
       style={{
-        background: "white",
+        background: "var(--surface)",
         borderBottom: "1px solid var(--border)",
         padding: "0 24px",
         height: "64px",

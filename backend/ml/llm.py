@@ -74,11 +74,44 @@ def _mock_parse_occasion(raw_text: str) -> Dict[str, Any]:
     else:
         occasion, formality = "casual", 0.35
 
+    # ── Event tokens — semantic tags for occasion-scoped feedback ─────────
+    # Activity tokens (highest discriminative power)
+    _ACTIVITY_MAP = {
+        "dinner": "dinner", "brunch": "brunch", "lunch": "lunch",
+        "breakfast": "breakfast", "interview": "interview", "meeting": "meeting",
+        "conference": "conference", "wedding": "wedding", "gala": "gala",
+        "cocktail": "cocktail", "party": "party", "birthday": "birthday",
+        "celebration": "celebration", "date": "date", "concert": "concert",
+        "ceremony": "ceremony", "reception": "reception", "bbq": "bbq",
+        "picnic": "picnic", "workout": "workout", "gym": "gym", "hike": "hiking",
+        "exhibition": "exhibition", "show": "show",
+    }
+    # Setting tokens (medium discriminative power)
+    _SETTING_MAP = {
+        "beach": "beach", "office": "office", "restaurant": "restaurant",
+        "museum": "museum", "garden": "garden", "rooftop": "rooftop",
+        "bar": "bar", "park": "park", "lounge": "lounge", "gallery": "gallery",
+        "hotel": "hotel", "club": "club", "outdoor": "outdoor", "indoor": "indoor",
+    }
+    # Social / time tokens (lower discriminative power)
+    _SOCIAL_MAP = {
+        "date": "romantic", "romantic": "romantic", "professional": "professional",
+        "friends": "friends", "family": "family", "colleagues": "colleagues",
+        "morning": "morning", "afternoon": "afternoon", "evening": "evening",
+        "night": "night",
+    }
+
+    tokens: List[str] = []
+    for kw, tag in {**_ACTIVITY_MAP, **_SETTING_MAP, **_SOCIAL_MAP}.items():
+        if kw in text and tag not in tokens:
+            tokens.append(tag)
+
     return {
         "occasion_type":       occasion,
         "formality_level":     formality,
         "setting":             setting,
         "temperature_context": temp,
+        "event_tokens":        tokens,
     }
 
 
@@ -107,12 +140,13 @@ def _real_parse_occasion(raw_text: str) -> Dict[str, Any]:
       "occasion_type": "one of: formal, business, smart_casual, casual, party, outdoor, athletic",
       "formality_level": <float 0.0-1.0 where 0=very casual, 0.5=smart casual, 0.8=formal, 1.0=black tie>,
       "setting": "one of: indoor, outdoor, mixed",
-      "temperature_context": "one of: hot, warm, cool, cold"
+      "temperature_context": "one of: hot, warm, cool, cold",
+      "event_tokens": ["3-8 semantic tags drawn from the event description — use activity tokens (dinner/interview/wedding/party/cocktail/brunch/gala/concert/ceremony/bbq/picnic/workout), setting tokens (beach/office/restaurant/museum/garden/rooftop/bar/park/lounge/gallery/hotel/club), social context (romantic/professional/friends/family/colleagues), and time of day (morning/afternoon/evening/night). Activity tokens carry the most weight — always include them when present."]
     }}
 
     Rules:
     - A club, lounge, bar, restaurant, gala, wedding = indoor
-    - Park, beach, festival, garden = outdoor  
+    - Park, beach, festival, garden = outdoor
     - Office, conference = indoor
     - If weather/season hints at cold (night, winter, November-February) → temperature_context = cold or cool
     - A farewell party, birthday, club night = party, formality 0.55-0.7
@@ -175,7 +209,7 @@ def _real_explain_outfit(items: List[Dict], occasion: Dict) -> str:
 def parse_occasion(raw_text: str) -> Dict[str, Any]:
     """
     Convert free-text event description into a structured occasion dict.
-    Returns keys: occasion_type, formality_level, temperature_context, setting.
+    Returns keys: occasion_type, formality_level, temperature_context, setting, event_tokens.
     """
     settings = get_settings()
     if settings.use_mock_ai:

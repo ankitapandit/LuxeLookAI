@@ -557,9 +557,9 @@ function ReviewPanel({
         <div style={{ flex: 1, padding: "20px", minWidth: "300px" }}>
 
           {aiUnavailable && (
-            <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", background: "#FFF8E7", border: "1px solid #F0D080", borderRadius: "8px", padding: "10px 12px", marginBottom: "16px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", background: "rgba(212,169,106,0.10)", border: "1px solid rgba(212,169,106,0.28)", borderRadius: "8px", padding: "10px 12px", marginBottom: "16px" }}>
               <AlertCircle size={15} color="#B8860B" style={{ flexShrink: 0, marginTop: "1px" }} />
-              <p style={{ fontSize: "13px", color: "#7A5C00", lineHeight: 1.4 }}>
+              <p style={{ fontSize: "13px", color: "var(--gold)", lineHeight: 1.4 }}>
                 AI couldn&apos;t analyse this image — defaults pre-filled. Please review before saving.
               </p>
             </div>
@@ -568,10 +568,10 @@ function ReviewPanel({
           {/* Duplicate warning */}
           {duplicate && (
             <div style={{
-              background: "#FFF8E7", border: "1px solid #F0D080",
+              background: "rgba(212,169,106,0.10)", border: "1px solid rgba(212,169,106,0.28)",
               borderRadius: "8px", padding: "14px", marginBottom: "16px",
             }}>
-              <p style={{ fontSize: "13px", fontWeight: 600, color: "#7A5C00", marginBottom: "12px" }}>
+              <p style={{ fontSize: "13px", fontWeight: 600, color: "var(--gold-light)", marginBottom: "12px" }}>
                 This item looks like a duplicate ({Math.round(duplicate.score * 100)}% similar)
               </p>
 
@@ -609,14 +609,14 @@ function ReviewPanel({
               <div style={{ display: "flex", gap: "8px" }}>
                 <button onClick={onReplaceExisting}
                   style={{ flex: 1, fontSize: "12px", fontWeight: 600, padding: "7px 12px",
-                    borderRadius: "6px", border: "none", background: "#D97706",
+                    borderRadius: "6px", border: "none", background: "var(--gold)",
                     color: "white", cursor: "pointer" }}>
                   Replace existing
                 </button>
                 <button onClick={onKeepBoth}
                   style={{ flex: 1, fontSize: "12px", padding: "7px 12px",
                     borderRadius: "6px", border: "1px solid var(--border)",
-                    background: "white", color: "var(--muted)", cursor: "pointer" }}>
+                    background: "var(--surface)", color: "var(--muted)", cursor: "pointer" }}>
                   Keep both
                 </button>
               </div>
@@ -758,7 +758,7 @@ function ImageEyedropper({ previewUrl, onColorPicked, onPatternToggle }: {
         {eyedrop && (
           <div style={{
             position: "absolute", inset: 0,
-            background: "rgba(201,168,76,0.15)",
+            background: "rgba(212,169,106,0.18)",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
             <div style={{ background: "rgba(0,0,0,0.6)", borderRadius: "8px", padding: "6px 10px", color: "white", fontSize: "12px", textAlign: "center" }}>
@@ -778,7 +778,7 @@ function ImageEyedropper({ previewUrl, onColorPicked, onPatternToggle }: {
         title="Pick colour from image"
         style={{
           position: "absolute", bottom: "8px", right: "8px",
-          background: eyedrop ? "var(--gold)" : "rgba(255,255,255,0.9)",
+          background: eyedrop ? "var(--gold)" : "rgba(24,23,20,0.85)",
           border: "none", borderRadius: "6px", padding: "6px",
           cursor: "pointer", display: "flex", alignItems: "center",
           boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
@@ -889,7 +889,7 @@ function PatternPicker({ selected, onSelect }: { selected: string; onSelect: (k:
             display: "flex", alignItems: "center", gap: "12px",
             padding: "8px 10px", borderRadius: "8px", border: "1px solid",
             borderColor: selected === p.key ? "var(--charcoal)" : "var(--border)",
-            background:  selected === p.key ? "#f5f0e8"         : "white",
+            background:  selected === p.key ? "rgba(212,169,106,0.18)" : "var(--surface)",
             cursor: "pointer", textAlign: "left", transition: "all 0.12s ease",
           }}>
             <img src={svgToDataUrl(p.svg)} width={32} height={32} style={{ borderRadius: "4px", flexShrink: 0 }} alt={p.label} />
@@ -946,7 +946,7 @@ function StyleDetailsSection({ allDescriptors, descriptors, onDescriptorChange }
                 cursor: "pointer", textTransform: "capitalize",
                 border: `1px solid ${activeGroup === key ? "var(--charcoal)" : "var(--border)"}`,
                 background: activeGroup === key ? "var(--charcoal)" : "var(--surface)",
-                color: activeGroup === key ? "white" : "var(--ink)",
+                color: activeGroup === key ? "#0A0908" : "var(--muted)",
                 transition: "all 0.12s",
               }}>
               {val}
@@ -961,7 +961,7 @@ function StyleDetailsSection({ allDescriptors, descriptors, onDescriptorChange }
             {activeGroup === key && (
               <div style={{
                 marginTop: "6px", padding: "10px 12px",
-                background: "white", borderRadius: "8px",
+                background: "var(--input-bg)", borderRadius: "8px",
                 border: "1px solid var(--border)",
               }}>
                 <p style={{ fontSize: "11px", color: "var(--muted)",
@@ -979,8 +979,8 @@ function StyleDetailsSection({ allDescriptors, descriptors, onDescriptorChange }
                         padding: "4px 12px", fontSize: "12px", borderRadius: "20px",
                         cursor: "pointer", textTransform: "capitalize",
                         border: `1px solid ${val === opt ? "var(--charcoal)" : "var(--border)"}`,
-                        background: val === opt ? "var(--charcoal)" : "white",
-                        color: val === opt ? "white" : "var(--ink)",
+                        background: val === opt ? "var(--gold)" : "var(--surface)",
+                        color: val === opt ? "#0A0908" : "var(--muted)",
                         transition: "all 0.12s",
                       }}>
                       {opt}
@@ -1016,7 +1016,7 @@ function StyleDetailsSection({ allDescriptors, descriptors, onDescriptorChange }
       {showAddPicker && (
         <div style={{
           marginTop: "10px", padding: "12px",
-          background: "white", borderRadius: "8px",
+          background: "var(--input-bg)", borderRadius: "8px",
           border: "1px solid var(--border)",
           display: "flex", flexDirection: "column", gap: "12px",
         }}>
@@ -1037,7 +1037,7 @@ function StyleDetailsSection({ allDescriptors, descriptors, onDescriptorChange }
                       padding: "4px 12px", fontSize: "12px", borderRadius: "20px",
                       cursor: "pointer", textTransform: "capitalize",
                       border: "1px solid var(--border)",
-                      background: "white", color: "var(--ink)",
+                      background: "var(--surface)", color: "var(--muted)",
                       transition: "all 0.12s",
                     }}>
                     {opt}
@@ -1142,7 +1142,7 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
             )}
             {formalityLabel && (
               <span className="formality-pill" style={{
-                background: (item.formality_score||0) > 0.6 ? "#1C191720" : "#8B9E7E22",
+                background: (item.formality_score||0) > 0.6 ? "rgba(212,169,106,0.12)" : "rgba(122,148,104,0.15)",
                 color:      (item.formality_score||0) > 0.6 ? "var(--charcoal)" : "var(--sage)",
               }}>{formalityLabel}</span>
             )}
@@ -1181,7 +1181,7 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
           <div style={{
             position: "fixed", top: "50%", left: "50%",
             transform: "translate(-50%, -50%)",
-            zIndex: 1001, background: "white", borderRadius: "12px",
+            zIndex: 1001, background: "var(--surface)", borderRadius: "12px",
             width: "min(520px, 92vw)", maxHeight: "88vh",
             display: "flex", flexDirection: "column",
             boxShadow: "0 24px 64px rgba(0,0,0,0.25)",
@@ -1232,8 +1232,8 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
                   <button key={p.key} title={p.label} onClick={() => setEditPattern(editPattern === p.key ? "" : p.key)}
                     style={{ padding: "4px 12px", borderRadius: "20px", fontSize: "12px", cursor: "pointer",
                       border: editPattern === p.key ? "2px solid var(--charcoal)" : "1px solid var(--border)",
-                      background: editPattern === p.key ? "var(--charcoal)" : "white",
-                      color: editPattern === p.key ? "white" : "var(--muted)", textTransform: "capitalize" }}>
+                      background: editPattern === p.key ? "var(--gold)" : "var(--surface)",
+                      color: editPattern === p.key ? "#0A0908" : "var(--muted)", textTransform: "capitalize" }}>
                     {p.label}
                   </button>
                 ))}
@@ -1255,8 +1255,8 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
                             <button key={opt} onClick={() => setEditDescriptors(prev => ({ ...prev, [key]: prev[key] === opt ? "" : opt }))}
                               style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "11px", cursor: "pointer",
                                 border: editDescriptors[key] === opt ? "2px solid var(--charcoal)" : "1px solid var(--border)",
-                                background: editDescriptors[key] === opt ? "var(--charcoal)" : "white",
-                                color: editDescriptors[key] === opt ? "white" : "var(--ink)", textTransform: "capitalize" }}>
+                                background: editDescriptors[key] === opt ? "var(--gold)" : "var(--surface)",
+                                color: editDescriptors[key] === opt ? "#0A0908" : "var(--muted)", textTransform: "capitalize" }}>
                               {opt}
                             </button>
                           ))}
@@ -1269,7 +1269,7 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
             </div>
 
             {/* Footer */}
-            <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: "8px", flexShrink: 0, background: "white" }}>
+            <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: "8px", flexShrink: 0, background: "var(--surface)" }}>
               <button
                 onClick={() => { onCorrect(editCat, editColor, editPattern, editDescriptors); setEditing(false); }}
                 className="btn-primary" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -1289,7 +1289,7 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
 
 function ActionBtn({ onClick, icon }: { onClick: () => void; icon: React.ReactNode }) {
   return (
-    <button onClick={onClick} style={{ background: "rgba(255,255,255,0.92)", border: "none", borderRadius: "6px", padding: "6px", cursor: "pointer", display: "flex", alignItems: "center" }}>
+    <button onClick={onClick} style={{ background: "rgba(24,23,20,0.82)", border: "none", borderRadius: "6px", padding: "6px", cursor: "pointer", display: "flex", alignItems: "center" }}>
       {icon}
     </button>
   );

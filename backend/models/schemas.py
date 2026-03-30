@@ -98,6 +98,7 @@ class Event(BaseModel):
     formality_level: float   # 0.0 → 1.0
     temperature_context: Optional[str] = None
     setting: Optional[str] = None
+    event_tokens: Optional[List[str]] = []  # semantic tags: ["dinner","rooftop","evening",…]
     created_at: datetime
 
     class Config:
@@ -123,7 +124,18 @@ class OutfitSuggestion(BaseModel):
 
 class GenerateOutfitsRequest(BaseModel):
     event_id: UUID
-    top_n: int = 3  # how many outfit suggestions to return
+    top_n: int = 3
+    # IDs of all suggestions shown so far in this session (accumulates across regenerates).
+    # Their combos are soft-downranked so fresh looks always surface first.
+    previously_shown_ids: Optional[List[str]] = []
+    # True only when the user explicitly clicks "None of these work".
+    # Marks unrated shown suggestions as user_rating=0 (negative signal).
+    # False for neutral "Show me more" — no ratings are written.
+    mark_as_bad: bool = False
+
+
+class ResetFeedbackRequest(BaseModel):
+    event_id: str  # used to identify occasion context (type + formality band)
 
 
 class GenerateOutfitsResponse(BaseModel):

@@ -171,6 +171,11 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 5. **Get outfit suggestions** — AI builds complete looks across 4 outfit templates
    (top+bottom+shoes, top+bottom+outerwear+shoes, dress+shoes, dress+outerwear+shoes)
 6. **Rate outfits** — 1–5 stars to improve future suggestions
+7. **Regenerate** — "Show me more" for a neutral refresh; "None of these work" to
+   signal the current batch was wrong; ratings are tracked per combo + occasion context
+   so future events of the same type benefit from accumulated feedback
+8. **Reset** — if you've exhausted all combinations for an event a banner appears;
+   "Reset & start fresh" clears combo ratings for that occasion context and starts fresh
 
 ---
 
@@ -212,6 +217,7 @@ Full interactive docs at [http://localhost:8000/docs](http://localhost:8000/docs
 | GET | `/events/list` | List all user events |
 | POST | `/recommend/generate-outfits` | Generate outfit suggestions |
 | GET | `/recommend/suggestions/{event_id}` | Fetch saved suggestions |
+| POST | `/recommend/reset-feedback` | Clear combo ratings for an occasion context |
 | POST | `/feedback/rate-outfit` | Submit 1–5 star rating |
 | GET | `/profile` | Get user profile |
 | PUT | `/profile` | Update profile fields |
@@ -224,16 +230,52 @@ All routes except `/auth/*` require `Authorization: Bearer <token>` header.
 ## Recommendation Engine
 
 ```
-score = w1 * color_score
-      + w2 * formality_score
-      + w3 * season_score
-      + w4 * embedding_similarity
-      + w5 * user_preference_weight
+score = color(0.18) + formality(0.18) + season(0.12)
+      + embedding(0.28) + preference(0.12) + coherence(0.12)
 ```
 
-Default weights: `color=0.20, formality=0.25, season=0.30, embedding=0.15, preference=0.10`
+All six weights sum to 1.00. Tune in `backend/services/recommender.py` → `WEIGHTS` dict.
 
-Tune in `backend/services/recommender.py` → `WEIGHTS` dict.
+| Component | Weight | Notes |
+|---|---|---|
+| `color` | 0.18 | HSL hue-wheel perceptual distance (complementary, analogous, monochromatic, neutral) |
+| `formality` | 0.18 | Distance from occasion formality target; category floor prevents unrealistic scores |
+| `season` | 0.12 | Overlap between item seasons and occasion season |
+| `embedding` | 0.28 | CLIP cosine similarity across outfit items |
+| `preference` | 0.12 | Body-type silhouette prior (when profile is set) or combo feedback weight |
+| `coherence` | 0.12 | 60 % pattern mixing penalty + 40 % fit consistency |
+
+Previously shown combos are downranked by 30 % (`SEEN_PENALTY = 0.70`) rather than
+excluded — keeps them available as fallbacks when the wardrobe is small.
+
+### Color Scoring
+
+RGB values are converted to HSL; scoring is hue-wheel based:
+
+| Relationship | Hue distance | Score |
+|---|---|---|
+| Monochromatic | < 15 ° | 0.85 |
+| Analogous | < 45 ° | 0.80 |
+| Complementary | ~180 ° | 0.90 |
+| Neutral (any hue) | saturation < 0.15 | 1.0 / 0.95 |
+
+### Style Coherence
+
+| Patterns in outfit | Score |
+|---|---|
+| 0 (all solid) | 1.00 |
+| 1 | 0.85 |
+| 2 | 0.55 |
+| 3+ | 0.25 |
+
+Fit consistency (oversized vs. fitted conflict ratio) is blended at 40 %.
+
+### Body-Type Priors
+
+When a user's body type is saved in their profile, the `preference` component
+uses `BODY_TYPE_PREFERENCES` — a dict mapping `hourglass / rectangle / pear /
+apple / inverted triangle / petite` to preferred descriptor values for `fit`,
+`neckline`, `leg_opening` and `length`. Score = `0.5 + 0.5 × (matches / checks)`.
 
 ### Outfit Templates
 
@@ -249,6 +291,46 @@ highest-scoring outfit from each, then fills remaining slots with overflow:
 
 Accessories (bags, belts, scarves etc.) are attached after core scoring —
 up to 2 per outfit, rule-checked to avoid doubling the same subtype.
+
+### Outfit Feedback Loop
+
+Ratings are tracked at **combo level** (the specific combination of item IDs),
+not at individual item level, preventing good items being penalised for a
+bad pairing. Combos are scoped to an occasion context using `occasion_type +
+formality + event_tokens` similarity — so a "dinner date" rating influences
+future dinner suggestions but not job interview outfits.
+
+The regenerate flow offers two signals:
+
+| Button | Signal | Effect |
+|---|---|---|
+| Show me more | Neutral | Previously seen combos downranked 30 %; no negative stored |
+| None of these work | Explicit negative | Current batch marked `mark_as_bad=True`; combo weights lowered |
+
+When every possible combo has been shown, an exhaustion banner appears with a
+**"Reset & start fresh"** option that clears ratings for the matching occasion
+context via `POST /recommend/reset-feedback`.
+
+---
+
+## Design System
+
+LuxeLook uses an **Editorial Dark** theme — a high-contrast, fashion-editorial
+palette inspired by luxury magazine layouts.
+
+| Token | Value | Usage |
+|---|---|---|
+| `--surface` | `#181714` | Card backgrounds |
+| `--surface-alt` | `#111009` | Auth panel, secondary surfaces |
+| `--input-bg` | `#1C1A14` | Form inputs |
+| `--charcoal` / `--ink` | `#F0EBE2` | Primary text (ivory white) |
+| `--muted` | `#9E9C98` | Secondary text — **7.09:1** contrast on `--cream` ✅ |
+| `--gold` | `#D4A96A` | Primary actions, accents |
+| `--gold-hover` | `#C49658` | Button hover state |
+| `--border` | `#2A2620` | Dividers and outlines |
+
+All text/background pairings pass **WCAG 2.1 AA** (4.5:1 minimum).
+Token definitions live in `frontend/styles/globals.css`.
 
 ---
 

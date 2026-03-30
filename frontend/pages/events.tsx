@@ -8,8 +8,8 @@ import { useState } from "react";
 // import { useRouter } from "next/router";
 import Head from "next/head";
 import Navbar from "@/components/layout/Navbar";
-import { createEvent, generateOutfits, getWardrobeItems, rateOutfit, OutfitSuggestion, ClothingItem } from "@/services/api";
-import { CalendarDays, Sparkles, Info } from "lucide-react";
+import { createEvent, generateOutfits, resetFeedback, getWardrobeItems, rateOutfit, OutfitSuggestion, ClothingItem } from "@/services/api";
+import { CalendarDays, Sparkles, Info, X, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 
 // Example prompts to inspire the user
@@ -22,19 +22,26 @@ const EXAMPLES = [
 ];
 
 export default function EventsPage() {
-  const [text,        setText]        = useState("");
-  const [loading,     setLoading]     = useState(false);
-  const [eventId,     setEventId]     = useState<string | null>(null);
-  const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
-  const [wardrobeMap, setWardrobeMap] = useState<Record<string, ClothingItem>>({});
-  const [hover,       setHover]       = useState<Record<string, number>>({});
+  const [text,           setText]           = useState("");
+  const [loading,        setLoading]        = useState(false);
+  const [eventId,        setEventId]        = useState<string | null>(null);
+  const [suggestions,    setSuggestions]    = useState<OutfitSuggestion[]>([]);
+  const [wardrobeMap,    setWardrobeMap]    = useState<Record<string, ClothingItem>>({});
+  const [hover,          setHover]          = useState<Record<string, number>>({});
+  // Accumulated suggestion IDs shown across all regenerates this session
+  const [allShownIds,    setAllShownIds]    = useState<string[]>([]);
+  // True when every returned outfit was previously seen (wardrobe variety exhausted)
+  const [allSeen,        setAllSeen]        = useState(false);
+  // Controls visibility of the "None of these work" tooltip
+  const [showBadTip,     setShowBadTip]     = useState(false);
 
   async function handleGenerate() {
     if (!text.trim()) return;
     setLoading(true);
     setSuggestions([]);
+    setAllShownIds([]);
+    setAllSeen(false);
     try {
-      // Parse occasion + generate outfits in one seamless flow — no intermediate card shown
       const event = await createEvent(text);
       setEventId(event.id);
       const [outfitData, items] = await Promise.all([
@@ -45,6 +52,9 @@ export default function EventsPage() {
       items.forEach(i => { map[i.id] = i; });
       setWardrobeMap(map);
       setSuggestions(outfitData.suggestions);
+      const newIds = outfitData.suggestions.map(s => s.id);
+      setAllShownIds(newIds);
+      setAllSeen(outfitData.all_seen ?? false);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string } } };
       toast.error(e?.response?.data?.detail || "Could not generate outfit suggestions");
@@ -53,24 +63,42 @@ export default function EventsPage() {
     }
   }
 
-  async function handleRegenerate() {
+  async function _regenerate(markAsBad: boolean) {
     if (!eventId) return;
     setLoading(true);
     setSuggestions([]);
     try {
       const [outfitData, items] = await Promise.all([
-        generateOutfits(eventId, 5),
+        // Accumulate all seen IDs so previously-shown combos stay downranked
+        generateOutfits(eventId, 5, allShownIds, markAsBad),
         getWardrobeItems(),
       ]);
       const map: Record<string, ClothingItem> = {};
       items.forEach(i => { map[i.id] = i; });
       setWardrobeMap(map);
       setSuggestions(outfitData.suggestions);
+      // Accumulate new IDs into the session history
+      setAllShownIds(prev => [...prev, ...outfitData.suggestions.map(s => s.id)]);
+      setAllSeen(outfitData.all_seen ?? false);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string } } };
       toast.error(e?.response?.data?.detail || "Could not regenerate outfits");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleReset() {
+    if (!eventId) return;
+    try {
+      await resetFeedback(eventId);
+      setAllShownIds([]);
+      setAllSeen(false);
+      setSuggestions([]);
+      toast.success("Feedback reset — generating fresh suggestions…");
+      await handleGenerate();
+    } catch {
+      toast.error("Could not reset feedback");
     }
   }
 
@@ -123,7 +151,7 @@ export default function EventsPage() {
                   key={ex}
                   onClick={() => { setText(ex); setEventId(null); setSuggestions([]); }}
                   style={{
-                    background: "white",
+                    background: "var(--surface)",
                     border: "1px solid var(--border)",
                     borderRadius: "20px",
                     padding: "6px 14px",
@@ -173,18 +201,67 @@ export default function EventsPage() {
           {/* ── Outfit suggestions ── */}
           {suggestions.length > 0 && !loading && (
             <div style={{ marginTop: "40px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
                 <h2 style={{ fontSize: "22px", fontFamily: "Playfair Display, serif", color: "var(--charcoal)" }}>
                   Your Looks
                 </h2>
-                <button
-                  className="btn-secondary"
-                  onClick={handleRegenerate}
-                  style={{ fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
-                >
-                  <Sparkles size={13} /> Regenerate
-                </button>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  {/* Neutral regenerate — no ratings written */}
+                  <button
+                    className="btn-secondary"
+                    onClick={() => _regenerate(false)}
+                    style={{ fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  >
+                    <Sparkles size={13} /> Show me more
+                  </button>
+
+                  {/* Explicit negative — writes user_rating=0 on unrated shown suggestions */}
+                  <div style={{ position: "relative" }}>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => _regenerate(true)}
+                      onMouseEnter={() => setShowBadTip(true)}
+                      onMouseLeave={() => setShowBadTip(false)}
+                      onFocus={() => setShowBadTip(true)}
+                      onBlur={() => setShowBadTip(false)}
+                      style={{ fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px", color: "var(--muted)" }}
+                    >
+                      <X size={13} /> None of these work <Info size={11} />
+                    </button>
+                    {showBadTip && (
+                      <div style={{
+                        position: "absolute", right: 0, top: "calc(100% + 6px)",
+                        background: "#1C1A14", color: "var(--charcoal)",
+                        fontSize: "12px", lineHeight: 1.5, padding: "8px 12px",
+                        borderRadius: "6px", width: "220px", zIndex: 10,
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                      }}>
+                        Marks these as poor matches — improves future suggestions for similar occasions
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
+
+              {/* Exhaustion banner — shown when all available combos have been seen */}
+              {allSeen && (
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  background: "var(--surface)", border: "1px solid var(--border)",
+                  borderRadius: "8px", padding: "12px 16px", marginBottom: "20px", gap: "12px",
+                }}>
+                  <p style={{ fontSize: "13px", color: "var(--muted)", margin: 0 }}>
+                    You&apos;ve seen all outfit options for this occasion.
+                  </p>
+                  <button
+                    className="btn-secondary"
+                    onClick={handleReset}
+                    style={{ fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "5px", whiteSpace: "nowrap" }}
+                  >
+                    <RefreshCw size={12} /> Reset &amp; start fresh
+                  </button>
+                </div>
+              )}
               <div style={{ display: "flex", gap: "20px", overflowX: "auto", paddingBottom: "12px" }}>
                 {suggestions.map((s, idx) => (
                   <div key={s.id} style={{ minWidth: "340px", maxWidth: "380px", flexShrink: 0 }}>

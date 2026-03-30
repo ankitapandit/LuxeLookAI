@@ -6,16 +6,28 @@
 
 /* ── Design Tokens ────────────────────────────────────────────────────────── */
 :root {
-  --cream:      #F5F0E8;
-  --charcoal:   #1C1917;
-  --gold:       #C9A84C;
-  --gold-light: #E8D5A3;
-  --blush:      #D4A0A0;
-  --sage:       #8B9E7E;
-  --ink:        #2D2926;
-  --muted:      #8A8580;
-  --surface:    #F9F6F1;
-  --border:     #E5DED4;
+  /* ── Dark surfaces ───────────────────────────────────── */
+  --cream:       #0E0D0B;   /* page background */
+  --surface:     #181714;   /* card / panel */
+  --surface-alt: #111009;   /* auth panel / modals */
+  --input-bg:    #1C1A14;   /* input fields */
+
+  /* ── Typography ─────────────────────────────────────── */
+  --charcoal:    #F0EBE2;   /* primary text */
+  --ink:         #F0EBE2;   /* alias */
+  --muted:       #9E9C98;   /* secondary text — WCAG AA 6.95:1 ✅ */
+
+  /* ── Accent ─────────────────────────────────────────── */
+  --gold:        #D4A96A;   /* warm amber */
+  --gold-light:  #E8C48A;   /* lighter amber */
+  --gold-hover:  #C49658;   /* hover amber */
+
+  /* ── Supporting ─────────────────────────────────────── */
+  --blush:       #C4946A;
+  --sage:        #7A9468;
+
+  /* ── Structure ───────────────────────────────────────── */
+  --border:      #2A2620;
 }
 
 /* ── Base ─────────────────────────────────────────────────────────────────── */
@@ -35,7 +47,7 @@ body {
 
 h1, h2, h3 { font-family: 'Playfair Display', serif; }
 
-/* ── Utility Classes ──────────────────────────────────────────────────────── */
+/* ── Utility ──────────────────────────────────────────────────────────────── */
 .text-gold     { color: var(--gold); }
 .text-muted    { color: var(--muted); }
 .bg-surface    { background: var(--surface); }
@@ -43,21 +55,21 @@ h1, h2, h3 { font-family: 'Playfair Display', serif; }
 
 /* ── Cards ────────────────────────────────────────────────────────────────── */
 .card {
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .card:hover {
-  box-shadow: 0 8px 32px rgba(44, 41, 38, 0.08);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.45);
   transform: translateY(-2px);
 }
 
 /* ── Buttons ──────────────────────────────────────────────────────────────── */
 .btn-primary {
-  background: var(--charcoal);
-  color: var(--cream);
+  background: var(--gold);
+  color: #0A0908;
   padding: 12px 28px;
   border-radius: 6px;
   font-family: 'DM Sans', sans-serif;
@@ -70,9 +82,13 @@ h1, h2, h3 { font-family: 'Playfair Display', serif; }
   border: none;
 }
 
-.btn-primary:hover   { background: var(--ink); transform: translateY(-1px); }
+.btn-primary:hover   { background: var(--gold-hover); transform: translateY(-1px); }
 .btn-primary:active  { transform: translateY(0); }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.btn-primary:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+.btn-primary:focus-visible {
+  outline: 2px solid var(--charcoal);
+  outline-offset: 3px;
+}
 
 .btn-secondary {
   background: transparent;
@@ -84,16 +100,20 @@ h1, h2, h3 { font-family: 'Playfair Display', serif; }
   letter-spacing: 0.04em;
   text-transform: uppercase;
   font-size: 13px;
-  border: 1px solid var(--charcoal);
+  border: 1px solid var(--border);
   transition: all 0.2s ease;
   cursor: pointer;
 }
 
-.btn-secondary:hover { background: var(--charcoal); color: var(--cream); }
+.btn-secondary:hover { background: var(--surface); border-color: var(--muted); }
+.btn-secondary:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
 
 .btn-gold {
   background: var(--gold);
-  color: white;
+  color: #0A0908;
   padding: 12px 28px;
   border-radius: 6px;
   font-family: 'DM Sans', sans-serif;
@@ -106,14 +126,14 @@ h1, h2, h3 { font-family: 'Playfair Display', serif; }
   cursor: pointer;
 }
 
-.btn-gold:hover   { background: #b8973e; transform: translateY(-1px); }
-.btn-gold:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-gold:hover    { background: var(--gold-hover); transform: translateY(-1px); }
+.btn-gold:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ── Form inputs ──────────────────────────────────────────────────────────── */
 .input {
   width: 100%;
   padding: 12px 16px;
-  background: white;
+  background: var(--input-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   font-family: 'DM Sans', sans-serif;
@@ -125,7 +145,7 @@ h1, h2, h3 { font-family: 'Playfair Display', serif; }
 
 .input:focus {
   border-color: var(--gold);
-  box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.12);
+  box-shadow: 0 0 0 3px rgba(212, 169, 106, 0.18);
 }
 
 .input::placeholder { color: var(--muted); }
@@ -135,7 +155,8 @@ h1, h2, h3 { font-family: 'Playfair Display', serif; }
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: var(--charcoal);
+  background: var(--surface);
+  border: 1px solid var(--border);
   color: var(--gold-light);
   padding: 4px 10px;
   border-radius: 20px;
@@ -155,9 +176,9 @@ h1, h2, h3 { font-family: 'Playfair Display', serif; }
   text-transform: uppercase;
 }
 
-.formality-formal   { background: #1C191720; color: var(--charcoal); }
-.formality-casual   { background: #8B9E7E22; color: var(--sage); }
-.formality-business { background: #C9A84C20; color: var(--gold); }
+.formality-formal   { background: rgba(212,169,106,0.12); color: var(--gold); }
+.formality-casual   { background: rgba(122,148,104,0.15); color: var(--sage); }
+.formality-business { background: rgba(212,169,106,0.18); color: var(--gold-light); }
 
 /* ── Drag-drop zone ───────────────────────────────────────────────────────── */
 .dropzone {
@@ -171,7 +192,7 @@ h1, h2, h3 { font-family: 'Playfair Display', serif; }
 
 .dropzone:hover, .dropzone.active {
   border-color: var(--gold);
-  background: rgba(201, 168, 76, 0.04);
+  background: rgba(212, 169, 106, 0.05);
 }
 
 /* ── Page fade-in ─────────────────────────────────────────────────────────── */
@@ -181,6 +202,10 @@ h1, h2, h3 { font-family: 'Playfair Display', serif; }
 }
 
 .fade-up { animation: fadeUp 0.4s ease forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-up { animation: none; }
+}
 
 /* ── Star rating ──────────────────────────────────────────────────────────── */
 .star { cursor: pointer; transition: transform 0.1s ease; font-size: 20px; }

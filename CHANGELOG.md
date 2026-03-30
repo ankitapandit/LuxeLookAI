@@ -16,6 +16,132 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | 1.4.0   | 2026-03-25 | User profile page and personalization foundations            |
 | 1.5.0   | 2026-03-25 | Clothing descriptors, duplicate detection, wardrobe hygiene  |
 | 1.6.0   | 2026-03-27 | Descriptor overhaul, outfit templates, UX fixes              |
+| 1.7.0   | 2026-03-30 | Scorer intelligence, outfit feedback loop, Editorial Dark theme |
+
+---
+
+## [1.7.0] - 2026-03-30
+
+### Added
+
+#### Scorer Intelligence (Phase 1)
+- `coherence` scoring component added to the hybrid recommender — 12 % weight,
+  combines pattern mixing penalty (0 patterns=1.0, 1=0.85, 2=0.55, 3+=0.25)
+  with fit consistency ratio (oversized vs fitted conflict penalty);
+  contributes 60 % pattern + 40 % fit to the final coherence score
+- HSL-based perceptual color scoring replaces name-lookup distance matching —
+  `_rgb_to_hsl()` converts stored RGB to HSL; hue-wheel scoring: complementary
+  (~180 °) = 0.90, analogous (< 45 °) = 0.80, monochromatic (< 15 °) = 0.85;
+  neutral detection (saturation < 0.15) shortcuts to 1.0 / 0.95; `COLOR_RGB`
+  dict extended to 30 canonical color → RGB mappings
+- Body-type silhouette priors via `BODY_TYPE_PREFERENCES` dict covering
+  hourglass, rectangle, pear, apple, inverted triangle and petite body types;
+  `score_body_type_fit()` checks descriptor attributes (`fit`, `neckline`,
+  `leg_opening`, `length`) against preferred values and returns
+  `0.5 + 0.5 * (match_count / check_count)`; plugged into `score_outfit()` as
+  the `preference` component when `user_body_type` is present in the request
+- Recommender weights rebalanced to sum exactly 1.00:
+  `color=0.18, formality=0.18, season=0.12, embedding=0.28, preference=0.12, coherence=0.12`
+  (embedding raised 0.15→0.28, season reduced 0.30→0.12, coherence new)
+- `SEEN_PENALTY = 0.70` constant — previously shown combos are downranked by
+  30 % rather than excluded, preserving them as fallbacks when the wardrobe is
+  small; applied in `generate_outfit_suggestions()` against `seen_combo_keys`
+
+#### Outfit Rating & Feedback Loop
+- Combo-level reputation replaces individual item reputation — feedback is keyed
+  by `"|".join(sorted(item_ids))` (the combo key) scoped to an occasion context,
+  preventing good items from being penalised for bad pairings
+- `event_tokens` occasion context — LLM extracts semantic tags at parse time
+  (e.g. dinner, interview, rooftop, evening); stored as `jsonb` on the `events`
+  table; used to scope feedback across similar occasions without a new table
+- `_occasion_similarity()` helper in recommendations.py — hard-filters on
+  `occasion_type` mismatch or formality gap > 0.25; soft-scores via weighted
+  Jaccard on `event_tokens` (activity tokens weight 3.0, setting 2.0, other 1.0)
+  plus formality proximity and temperature match
+- `_load_combo_feedback_weights()` — joins `outfit_suggestions` with `events`,
+  gates rows by occasion similarity, returns `{combo_key: avg_weighted_score}`
+  for the current session
+- `RATING_TO_WEIGHT` dict: `{0: 0.10, 1: 0.20, 2: 0.40, 3: 0.60, 4: 0.80, 5: 1.00}`
+- Session-level seen-ID accumulation — `allShownIds` state in events.tsx grows
+  across every regenerate call in the same session; passed to the backend as
+  `seen_combo_keys` so previously viewed outfits are consistently downranked
+- `all_seen` flag returned from `generate_outfit_suggestions()` as
+  `Tuple[List[Dict], bool]` — `True` when every returned outfit was previously
+  shown; surfaced via `OutfitsResponse.all_seen` in the API response
+- Two-button regenerate UX replacing a single "Regenerate" button:
+  - **"Show me more"** — neutral regenerate, no negative signal recorded
+  - **"None of these work ⓘ"** — explicit negative, marks current batch with
+    `mark_as_bad: True`; tooltip on hover/focus explaining the scoring effect
+- Exhaustion detection banner — shown when `all_seen=true`; displays message
+  and a **"Reset & start fresh"** action button
+- `POST /recommend/reset-feedback` endpoint — accepts `event_id`, finds all
+  events with matching `occasion_type` + formality band, sets `user_rating=NULL`
+  on their outfit suggestions; `handleReset()` in events.tsx calls this then
+  clears `allShownIds` and re-generates
+- `_mark_skipped_suggestions()` only fires when `mark_as_bad=True`, not on
+  every regenerate — avoids false negatives on neutral browsing
+- `ResetFeedbackRequest` Pydantic schema with `event_id: str`
+- `GenerateOutfitsRequest` extended with `mark_as_bad: bool = False`
+- `resetFeedback(eventId)` API function in frontend/services/api.ts
+- `_ACTIVITY_TOKENS`, `_SETTING_TOKENS` sets in recommendations.py for
+  weighted Jaccard token classification
+- `_mock_parse_occasion()` extended with `_ACTIVITY_MAP`, `_SETTING_MAP`,
+  `_SOCIAL_MAP` keyword extraction — returns `event_tokens: List[str]`
+- `_real_parse_occasion()` prompt updated to request `event_tokens` JSON field
+- `event_tokens` persisted in `_create_event_mock()` and `_create_event_real()`
+- `Event` schema and TypeScript interface updated with `event_tokens` field
+- `event_tokens jsonb default '[]'` column added to `events` table in
+  `supabase_migrations.sql`
+
+#### Editorial Dark Theme
+- Full design-system overhaul from cream/charcoal light theme to an
+  Editorial Dark palette — inspired by high-fashion editorial photography
+- New CSS token set in globals.css:
+  `--cream: #0E0D0B` (page bg), `--surface: #181714` (card bg),
+  `--surface-alt: #111009` (auth panel), `--input-bg: #1C1A14`,
+  `--charcoal: #F0EBE2` (primary text), `--ink: #F0EBE2`,
+  `--muted: #9E9C98` (secondary text, WCAG AA verified),
+  `--gold: #D4A96A`, `--gold-light: #E8C48A`, `--gold-hover: #C49658`,
+  `--border: #2A2620`
+- WCAG 2.1 AA contrast audit performed before rollout — `#6B6760` muted
+  text candidate failed at 3.45:1 on all dark backgrounds; fixed to
+  `#9E9C98` achieving 7.09:1 on `#0E0D0B` and 6.95:1 on `#181714`
+- Theme applied across 7 files: globals.css, Navbar.tsx, index.tsx,
+  _app.tsx, wardrobe.tsx, profile.tsx, events.tsx
+- `.btn-primary` updated: amber gold fill (`var(--gold)`) + dark text `#0A0908`
+- `.input` updated: dark input background with amber focus ring
+- `.card` updated: `var(--surface)` background and dark shadow
+- `prefers-reduced-motion` media query added to globals.css
+- Warning boxes use amber rgba tints; pattern/descriptor pills use
+  gold/surface palette; modal backgrounds use `var(--surface)`
+- `theme-preview.html` interactive switcher (6 themes, full landing page
+  render, JS `setTheme()`) retained as design reference
+
+#### Landing Page Copy
+- Hero section copy rewritten from technical feature-spec language to
+  desire-first, outcome-led customer messaging — opens with the pain point
+  ("stop staring at a full wardrobe feeling like you have nothing to wear"),
+  bullet points describe the experience not the tech stack
+- Feature bullets replaced with `✦` gold diamond markers matching the
+  editorial dark aesthetic; technical acronyms (CLIP, LLM, embeddings)
+  removed from all customer-facing copy
+
+### Changed
+- `generate_outfit_suggestions()` return type changed from `List[Dict]` to
+  `Tuple[List[Dict], bool]` — callers must unpack `suggestions, all_seen`
+- `score_outfit()` accepts new `user_body_type: Optional[str]` parameter;
+  `preference` component uses body-type prior when body type is known,
+  falls back to combo feedback weight otherwise
+- `POST /recommend/generate-outfits` step 2 is now conditional on
+  `mark_as_bad` — neutral "Show me more" no longer writes negative ratings
+- `_load_seen_combos()` now returns a set of combo keys across the full
+  user × occasion scope, not just the last event
+
+### Schema Changes (Supabase)
+- `events` table: `event_tokens jsonb default '[]'` column added
+- No new tables introduced — star schema maintained with
+  `outfit_suggestions` as fact table; feedback scoping handled in
+  application code via occasion similarity
 
 ---
 

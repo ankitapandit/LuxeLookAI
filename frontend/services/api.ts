@@ -179,6 +179,7 @@ export interface Event {
   formality_level: number;
   temperature_context?: string;
   setting?: string;
+  event_tokens?: string[];
   created_at: string;
 }
 
@@ -211,18 +212,40 @@ export interface OutfitSuggestion {
 export interface OutfitsResponse {
   event: Event;
   suggestions: OutfitSuggestion[];
+  /** True when every returned outfit was already shown — wardrobe variety exhausted. */
+  all_seen?: boolean;
 }
 
-/** Generate outfit suggestions for an event. */
+/**
+ * Generate outfit suggestions for an event.
+ *
+ * @param previouslyShownIds  All suggestion IDs shown so far in this session
+ *                            (accumulated across regenerates). Their combos are
+ *                            soft-downranked so fresh looks surface first.
+ * @param markAsBad           True only when user clicks "None of these work" —
+ *                            writes user_rating=0 on unrated shown suggestions.
+ *                            False for neutral "Show me more" (no ratings written).
+ */
 export async function generateOutfits(
   eventId: string,
-  topN: number = 3
+  topN: number = 3,
+  previouslyShownIds?: string[],
+  markAsBad: boolean = false,
 ): Promise<OutfitsResponse> {
   const { data } = await api.post<OutfitsResponse>("/recommend/generate-outfits", {
     event_id: eventId,
     top_n: topN,
+    mark_as_bad: markAsBad,
+    ...(previouslyShownIds && previouslyShownIds.length > 0
+      ? { previously_shown_ids: previouslyShownIds }
+      : {}),
   });
   return data;
+}
+
+/** Reset all outfit feedback for occasions similar to the given event. */
+export async function resetFeedback(eventId: string): Promise<void> {
+  await api.post("/recommend/reset-feedback", { event_id: eventId });
 }
 
 /** Fetch previously generated suggestions for an event. */

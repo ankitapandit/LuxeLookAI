@@ -17,12 +17,12 @@ export default function App({ Component, pageProps }: AppProps) {
         toastOptions={{
           style: {
             fontFamily: "DM Sans, sans-serif",
-            background: "#1C1917",
-            color: "#F5F0E8",
+            background: "var(--surface)",
+            color: "var(--ink)",
             borderRadius: "8px",
             fontSize: "14px",
           },
-          success: { iconTheme: { primary: "#C9A84C", secondary: "#1C1917" } },
+          success: { iconTheme: { primary: "#D4A96A", secondary: "var(--surface)" } },
         }}
       />
     </>
