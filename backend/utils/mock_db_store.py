@@ -70,7 +70,7 @@ def update(table: str, row_id: str, updates: dict, extra_filters: Optional[Dict[
 
 
 def delete(table: str, row_id: str, extra_filters: Optional[Dict[str, Any]] = None) -> bool:
-    """Delete a row by id. Returns True if deleted."""
+    """Hard-delete a row by id. Returns True if deleted."""
     row = _table(table).get(row_id)
     if not row:
         return False
@@ -80,6 +80,26 @@ def delete(table: str, row_id: str, extra_filters: Optional[Dict[str, Any]] = No
                 return False
     del _table(table)[row_id]
     logger.debug(f"[MockDB] DELETE from {table} id={row_id}")
+    return True
+
+
+def soft_delete(table: str, row_id: str, extra_filters: Optional[Dict[str, Any]] = None) -> bool:
+    """
+    Soft-delete a row by setting is_active=False and recording deleted_at.
+    The row stays in memory and can be restored via update().
+    Returns True if found and marked inactive.
+    """
+    from datetime import datetime, timezone
+    row = _table(table).get(row_id)
+    if not row:
+        return False
+    if extra_filters:
+        for key, val in extra_filters.items():
+            if row.get(key) != val:
+                return False
+    row["is_active"]  = False
+    row["deleted_at"] = datetime.now(timezone.utc).isoformat()
+    logger.debug(f"[MockDB] SOFT-DELETE from {table} id={row_id}")
     return True
 
 

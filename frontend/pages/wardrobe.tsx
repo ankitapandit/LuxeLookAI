@@ -20,10 +20,10 @@ import Head from "next/head";
 import Navbar from "@/components/layout/Navbar";
 import {
   tagPreview, uploadClothingItem, getTagOptions, correctItem,
-  deleteClothingItem, getWardrobeItems,
+  deleteClothingItem, getWardrobeItems, getDeletedItems, restoreClothingItem,
   TagPreview, TagOptions, ClothingItem,
 } from "@/services/api";
-import { AlertCircle, Upload, Trash2, ShirtIcon, Loader, CheckCircle, Pencil, X, Pipette } from "lucide-react";
+import { AlertCircle, Upload, Trash2, ShirtIcon, Loader, CheckCircle, Pencil, X, Pipette, RotateCcw } from "lucide-react";
 import toast from "react-hot-toast";
 
 // Maps any color value → a human-readable name.
@@ -279,7 +279,9 @@ function svgToDataUrl(svg: string) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function WardrobePage() {
-  const [items,      setItems]      = useState<ClothingItem[]>([]);
+  const [items,        setItems]        = useState<ClothingItem[]>([]);
+  const [deletedItems, setDeletedItems] = useState<ClothingItem[]>([]);
+  const [showTrash,    setShowTrash]    = useState(false);
   const [loading,    setLoading]    = useState(true);
   const [tagOptions, setTagOptions] = useState<TagOptions>({ categories: [], colors: [], seasons: [], formality_levels: [] });
 
@@ -297,8 +299,8 @@ export default function WardrobePage() {
   const [duplicate, setDuplicate] = useState<TagPreview["duplicate"]>(null);
 
   useEffect(() => {
-    Promise.all([getWardrobeItems(), getTagOptions()])
-      .then(([w, opts]) => { setItems(w); setTagOptions(opts); })
+    Promise.all([getWardrobeItems(), getTagOptions(), getDeletedItems()])
+      .then(([w, opts, deleted]) => { setItems(w); setTagOptions(opts); setDeletedItems(deleted); })
       .catch(() => toast.error("Failed to load wardrobe"))
       .finally(() => setLoading(false));
   }, []);
@@ -376,9 +378,40 @@ export default function WardrobePage() {
   async function handleDelete(itemId: string) {
     try {
       await deleteClothingItem(itemId);
+      const removed = items.find(i => i.id === itemId);
       setItems(prev => prev.filter(i => i.id !== itemId));
-      toast.success("Item removed");
+      if (removed) setDeletedItems(prev => [{ ...removed, is_active: false }, ...prev]);
+      toast.success("Moved to trash — restore any time");
     } catch { toast.error("Could not remove item"); }
+  }
+
+  async function handleRestore(itemId: string) {
+    try {
+      const status = await restoreClothingItem(itemId);
+      const trashItem = deletedItems.find(i => i.id === itemId);
+      // Remove from trash view in all success cases
+      setDeletedItems(prev => prev.filter(i => i.id !== itemId));
+      if (status === "restored" && trashItem) {
+        setItems(prev => [{ ...trashItem, is_active: true }, ...prev]);
+        toast.success("Item restored to wardrobe");
+      } else if (status === "auto_purged") {
+        // Item was superseded by a newer active version — already in wardrobe
+        toast("A newer version of this item is already in your wardrobe — old copy removed", {
+          icon: "ℹ️",
+          duration: 4000,
+        });
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { status?: number; data?: { detail?: string } } };
+      if (e?.response?.status === 409) {
+        toast.error(
+          "A similar item is already in your wardrobe. Remove it first if you want to restore this one.",
+          { duration: 5000 }
+        );
+      } else {
+        toast.error("Could not restore item");
+      }
+    }
   }
 
   const categories = ["all", ...Array.from(new Set(items.map(i => i.category)))];
@@ -390,11 +423,29 @@ export default function WardrobePage() {
       <Navbar />
       <main style={{ maxWidth: "1200px", margin: "0 auto", padding: "48px 24px" }}>
 
-        <div style={{ marginBottom: "36px" }}>
-          <h1 style={{ fontSize: "36px", marginBottom: "8px" }}>My Wardrobe</h1>
-          <p style={{ color: "var(--muted)", fontSize: "15px" }}>
-            {items.length} item{items.length !== 1 ? "s" : ""} · AI detects category &amp; color · you confirm before saving
-          </p>
+        <div style={{ marginBottom: "36px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "16px" }}>
+          <div>
+            <h1 style={{ fontSize: "36px", marginBottom: "8px" }}>My Wardrobe</h1>
+            <p style={{ color: "var(--muted)", fontSize: "15px" }}>
+              {items.length} item{items.length !== 1 ? "s" : ""} · AI detects category &amp; color · you confirm before saving
+            </p>
+          </div>
+          {deletedItems.length > 0 && (
+            <button
+              onClick={() => setShowTrash(t => !t)}
+              style={{
+                display: "flex", alignItems: "center", gap: "7px",
+                padding: "8px 16px", borderRadius: "8px", border: "1px solid var(--border)",
+                background: showTrash ? "rgba(212,169,106,0.12)" : "transparent",
+                color: showTrash ? "var(--gold)" : "var(--muted)",
+                fontSize: "13px", fontWeight: 500, cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <Trash2 size={14} />
+              Trash ({deletedItems.length})
+            </button>
+          )}
         </div>
 
         {step === "idle" && (
@@ -459,36 +510,77 @@ export default function WardrobePage() {
           </div>
         )}
 
-        {items.length > 0 && (
-          <div style={{ display: "flex", gap: "8px", marginBottom: "24px", flexWrap: "wrap" }}>
-            {categories.map(cat => (
-              <button key={cat} onClick={() => setFilter(cat)} style={{
-                padding: "6px 16px", borderRadius: "20px", border: "1px solid",
-                borderColor: filter === cat ? "var(--charcoal)" : "var(--border)",
-                background:  filter === cat ? "var(--charcoal)" : "transparent",
-                color:       filter === cat ? "var(--cream)"    : "var(--muted)",
-                fontSize: "13px", fontWeight: 500, cursor: "pointer",
-                textTransform: "capitalize", transition: "all 0.15s ease",
-              }}>{cat}</button>
-            ))}
+        {showTrash ? (
+          /* ── Trash view ───────────────────────────────────────────────── */
+          <div>
+            <p style={{ color: "var(--muted)", fontSize: "14px", marginBottom: "20px" }}>
+              Items moved to trash are hidden from outfit suggestions. Restore them to bring them back.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "16px" }}>
+              {deletedItems.map(item => (
+                <div key={item.id} className="card" style={{ padding: "0", overflow: "hidden", opacity: 0.75 }}>
+                  {item.image_url && (
+                    <img src={item.image_url} alt={item.category}
+                      style={{ width: "100%", aspectRatio: "3/4", objectFit: "cover" }} />
+                  )}
+                  <div style={{ padding: "12px" }}>
+                    <p style={{ fontSize: "13px", fontWeight: 600, textTransform: "capitalize", marginBottom: "2px" }}>
+                      {item.category}
+                    </p>
+                    <p style={{ fontSize: "12px", color: "var(--muted)", textTransform: "capitalize", marginBottom: "12px" }}>
+                      {item.color || "—"}
+                    </p>
+                    <button
+                      onClick={() => handleRestore(item.id)}
+                      style={{
+                        width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+                        gap: "6px", padding: "7px 0", borderRadius: "6px",
+                        border: "1px solid var(--gold)", background: "transparent",
+                        color: "var(--gold)", fontSize: "13px", fontWeight: 500, cursor: "pointer",
+                      }}
+                    >
+                      <RotateCcw size={13} /> Restore
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        )}
-
-        {loading ? (
-          <div style={{ textAlign: "center", padding: "60px" }}>
-            <Loader size={32} color="var(--gold)" style={{ animation: "spin 1s linear infinite" }} />
-          </div>
-        ) : visible.length === 0 && step === "idle" ? (
-          <EmptyState />
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "20px" }}>
-            {visible.map(item => (
-              <ItemCard key={item.id} item={item} tagOptions={tagOptions}
-                onDelete={() => handleDelete(item.id)}
-                onCorrect={(cat, color, pattern, descriptors) => handleCorrect(item.id, cat, color, pattern, descriptors)}
-              />
-            ))}
-          </div>
+          /* ── Active wardrobe view ─────────────────────────────────────── */
+          <>
+            {items.length > 0 && (
+              <div style={{ display: "flex", gap: "8px", marginBottom: "24px", flexWrap: "wrap" }}>
+                {categories.map(cat => (
+                  <button key={cat} onClick={() => setFilter(cat)} style={{
+                    padding: "6px 16px", borderRadius: "20px", border: "1px solid",
+                    borderColor: filter === cat ? "var(--charcoal)" : "var(--border)",
+                    background:  filter === cat ? "var(--charcoal)" : "transparent",
+                    color:       filter === cat ? "var(--cream)"    : "var(--muted)",
+                    fontSize: "13px", fontWeight: 500, cursor: "pointer",
+                    textTransform: "capitalize", transition: "all 0.15s ease",
+                  }}>{cat}</button>
+                ))}
+              </div>
+            )}
+
+            {loading ? (
+              <div style={{ textAlign: "center", padding: "60px" }}>
+                <Loader size={32} color="var(--gold)" style={{ animation: "spin 1s linear infinite" }} />
+              </div>
+            ) : visible.length === 0 && step === "idle" ? (
+              <EmptyState />
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "20px" }}>
+                {visible.map(item => (
+                  <ItemCard key={item.id} item={item} tagOptions={tagOptions}
+                    onDelete={() => handleDelete(item.id)}
+                    onCorrect={(cat, color, pattern, descriptors) => handleCorrect(item.id, cat, color, pattern, descriptors)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </main>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>

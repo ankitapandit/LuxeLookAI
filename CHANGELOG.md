@@ -17,6 +17,136 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | 1.5.0   | 2026-03-25 | Clothing descriptors, duplicate detection, wardrobe hygiene  |
 | 1.6.0   | 2026-03-27 | Descriptor overhaul, outfit templates, UX fixes              |
 | 1.7.0   | 2026-03-30 | Scorer intelligence, outfit feedback loop, Editorial Dark theme |
+| 1.8.0   | 2026-03-30 | Soft delete & restore, smarter outfit explanations, wardrobe coverage nudge |
+| 1.8.1   | 2026-03-30 | Restore duplicate guard, auto-purge on supersede, 90-day seasonal purge     |
+
+---
+
+## [1.8.0] - 2026-03-30
+
+### Added
+
+#### Wardrobe Soft Delete & Restore
+- `DELETE /clothing/item/{id}` now soft-deletes items (sets `is_active=False`,
+  records `deleted_at`) instead of permanently removing the record from the database;
+  the storage image is preserved so items can be fully restored
+- `GET /clothing/items/deleted` — returns all soft-deleted items for the authenticated
+  user, ordered by most recently deleted; used to populate the Trash view
+- `POST /clothing/item/{id}/restore` — sets `is_active=True`, clears `deleted_at`;
+  returns `{"restored": true, "item_id": "..."}` on success
+- `soft_delete()` helper added to `utils/mock_db_store.py` — sets `is_active=False`
+  and `deleted_at` in the in-memory store, mirroring the Supabase behaviour in mock mode
+- `get_deleted_items()` and `restore_item()` added to `clothing_service.py` with both
+  mock and real implementations; `get_user_items()` now filters `is_active=True` in
+  both modes (previously returned all rows regardless of soft-delete state)
+- Wardrobe **Trash toggle** button in `wardrobe.tsx` header — visible only when at
+  least one item has been soft-deleted; shows count badge; amber highlight when active
+- Trash grid view in `wardrobe.tsx` — faded item cards with a gold **Restore** button
+  per item; restoring immediately moves the item back into the active wardrobe and
+  updates both state slices without a full page reload
+- `handleDelete()` now shows `"Moved to trash — restore any time"` toast and
+  optimistically moves the item into `deletedItems` state
+- `handleRestore()` handler — calls `restoreClothingItem()`, removes item from
+  `deletedItems` state and prepends to `items` state
+- `getDeletedItems()` and `restoreClothingItem()` added to `frontend/services/api.ts`
+- `RotateCcw` icon from lucide-react used for the Restore button
+
+#### Smarter Outfit Explanations
+- `explain_outfit()` public interface extended with two optional params:
+  - `user_body_type: str | None` — when set, the real-mode prompt instructs the
+    model to reference how the silhouette or fit choice flatters the user's proportions
+  - `coherence_score: float | None` — when ≥ 0.90 the prompt highlights pattern
+    harmony; when ≤ 0.55 it acknowledges pattern mixing as a deliberate bold choice
+- `_real_explain_outfit()` prompt rewritten: items now include descriptor details
+  (fit, neckline, pattern) for richer context; formality shown as a percentage;
+  prompt now speaks directly to the wearer ("you" / "your"); `max_tokens=120` cap
+  added to keep costs stable
+- `_item_line()` inner helper serialises an item's color, category, fit, neckline
+  and pattern into a compact `|`-delimited string for the prompt
+- `score_style_coherence()` is now called at the outfit assembly site in
+  `recommender.py` and its result is forwarded to `explain_outfit()` as
+  `coherence_score` — no extra DB round-trip
+- Two body-type aware mock explanations added to `_MOCK_EXPLANATIONS` in `llm.py`
+  so body-type logic is exercisable in mock mode
+
+#### Wardrobe Coverage Nudge
+- `wardrobe_coverage_gaps(user_items)` helper added to `recommender.py` — analyses
+  which of the four outfit templates (A: top+bottom+shoes, B: top+bottom+outer+shoes,
+  C: dress+shoes, D: dress+outer+shoes) the current wardrobe can satisfy; returns a
+  plain-English list of actionable hints only when something meaningful is missing
+- Hints are returned alongside every `POST /recommend/generate-outfits` response as
+  `coverage_hints: List[str]` — empty list when the wardrobe covers at least one full
+  template family
+- `OutfitsResponse` TypeScript interface extended with `coverage_hints?: string[]`
+- **"Unlock more looks"** amber banner rendered in `events.tsx` below the regenerate
+  buttons when `coverage_hints` is non-empty; each hint prefixed with a `✦` gold
+  marker matching the Editorial Dark aesthetic; banner only shows after generation
+  so it never blocks the initial input flow
+
+### Changed
+- `DELETE /clothing/item/{id}` changed from hard delete (removes row + storage file)
+  to soft delete (marks `is_active=False`, preserves storage); storage files are now
+  retained until an explicit hard-delete (future admin feature)
+- `get_user_items()` in both mock and real mode now filters `is_active=True`; items
+  moved to trash are invisible to the recommender and the wardrobe grid
+- `explain_outfit()` signature extended — existing callers that omit the new optional
+  params continue to work unchanged (both default to `None`)
+- Wardrobe delete toast updated from `"Item removed"` to
+  `"Moved to trash — restore any time"`
+
+### Deferred
+- Coverage nudge for accessories (bags, belts, scarves) — current logic only checks
+  core structural item types; accessory gap detection deferred to a later version
+
+---
+
+## [1.8.1] - 2026-03-30
+
+### Added
+
+#### Restore Duplicate Guard
+- `restore_item()` return type changed from `bool` to `RestoreResult` — a
+  `Literal["restored", "not_found", "duplicate_conflict", "auto_purged"]` string;
+  all callers pattern-match on this value
+- Before restoring a trashed item, the service now checks for an active duplicate:
+  - Real mode: embedding cosine similarity ≥ `DUPLICATE_THRESHOLD` (0.95) — same
+    threshold used by upload duplicate detection
+  - Mock mode: exact `category + color + item_type` match (mock embeddings are random)
+- **Timestamp tiebreak** determines the outcome when a duplicate is found:
+  - `active.created_at ≥ trash.created_at` → the active item is a replacement →
+    trash item is **auto-purged** (DB row + storage file hard-deleted); response
+    `status: "auto_purged"`
+  - `active.created_at < trash.created_at` → the trashed item is newer, unusual
+    case → **409 Conflict** returned; user must remove the active item manually first
+- `POST /clothing/item/{id}/restore` now returns `{"status": "restored"|"auto_purged", "item_id": "..."}`
+  instead of `{"restored": true}`
+- `RestoreStatus` TypeScript type exported from `api.ts`; `restoreClothingItem()` now
+  returns `Promise<RestoreStatus>` instead of `Promise<void>`
+- Three distinct toast messages in `wardrobe.tsx`:
+  - `"restored"` → "Item restored to wardrobe"
+  - `"auto_purged"` → "A newer version of this item is already in your wardrobe — old copy removed" (info icon, 4 s)
+  - 409 conflict → "A similar item is already in your wardrobe. Remove it first if you want to restore this one." (error, 5 s)
+
+#### 90-Day Auto-Purge (Season-Aligned)
+- `purge_old_deleted_items(user_id, days=90)` added to `clothing_service.py`:
+  - Fetches all trash items with `deleted_at < now() - 90 days`
+  - Removes storage files first (non-blocking, logs warnings on failure)
+  - Hard-deletes DB rows; returns count of purged items
+  - Both mock and real implementations
+- `POST /clothing/purge-deleted` endpoint — idempotent, safe to call repeatedly;
+  returns `{"purged": <count>}`. Intended as the target for an external cron job
+- `supabase_migrations.sql` updated with two documented options for scheduling the purge:
+  - **Option A** (pg_cron): SQL cron job running daily at 03:00 UTC — purges DB rows
+    only (storage cleanup still requires the backend endpoint)
+  - **Option B** (recommended): external cron service calls `POST /clothing/purge-deleted`
+    — handles both DB rows and storage files atomically
+- 90-day window is semantically aligned with one season change — items deleted in
+  winter survive through spring before being permanently removed
+
+### Changed
+- `POST /clothing/item/{id}/restore` response body changed:
+  `{"restored": true}` → `{"status": "restored"|"auto_purged", "item_id": "..."}`
+- `restoreClothingItem()` in `api.ts` now returns `Promise<RestoreStatus>` (was `Promise<void>`)
 
 ---
 

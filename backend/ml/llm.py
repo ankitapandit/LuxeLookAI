@@ -33,6 +33,8 @@ _MOCK_EXPLANATIONS = [
     "This outfit pairs a classic silhouette with complementary tones that suit the occasion perfectly. The accessories add a polished finishing touch without overwhelming the look.",
     "A harmonious blend of textures and formality levels makes this ensemble versatile yet intentional. The color palette creates visual cohesion from head to toe.",
     "The balance between structure and ease here reflects the setting beautifully. Each piece earns its place — nothing is extraneous.",
+    "The silhouette choice here flatters your body type by drawing the eye to the right proportions. Consistent tones keep the look sharp without effort.",
+    "Clean lines and a single pattern keep this look cohesive. The formality lands exactly where this occasion calls for — polished but not overdressed.",
 ]
 
 
@@ -115,9 +117,9 @@ def _mock_parse_occasion(raw_text: str) -> Dict[str, Any]:
     }
 
 
-def _mock_explain_outfit(items: List[Dict]) -> str:
+def _mock_explain_outfit(items: List[Dict], user_body_type: str | None = None) -> str:
     """Return a mock explanation cycling through canned responses."""
-    idx = len(items) % len(_MOCK_EXPLANATIONS)
+    idx = (len(items) + (hash(user_body_type) if user_body_type else 0)) % len(_MOCK_EXPLANATIONS)
     return _MOCK_EXPLANATIONS[idx]
 
 
@@ -173,33 +175,67 @@ def _real_parse_occasion(raw_text: str) -> Dict[str, Any]:
     return result
 
 
-def _real_explain_outfit(items: List[Dict], occasion: Dict) -> str:
+def _real_explain_outfit(
+    items: List[Dict],
+    occasion: Dict,
+    user_body_type: str | None = None,
+    coherence_score: float | None = None,
+) -> str:
     """
     Generate a human-readable explanation for why this outfit was chosen.
-    Keeps the prompt concise to minimise token cost.
+    When body type is known, the prompt instructs the model to reference silhouette fit.
+    When coherence_score is notably high or low, the model is prompted to comment on pattern harmony.
     """
     from openai import OpenAI
 
     client = OpenAI(api_key=get_settings().openai_api_key)
 
-    # Summarise items for the prompt
-    item_summaries = ", ".join(
-        f"{i.get('color', '')} {i.get('category', 'item')} (formality {i.get('formality_score', 0.5):.1f})"
-        for i in items
+    # Summarise items — include descriptor hints when available
+    def _item_line(i: Dict) -> str:
+        parts = [i.get("color", ""), i.get("category", "item")]
+        descriptors = i.get("descriptors") or {}
+        if descriptors.get("fit"):      parts.append(f"{descriptors['fit']} fit")
+        if descriptors.get("neckline"): parts.append(f"{descriptors['neckline']} neckline")
+        if i.get("pattern") and i["pattern"] not in ("none", "solid", ""):
+            parts.append(f"{i['pattern']} pattern")
+        return " ".join(p for p in parts if p).strip()
+
+    item_lines = " | ".join(_item_line(i) for i in items)
+
+    # Body-type context block
+    body_block = ""
+    if user_body_type:
+        body_block = (
+            f"\nUser's body type: {user_body_type}. "
+            "Where relevant, briefly mention how the silhouette or fit choice flatters their proportions."
+        )
+
+    # Coherence hint
+    coherence_block = ""
+    if coherence_score is not None:
+        if coherence_score >= 0.90:
+            coherence_block = "\nThe outfit has excellent pattern harmony — feel free to highlight this."
+        elif coherence_score <= 0.55:
+            coherence_block = (
+                "\nThe outfit mixes patterns — acknowledge the bold choice without being negative."
+            )
+
+    prompt = (
+        "You are a professional personal stylist. In 2–3 sentences explain why this outfit works "
+        "for the occasion. Be warm, specific, and concise. No bullet points. "
+        "Speak to the wearer directly (use 'you' / 'your').\n\n"
+        f"Occasion: {occasion.get('occasion_type')} — {occasion.get('setting', 'indoor')}\n"
+        f"Formality: {occasion.get('formality_level', 0.5):.0%}\n"
+        f"Items: {item_lines}"
+        f"{body_block}"
+        f"{coherence_block}"
     )
-    prompt = f"""
-            You are a professional stylist. Explain in 2-3 sentences why this outfit works for the occasion.
-            
-            Occasion: {occasion.get('occasion_type')} ({occasion.get('setting')})
-            Formality level: {occasion.get('formality_level')}
-            Items: {item_summaries}
-            
-            Be specific, warm, and concise. No bullet points.
-            """
+
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.7,
+        max_tokens=120,
     )
     return response.choices[0].message.content.strip()
 
@@ -217,17 +253,24 @@ def parse_occasion(raw_text: str) -> Dict[str, Any]:
     return _real_parse_occasion(raw_text)
 
 
-def explain_outfit(items: List[Dict], occasion: Dict) -> str:
+def explain_outfit(
+    items: List[Dict],
+    occasion: Dict,
+    user_body_type: str | None = None,
+    coherence_score: float | None = None,
+) -> str:
     """
     Generate a natural-language explanation for the recommended outfit.
     Args:
-        items:    List of clothing item dicts (with color, category, formality_score).
-        occasion: Structured occasion dict from parse_occasion().
+        items:           List of clothing item dicts (color, category, formality_score, descriptors).
+        occasion:        Structured occasion dict from parse_occasion().
+        user_body_type:  Optional body type string — enables silhouette-aware explanation copy.
+        coherence_score: Optional 0–1 score — used to highlight pattern harmony or flag pattern mixing.
     """
     settings = get_settings()
     if settings.use_mock_ai:
-        return _mock_explain_outfit(items)
-    return _real_explain_outfit(items, occasion)
+        return _mock_explain_outfit(items, user_body_type)
+    return _real_explain_outfit(items, occasion, user_body_type, coherence_score)
 
 
 # ── Face Detection ──────────────────────────────────────────────────────────

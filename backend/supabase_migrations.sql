@@ -248,3 +248,44 @@ ALTER TABLE events ADD COLUMN event_tokens jsonb DEFAULT '[]';
 
 -- 2. Ensure updated_at fires on rating updates (for temporal decay later)
 -- (only if the existing trigger doesn't already cover outfit_suggestions)
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v1.8.0 — 90-day auto-purge for soft-deleted wardrobe items
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Items are soft-deleted (is_active=FALSE, deleted_at=<timestamp>).
+-- After 90 days they should be hard-deleted (DB row + storage file).
+--
+-- TWO options — choose one:
+--
+-- ── Option A: pg_cron (Supabase-native, DB rows only) ──────────────────────
+-- Requires pg_cron extension. Enable via:
+--   Supabase Dashboard → Database → Extensions → pg_cron (toggle ON)
+-- Then run the block below ONCE in the SQL Editor:
+--
+-- select cron.schedule(
+--   'luxelook-purge-deleted-wardrobe-items',  -- job name (unique)
+--   '0 3 * * *',                               -- daily at 03:00 UTC
+--   $$
+--     delete from public.clothing_items
+--     where is_active = false
+--       and deleted_at < now() - interval '90 days';
+--   $$
+-- );
+--
+-- NOTE: pg_cron purges DB rows only. Storage files are NOT cleaned up this way.
+-- Storage cleanup happens automatically when POST /clothing/purge-deleted is called.
+--
+-- ── Option B: external cron → POST /clothing/purge-deleted (recommended) ───
+-- Call the backend endpoint on a schedule using any external cron service:
+--   EasyCron:  https://www.easycron.com
+--   Railway:   cron jobs in Railway project settings
+--   Render:    cron job service
+--
+-- Endpoint:  POST https://<your-backend>/clothing/purge-deleted
+-- Auth:      Authorization: Bearer <any valid user JWT>
+-- Effect:    Deletes rows AND storage files older than 90 days for that user
+--
+-- To purge ALL users (admin-level), implement a service-role variant separately.
+-- ─────────────────────────────────────────────────────────────────────────────
+

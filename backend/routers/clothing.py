@@ -13,7 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from typing import List, Optional
 
 from services.clothing_service import (
-    upload_clothing_item, get_user_items, delete_item, correct_item_tags
+    upload_clothing_item, get_user_items, get_deleted_items,
+    delete_item, restore_item, correct_item_tags, purge_old_deleted_items,
 )
 from ml.tagger import tag_clothing_item, get_taggable_options
 from utils.auth import get_current_user_id
@@ -172,14 +173,64 @@ def correct_item(
 
 @router.get("/items", response_model=List[dict])
 def list_items(user_id: str = Depends(get_current_user_id)):
-    """Return all clothing items in the authenticated user's wardrobe."""
+    """Return all active clothing items in the authenticated user's wardrobe."""
     return get_user_items(user_id)
+
+
+@router.get("/items/deleted", response_model=List[dict])
+def list_deleted_items(user_id: str = Depends(get_current_user_id)):
+    """Return soft-deleted items (trash) for the authenticated user."""
+    return get_deleted_items(user_id)
 
 
 @router.delete("/item/{item_id}", status_code=204)
 def remove_item(item_id: str, user_id: str = Depends(get_current_user_id)):
-    """Delete an item. Returns 404 if not found or not owned by this user."""
+    """
+    Soft-delete an item — sets is_active=False and records deleted_at.
+    The item can be restored via POST /clothing/item/{id}/restore.
+    Returns 404 if not found or not owned by this user.
+    """
     deleted = delete_item(item_id, user_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Item not found")
+
+
+@router.post("/item/{item_id}/restore", response_model=dict)
+def restore_item_endpoint(item_id: str, user_id: str = Depends(get_current_user_id)):
+    """
+    Restore a soft-deleted item with duplicate guard.
+
+    Possible outcomes:
+    - 200 restored      — item is active again
+    - 200 auto_purged   — a newer active replacement was found; trash copy permanently removed
+    - 409               — a similar active item exists but is older; user must decide manually
+    - 404               — item not in trash
+    """
+    result = restore_item(item_id, user_id)
+    if result == "not_found":
+        raise HTTPException(status_code=404, detail="Item not in trash")
+    if result == "duplicate_conflict":
+        raise HTTPException(
+            status_code=409,
+            detail="A similar item is already in your active wardrobe. "
+                   "Remove the existing item first if you want to restore this one.",
+        )
+    # "restored" or "auto_purged" — both are successful outcomes
+    return {"status": result, "item_id": item_id}
+
+
+@router.post("/purge-deleted", response_model=dict)
+def purge_deleted_endpoint(user_id: str = Depends(get_current_user_id)):
+    """
+    Hard-delete items that have been in trash for 90+ days.
+    Removes DB rows and storage files. Safe to call repeatedly (idempotent).
+
+    Intended to be called:
+    - By an external cron job (EasyCron, Railway, etc.) on a daily/weekly schedule
+    - Or manually from an admin panel
+
+    For a pure-SQL alternative using Supabase pg_cron see supabase_migrations.sql.
+    """
+    count = purge_old_deleted_items(user_id, days=90)
+    return {"purged": count}
 

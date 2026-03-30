@@ -17,7 +17,7 @@ luxelook-ai/
 │   ├── supabase_migrations.sql # All post-schema migrations — run second
 │   ├── routers/                # API route handlers
 │   │   ├── auth.py             # POST /auth/signup, /auth/login
-│   │   ├── clothing.py         # POST /clothing/tag-preview, /upload-item, GET /items
+│   │   ├── clothing.py         # POST /clothing/tag-preview, /upload-item, GET /items, /items/deleted, POST /item/{id}/restore
 │   │   ├── events.py           # POST /events/create-event, GET /events/list
 │   │   ├── recommendations.py  # POST /recommend/generate-outfits
 │   │   ├── feedback.py         # POST /feedback/rate-outfit
@@ -169,7 +169,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    - Click **Generate Outfit Suggestions** — occasion is parsed silently on the backend,
      outfit generation begins immediately with no intermediate step
 5. **Get outfit suggestions** — AI builds complete looks across 4 outfit templates
-   (top+bottom+shoes, top+bottom+outerwear+shoes, dress+shoes, dress+outerwear+shoes)
+   (top+bottom+shoes, top+bottom+outerwear+shoes, dress+shoes, dress+outerwear+shoes).
+   If the wardrobe is missing item types needed to unlock some templates, an
+   **"Unlock more looks"** banner shows actionable hints below the suggestions.
 6. **Rate outfits** — 1–5 stars to improve future suggestions
 7. **Regenerate** — "Show me more" for a neutral refresh; "None of these work" to
    signal the current batch was wrong; ratings are tracked per combo + occasion context
@@ -209,9 +211,12 @@ Full interactive docs at [http://localhost:8000/docs](http://localhost:8000/docs
 | POST | `/auth/login` | Get JWT token |
 | POST | `/clothing/tag-preview` | AI tag + descriptor preview (no save) |
 | POST | `/clothing/upload-item` | Upload, tag, embed and save item |
-| GET | `/clothing/items` | List wardrobe |
+| GET | `/clothing/items` | List active wardrobe items |
 | PATCH | `/clothing/item/{id}` | Correct tags on saved item |
-| DELETE | `/clothing/item/{id}` | Remove item + storage cleanup |
+| DELETE | `/clothing/item/{id}` | Soft-delete item (moves to trash, restorable) |
+| GET | `/clothing/items/deleted` | List soft-deleted items (trash view) |
+| POST | `/clothing/item/{id}/restore` | Restore a soft-deleted item (with duplicate guard) |
+| POST | `/clothing/purge-deleted` | Hard-delete trash items older than 90 days |
 | GET | `/clothing/tag-options` | Valid categories, colors for dropdowns |
 | POST | `/events/create-event` | Parse occasion text |
 | GET | `/events/list` | List all user events |
@@ -357,7 +362,9 @@ Storage buckets: `clothing-images` (private), `profile-photos` (public)
 
 ## Common Issues
 
-**"No clothing items found"** — Upload at least a top + bottom + shoes, or a dress + shoes before generating outfits. Adding outerwear unlocks two additional outfit templates.
+**"No clothing items found"** — Upload at least a top + bottom + shoes, or a dress + shoes before generating outfits. Adding outerwear unlocks two additional outfit templates. Once you have items, an **"Unlock more looks"** nudge appears after generation to guide you toward filling gaps.
+
+**Deleted an item by accident?** — Items are soft-deleted (moved to Trash, not permanently removed). Open the Trash via the button in the Wardrobe header and click **Restore** to bring an item back. If you've since uploaded a newer version of the same item, the old trash copy is auto-purged on restore attempt. Items in trash for 90+ days are permanently removed by the auto-purge cron (see `supabase_migrations.sql` for setup options).
 
 **Backend can't connect to Supabase** — Check `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` in `.env`. The service role key is required for backend operations.
 

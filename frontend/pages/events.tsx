@@ -31,9 +31,11 @@ export default function EventsPage() {
   // Accumulated suggestion IDs shown across all regenerates this session
   const [allShownIds,    setAllShownIds]    = useState<string[]>([]);
   // True when every returned outfit was previously seen (wardrobe variety exhausted)
-  const [allSeen,        setAllSeen]        = useState(false);
+  const [allSeen,         setAllSeen]         = useState(false);
+  // Plain-English hints about missing item types that would unlock more templates
+  const [coverageHints,   setCoverageHints]   = useState<string[]>([]);
   // Controls visibility of the "None of these work" tooltip
-  const [showBadTip,     setShowBadTip]     = useState(false);
+  const [showBadTip,      setShowBadTip]      = useState(false);
 
   async function handleGenerate() {
     if (!text.trim()) return;
@@ -55,6 +57,7 @@ export default function EventsPage() {
       const newIds = outfitData.suggestions.map(s => s.id);
       setAllShownIds(newIds);
       setAllSeen(outfitData.all_seen ?? false);
+      setCoverageHints(outfitData.coverage_hints ?? []);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string } } };
       toast.error(e?.response?.data?.detail || "Could not generate outfit suggestions");
@@ -80,6 +83,7 @@ export default function EventsPage() {
       // Accumulate new IDs into the session history
       setAllShownIds(prev => [...prev, ...outfitData.suggestions.map(s => s.id)]);
       setAllSeen(outfitData.all_seen ?? false);
+      setCoverageHints(outfitData.coverage_hints ?? []);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string } } };
       toast.error(e?.response?.data?.detail || "Could not regenerate outfits");
@@ -262,6 +266,23 @@ export default function EventsPage() {
                   </button>
                 </div>
               )}
+              {/* Coverage nudge — shown when wardrobe is missing item types for some templates */}
+              {coverageHints.length > 0 && (
+                <div style={{
+                  background: "rgba(212,169,106,0.07)", border: "1px solid rgba(212,169,106,0.22)",
+                  borderRadius: "8px", padding: "12px 16px", marginBottom: "20px",
+                }}>
+                  <p style={{ fontSize: "12px", color: "var(--gold)", fontWeight: 600, marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    Unlock more looks
+                  </p>
+                  {coverageHints.map((hint, i) => (
+                    <p key={i} style={{ fontSize: "13px", color: "var(--muted)", margin: "3px 0" }}>
+                      ✦ {hint}
+                    </p>
+                  ))}
+                </div>
+              )}
+
               <div style={{ display: "flex", gap: "20px", overflowX: "auto", paddingBottom: "12px" }}>
                 {suggestions.map((s, idx) => (
                   <div key={s.id} style={{ minWidth: "340px", maxWidth: "380px", flexShrink: 0 }}>
