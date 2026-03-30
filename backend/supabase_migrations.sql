@@ -242,3 +242,9 @@ create trigger clothing_items_updated_at
 
 -- Soft delete: filter inactive items from all queries
 -- Note: update get_user_items() to filter is_active = true
+
+-- 1. Event semantic tokens (for occasion-scoped feedback)
+ALTER TABLE events ADD COLUMN event_tokens jsonb DEFAULT '[]';
+
+-- 2. Ensure updated_at fires on rating updates (for temporal decay later)
+-- (only if the existing trigger doesn't already cover outfit_suggestions)

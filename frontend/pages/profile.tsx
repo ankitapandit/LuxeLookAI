@@ -204,7 +204,7 @@ function UnitToggle({ value, options, onChange }: {
           style={{
             padding: "4px 12px", fontSize: "12px", border: "none", cursor: "pointer",
             background: value === opt ? "var(--charcoal)" : "transparent",
-            color: value === opt ? "white" : "var(--muted)",
+            color: value === opt ? "#0A0908" : "var(--muted)",
             fontWeight: value === opt ? 600 : 400,
             transition: "background 0.15s",
           }}>
@@ -275,8 +275,8 @@ function ChipGroup({ options, value, onChange }: {
           style={{
             padding: "6px 14px", fontSize: "13px", borderRadius: "20px", cursor: "pointer",
             border: `1px solid ${value === val ? "var(--charcoal)" : "var(--border)"}`,
-            background: value === val ? "var(--charcoal)" : "white",
-            color: value === val ? "white" : "var(--ink)",
+            background: value === val ? "var(--gold)" : "var(--surface)",
+            color: value === val ? "#0A0908" : "var(--muted)",
             transition: "all 0.15s",
           }}>
           {label}
@@ -291,7 +291,7 @@ function ResultRow({ label, sublabel, note, onUse, onUseAlt, altLabel }: {
   onUse: () => void; onUseAlt?: () => void; altLabel?: string;
 }) {
   return (
-    <div style={{ marginTop: "10px", padding: "12px 14px", background: "white",
+    <div style={{ marginTop: "10px", padding: "12px 14px", background: "var(--surface)",
       borderRadius: "6px", border: "1px solid var(--border)", display: "flex",
       justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
       <div style={{ flex: 1 }}>
@@ -653,7 +653,7 @@ export default function ProfilePage() {
               style={{
                 position: "absolute", bottom: 0, right: 0,
                 width: "28px", height: "28px", borderRadius: "50%",
-                background: "var(--charcoal)", border: "2px solid white",
+                background: "var(--gold)", border: "2px solid var(--surface)",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 cursor: photoUploading ? "not-allowed" : "pointer",
               }}>
@@ -679,13 +679,13 @@ export default function ProfilePage() {
             {faceDetected && (
               <div style={{
                 marginTop: "10px", padding: "10px 14px", borderRadius: "8px",
-                background: faceDetected.confidence === "high" ? "#F0FDF4" : "#FFFBEB",
-                border: `1px solid ${faceDetected.confidence === "high" ? "#86EFAC" : "#FDE68A"}`,
+                background: faceDetected.confidence === "high" ? "rgba(122,148,104,0.15)" : "rgba(212,169,106,0.12)",
+                border: `1px solid ${faceDetected.confidence === "high" ? "rgba(122,148,104,0.40)" : "rgba(212,169,106,0.40)"}`,
                 display: "flex", alignItems: "flex-start", gap: "8px",
               }}>
                 {faceDetected.confidence === "high"
-                  ? <CheckCircle size={15} color="#16A34A" style={{ flexShrink: 0, marginTop: "1px" }} />
-                  : <AlertCircle size={15} color="#D97706" style={{ flexShrink: 0, marginTop: "1px" }} />
+                  ? <CheckCircle size={15} color="var(--sage)" style={{ flexShrink: 0, marginTop: "1px" }} />
+                  : <AlertCircle size={15} color="var(--gold)" style={{ flexShrink: 0, marginTop: "1px" }} />
                 }
                 <div>
                   <p style={{ fontSize: "13px", fontWeight: 600, color: "var(--charcoal)",
@@ -748,10 +748,10 @@ export default function ProfilePage() {
 
                 {/* Validation warning */}
                 {bust && waist && hip && !bodyResult && (
-                  <div style={{ marginTop: "10px", padding: "10px 12px", background: "#FEF3C7",
-                    borderRadius: "6px", display: "flex", gap: "8px", alignItems: "center" }}>
-                    <AlertCircle size={14} color="#D97706" />
-                    <p style={{ fontSize: "12px", color: "#92400E", margin: 0 }}>
+                  <div style={{ marginTop: "10px", padding: "10px 12px", background: "rgba(212,169,106,0.12)",
+                    borderRadius: "6px", border: "1px solid rgba(212,169,106,0.35)", display: "flex", gap: "8px", alignItems: "center" }}>
+                    <AlertCircle size={14} color="var(--gold)" />
+                    <p style={{ fontSize: "12px", color: "var(--gold)", margin: 0 }}>
                       Measurements look out of range — check you&apos;re using {heightUnit === "in" ? "inches" : "cm"} consistently
                     </p>
                   </div>
@@ -930,8 +930,8 @@ export default function ProfilePage() {
                       style={{
                         padding: "7px 16px", fontSize: "13px", borderRadius: "20px", cursor: "pointer",
                         border: `1px solid ${hairTexture === opt ? "var(--charcoal)" : "var(--border)"}`,
-                        background: hairTexture === opt ? "var(--charcoal)" : "white",
-                        color: hairTexture === opt ? "white" : "var(--ink)",
+                        background: hairTexture === opt ? "var(--gold)" : "var(--surface)",
+                        color: hairTexture === opt ? "#0A0908" : "var(--muted)",
                         textTransform: "capitalize", transition: "all 0.15s",
                       }}>
                       {opt}
@@ -948,8 +948,8 @@ export default function ProfilePage() {
                       style={{
                         padding: "7px 16px", fontSize: "13px", borderRadius: "20px", cursor: "pointer",
                         border: `1px solid ${hairLength === opt ? "var(--charcoal)" : "var(--border)"}`,
-                        background: hairLength === opt ? "var(--charcoal)" : "white",
-                        color: hairLength === opt ? "white" : "var(--ink)",
+                        background: hairLength === opt ? "var(--gold)" : "var(--surface)",
+                        color: hairLength === opt ? "#0A0908" : "var(--muted)",
                         textTransform: "capitalize", transition: "all 0.15s",
                       }}>
                       {opt}
@@ -985,7 +985,7 @@ export default function ProfilePage() {
           onClick={(e) => { if (e.target === e.currentTarget) setCropFile(null); }}
         >
           <div style={{
-            background: "#FFFFFF",
+            background: "var(--surface)",
             borderRadius: "16px", padding: "24px",
             width: "100%", maxWidth: "400px",
             boxShadow: "0 20px 60px rgba(0,0,0,0.3)",

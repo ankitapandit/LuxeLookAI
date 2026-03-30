@@ -28,6 +28,7 @@ def _create_event_mock(user_id: str, raw_text: str) -> Dict:
         "formality_level":     structured.get("formality_level", 0.5),
         "temperature_context": structured.get("temperature_context", "unknown"),
         "setting":             structured.get("setting", ""),
+        "event_tokens":        structured.get("event_tokens", []),
     }
     return insert(TABLE, row)
 
@@ -49,6 +50,7 @@ def _create_event_real(user_id: str, raw_text: str) -> Dict:
         "formality_level":     structured.get("formality_level", 0.5),
         "temperature_context": structured.get("temperature_context", "unknown"),
         "setting":             structured.get("setting", ""),
+        "event_tokens":        structured.get("event_tokens", []),
     }
     result = db.table(TABLE).insert(row).execute()
     return result.data[0]

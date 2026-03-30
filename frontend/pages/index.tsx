@@ -42,7 +42,7 @@ export default function Home() {
         {/* ── Left: hero ─────────────────────────────────────────────── */}
         <div
           style={{
-            background: "var(--charcoal)",
+            background: "#0A0908",
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
@@ -56,7 +56,7 @@ export default function Home() {
                 fontFamily: "Playfair Display, serif",
                 fontSize: "26px",
                 fontWeight: 700,
-                color: "var(--cream)",
+                color: "var(--charcoal)",
               }}
             >
               LuxeLook<span style={{ color: "var(--gold)" }}>AI</span>
@@ -68,7 +68,7 @@ export default function Home() {
               fontFamily: "Playfair Display, serif",
               fontSize: "52px",
               fontWeight: 700,
-              color: "var(--cream)",
+              color: "var(--charcoal)",
               lineHeight: 1.1,
               marginBottom: "24px",
             }}
@@ -81,36 +81,35 @@ export default function Home() {
 
           <p
             style={{
-              color: "#A09890",
+              color: "var(--muted)",
               fontSize: "17px",
-              lineHeight: 1.6,
-              maxWidth: "380px",
+              lineHeight: 1.7,
+              maxWidth: "400px",
             }}
           >
-            LuxeLook AI is your personal stylist — powered by computer vision
-            and AI. Tell us the occasion. We&apos;ll build the perfect outfit from
-            your own wardrobe.
+            Stop staring at a full wardrobe feeling like you have nothing to
+            wear. LuxeLook learns your style, reads the room, and pulls together
+            outfits you&apos;ll actually love — from clothes you already own.
           </p>
 
           {/* Feature list */}
-          <div style={{ marginTop: "48px", display: "flex", flexDirection: "column", gap: "14px" }}>
+          <div style={{ marginTop: "48px", display: "flex", flexDirection: "column", gap: "18px" }}>
             {[
-              "📸 Auto-tag every item with AI",
-              "✨ CLIP-powered visual similarity",
-              "🎯 Hybrid rule + embedding ranking",
-              "💬 LLM-generated style explanations",
-            ].map((f) => (
+              { icon: "✦", text: "Describe the occasion in plain words — dinner, interview, weekend brunch" },
+              { icon: "✦", text: "We read your wardrobe and understand what actually works together" },
+              { icon: "✦", text: "Get a curated shortlist, not a chaotic scroll" },
+              { icon: "✦", text: "Rate what you like. Every choice makes the next one smarter" },
+            ].map(({ icon, text }) => (
               <div
-                key={f}
+                key={text}
                 style={{
-                  color: "#C8C0B8",
-                  fontSize: "15px",
                   display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
+                  alignItems: "flex-start",
+                  gap: "12px",
                 }}
               >
-                {f}
+                <span style={{ color: "var(--gold)", fontSize: "10px", marginTop: "5px", flexShrink: 0 }}>{icon}</span>
+                <span style={{ color: "var(--muted)", fontSize: "15px", lineHeight: 1.55 }}>{text}</span>
               </div>
             ))}
           </div>
@@ -119,11 +118,12 @@ export default function Home() {
         {/* ── Right: auth form ────────────────────────────────────────── */}
         <div
           style={{
-            background: "var(--cream)",
+            background: "var(--surface)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             padding: "80px",
+            borderLeft: "1px solid var(--border)",
           }}
         >
           <div style={{ width: "100%", maxWidth: "380px" }} className="fade-up">
