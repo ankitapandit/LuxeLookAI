@@ -23,6 +23,10 @@ Thumbs.db
 # HuggingFace model cache (large)
 ~/.cache/huggingface/
 
-#Logs
+# Logs
 .dev-logs/
 .dev-pids
+
+# Claude files
+.claude/launch.json
+theme-preview.html

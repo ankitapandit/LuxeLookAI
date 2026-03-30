@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from models.schemas import GenerateOutfitsRequest, ResetFeedbackRequest
 from services.clothing_service import get_user_items
 from services.event_service import get_event
-from services.recommender import generate_outfit_suggestions
+from services.recommender import generate_outfit_suggestions, wardrobe_coverage_gaps
 from utils.auth import get_current_user_id
 from config import get_settings
 
@@ -326,7 +326,13 @@ def generate_outfits(
     # ── Step 7-8: persist + return ─────────────────────────────────────────
     _persist_suggestions(suggestions)
 
-    return {"event": event, "suggestions": suggestions, "all_seen": all_seen}
+    coverage_hints = wardrobe_coverage_gaps(items)
+    return {
+        "event":          event,
+        "suggestions":    suggestions,
+        "all_seen":       all_seen,
+        "coverage_hints": coverage_hints,   # [] when wardrobe is sufficient
+    }
 
 
 @router.post("/reset-feedback")

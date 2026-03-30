@@ -164,9 +164,29 @@ export async function getWardrobeItems(): Promise<ClothingItem[]> {
   return data;
 }
 
-/** Delete an item by ID. */
+/** Delete an item by ID (soft-delete — moves to trash, restorable). */
 export async function deleteClothingItem(itemId: string): Promise<void> {
   await api.delete(`/clothing/item/${itemId}`);
+}
+
+/** Fetch soft-deleted items (trash view). */
+export async function getDeletedItems(): Promise<ClothingItem[]> {
+  const { data } = await api.get<ClothingItem[]>("/clothing/items/deleted");
+  return data;
+}
+
+export type RestoreStatus = "restored" | "auto_purged";
+
+/**
+ * Restore a soft-deleted item back to the active wardrobe.
+ * Returns the outcome status so the UI can show the right message.
+ * Throws AxiosError with status 409 when a newer active duplicate exists.
+ */
+export async function restoreClothingItem(itemId: string): Promise<RestoreStatus> {
+  const { data } = await api.post<{ status: RestoreStatus; item_id: string }>(
+    `/clothing/item/${itemId}/restore`
+  );
+  return data.status;
 }
 
 // ── Events ────────────────────────────────────────────────────────────────
@@ -214,6 +234,11 @@ export interface OutfitsResponse {
   suggestions: OutfitSuggestion[];
   /** True when every returned outfit was already shown — wardrobe variety exhausted. */
   all_seen?: boolean;
+  /**
+   * Plain-English hints about missing item types that would unlock more outfit templates.
+   * Empty array when the wardrobe already covers at least one full template family.
+   */
+  coverage_hints?: string[];
 }
 
 /**

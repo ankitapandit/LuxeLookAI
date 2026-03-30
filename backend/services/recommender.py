@@ -537,6 +537,56 @@ def _combo_key(items: List[Dict]) -> str:
     return "|".join(sorted(str(item.get("id", "")) for item in items))
 
 
+def wardrobe_coverage_gaps(user_items: List[Dict]) -> List[str]:
+    """
+    Return a list of plain-English hints for item types that are absent
+    from the wardrobe but needed to unlock outfit templates.
+
+    Rules:
+      - No tops       → "Add at least one top to unlock outfit templates A and B"
+      - No bottoms    → "Add at least one bottom (trousers, skirt…) to complete templates A and B"
+      - No shoes      → "Add at least one pair of shoes — every template requires footwear"
+      - No dresses    → "Add a dress to unlock templates C and D"
+      - Tops+bottoms but no outerwear → optional hint about template B
+    The function never returns an error if the minimum set (top+bottom+shoes OR dress+shoes)
+    is present — it only flags what's missing relative to the four templates.
+    """
+    categories  = {(i.get("item_type") or "").lower() for i in user_items}
+    categories |= {(i.get("category") or "").lower() for i in user_items}
+
+    has_tops      = bool({"tops", "top"} & categories)
+    has_bottoms   = bool({"bottoms", "bottom", "skirts", "trousers"} & categories)
+    has_shoes     = bool({"shoes", "footwear"} & categories)
+    has_dresses   = bool({"dresses", "dress"} & categories)
+    has_outerwear = bool({"outerwear", "jackets", "jacket", "coat"} & categories)
+
+    gaps: List[str] = []
+
+    can_do_ab = has_tops and has_bottoms and has_shoes
+    can_do_cd = has_dresses and has_shoes
+
+    if not can_do_ab and not can_do_cd:
+        # Neither template family is possible — give targeted hints
+        if not has_shoes:
+            gaps.append("Add at least one pair of shoes — every outfit template requires footwear")
+        if not has_tops and not has_dresses:
+            gaps.append("Add a top or a dress to start building outfits")
+        elif not has_tops:
+            gaps.append("Add at least one top to unlock outfit templates A and B")
+        if not has_bottoms and not has_dresses:
+            gaps.append("Add a bottom (trousers or skirt) or a dress to complete a look")
+        elif not has_bottoms:
+            gaps.append("Add at least one bottom (trousers or skirt) to complete templates A and B")
+    else:
+        # At least one template family works — give aspirational nudges
+        if can_do_ab and not can_do_cd:
+            gaps.append("Add a dress + shoes to unlock two additional outfit templates")
+        if not has_outerwear and can_do_ab:
+            gaps.append("Add a jacket or coat to unlock layered outfits (template B and D)")
+
+    return gaps
+
+
 def _outfit_feedback_weight(items: List[Dict], combo_weights: Dict[str, float]) -> float:
     """
     Look up this exact combo in the occasion-scoped feedback map.
@@ -677,8 +727,13 @@ def generate_outfit_suggestions(
             core_items, accessories, occasion, user_body_type=user_body_type
         )
 
-        all_items   = core_items + selected_accessories
-        explanation = explain_outfit(all_items, occasion)
+        all_items        = core_items + selected_accessories
+        coherence_score  = score_style_coherence(core_items)
+        explanation      = explain_outfit(
+            all_items, occasion,
+            user_body_type=user_body_type,
+            coherence_score=coherence_score,
+        )
 
         is_seen = frozenset(str(i["id"]) for i in core_items) in seen_sets
         suggestion = {
