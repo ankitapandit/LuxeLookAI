@@ -168,8 +168,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 4. **Create an event** — type e.g. _"Dinner party Friday evening, smart casual"_
    - Click **Generate Outfit Suggestions** — occasion is parsed silently on the backend,
      outfit generation begins immediately with no intermediate step
-5. **Get outfit suggestions** — AI builds complete looks across 4 outfit templates
-   (top+bottom+shoes, top+bottom+outerwear+shoes, dress+shoes, dress+outerwear+shoes).
+5. **Get outfit suggestions** — AI builds complete looks across 7 outfit templates
+   (top+bottom+shoes, top+bottom+outerwear+shoes, dress+shoes, dress+outerwear+shoes,
+   set+shoes, set+outerwear+shoes, swimwear+shoes).
    If the wardrobe is missing item types needed to unlock some templates, an
    **"Unlock more looks"** banner shows actionable hints below the suggestions.
 6. **Rate outfits** — 1–5 stars to improve future suggestions
@@ -232,60 +233,202 @@ All routes except `/auth/*` require `Authorization: Bearer <token>` header.
 
 ---
 
+## Supported Clothing Categories
+
+| Category | Description | Outfit role |
+|---|---|---|
+| **tops** | T-shirts, blouses, shirts, sweaters | Core (upper body) |
+| **bottoms** | Trousers, jeans, skirts, shorts | Core (lower body) |
+| **dresses** | Dresses, jumpsuits | Core (full body — templates C, D) |
+| **set** | Co-ord two-pieces (matching top + bottom sold together) | Core (full look — templates E, F) |
+| **swimwear** | Bikinis, one-pieces, tankinis, monokinis, swim dresses | Core (beach/resort — template G) |
+| **loungewear** | Hoodies, joggers, pajama sets, robes, shorts sets | Casual/home only |
+| **outerwear** | Coats, jackets, blazers, cardigans | Layering (templates B, D, F) |
+| **shoes** | Heels, sneakers, boots, sandals, flats | Required in all templates |
+| **accessories** | Handbags, belts, scarves, hats, jewelry | Attached after core scoring (up to 2) |
+
+Each category has a dedicated descriptor vocabulary (fabric, fit, neckline, pattern etc.)
+extracted at upload time by GPT-4o Vision and used for body-type matching and scoring.
+
+---
+
 ## Recommendation Engine
 
+The engine judges an outfit as a **composed look**, not a sum of independent items.
+Each outfit is scored against the specific user, event, and time context:
+
 ```
-score = color(0.18) + formality(0.18) + season(0.12)
-      + embedding(0.28) + preference(0.12) + coherence(0.12)
+Score(u, e, o) = 0.28·C + 0.24·A + 0.22·P + 0.10·T + 0.08·N + 0.05·D − 0.03·R
 ```
 
-All six weights sum to 1.00. Tune in `backend/services/recommender.py` → `WEIGHTS` dict.
+| Symbol | Component | Weight | What it measures |
+|---|---|---|---|
+| **C** | Compatibility | 0.28 | How well items work together as a look |
+| **A** | Appropriateness | 0.24 | How suitable the outfit is for the event |
+| **P** | Preference | 0.22 | Alignment with the user's personal style |
+| **T** | Trend | 0.10 | Trend relevance *(neutral 0.50 placeholder — pipeline v2.1)* |
+| **N** | Novelty | 0.08 | Freshness vs. recently shown outfit history |
+| **D** | Diversity | 0.05 | Completeness bonus for covering expected outfit slots |
+| **R** | Risk | 0.03 | Dress-code / confidence penalty (subtracted) |
 
-| Component | Weight | Notes |
+Constants live in `backend/services/recommender.py` → `WEIGHTS_V2` and `RISK_WEIGHT`.
+
+Previously shown combos receive `SEEN_PENALTY = 0.70` (30 % downrank) rather than
+being excluded — they remain available as fallbacks when the wardrobe is small.
+
+---
+
+### C — Compatibility `score_compatibility()`
+
+```
+C = 0.30 · pairwise_avg + 0.30 · color_story + 0.25 · silhouette + 0.15 · pattern
+```
+
+**Pairwise score** — every item pair in the outfit is scored:
+```
+pairwise(i, j) = 0.60 · color_harmony(i, j) + 0.40 · formality_match(i, j)
+```
+`pairwise_avg` is the mean across all pairs.
+
+**Color story** `classify_color_story()` — classifies the outfit palette as a composed story:
+
+| Palette type | Condition | Score |
 |---|---|---|
-| `color` | 0.18 | HSL hue-wheel perceptual distance (complementary, analogous, monochromatic, neutral) |
-| `formality` | 0.18 | Distance from occasion formality target; category floor prevents unrealistic scores |
-| `season` | 0.12 | Overlap between item seasons and occasion season |
-| `embedding` | 0.28 | CLIP cosine similarity across outfit items |
-| `preference` | 0.12 | Body-type silhouette prior (when profile is set) or combo feedback weight |
-| `coherence` | 0.12 | 60 % pattern mixing penalty + 40 % fit consistency |
+| Neutral base + single accent | ≥1 neutral, exactly 1 chromatic | 0.92 |
+| All neutrals | No chromatic colors | 0.88 |
+| Monochromatic | All items same color | 0.86 |
+| Tonal / analogous | Max hue distance < 45° | 0.84 |
+| Complementary contrast | Hue distance 150°–210° | 0.80 |
+| Mixed | Unclassified combination | 0.70 |
+| Clashing | Max hue distance > 220° | 0.58 |
 
-Previously shown combos are downranked by 30 % (`SEEN_PENALTY = 0.70`) rather than
-excluded — keeps them available as fallbacks when the wardrobe is small.
+RGB values are converted to HSL for hue-wheel analysis. Color → RGB mappings are in `COLOR_RGB`.
 
-### Color Scoring
+Neutrals (black, white, beige, grey, cream, ivory, tan, camel, khaki, charcoal, silver, brown)
+are treated as saturation < 0.15 and pair with any color at full score.
 
-RGB values are converted to HSL; scoring is hue-wheel based:
+**Silhouette balance** `score_silhouette_balance()` — classic proportion rule:
 
-| Relationship | Hue distance | Score |
+| Outcome | Condition | Score |
 |---|---|---|
-| Monochromatic | < 15 ° | 0.85 |
-| Analogous | < 45 ° | 0.80 |
-| Complementary | ~180 ° | 0.90 |
-| Neutral (any hue) | saturation < 0.15 | 1.0 / 0.95 |
+| Balanced | 1+ oversized + 1+ fitted piece | 0.95 |
+| Consistent | All fitted, no oversized | 0.88 |
+| Relaxed | 1 oversized, no fitted | 0.82 |
+| Double volume risk | 2+ oversized pieces | 0.55 |
+| Insufficient data | < 2 descriptor-tagged items | 0.75 |
 
-### Style Coherence
+Oversized fits: `oversized, relaxed, loose, boxy, slouchy, wide, wide-leg, flare, flared, bootcut, barrel, voluminous`
+Fitted fits: `fitted, slim, skinny, bodycon, tailored, second-skin`
 
-| Patterns in outfit | Score |
+**Pattern coherence** — number of patterned items in the outfit:
+
+| Patterned items | Score |
 |---|---|
 | 0 (all solid) | 1.00 |
-| 1 | 0.85 |
-| 2 | 0.55 |
+| 1 (statement piece) | 0.85 |
+| 2 (bold mix) | 0.55 |
 | 3+ | 0.25 |
 
-Fit consistency (oversized vs. fitted conflict ratio) is blended at 40 %.
+---
 
-### Body-Type Priors
+### A — Appropriateness `score_appropriateness_v2()`
 
-When a user's body type is saved in their profile, the `preference` component
-uses `BODY_TYPE_PREFERENCES` — a dict mapping `hourglass / rectangle / pear /
-apple / inverted triangle / petite` to preferred descriptor values for `fit`,
-`neckline`, `leg_opening` and `length`. Score = `0.5 + 0.5 × (matches / checks)`.
+```
+A = 0.50 · formality_fit + 0.25 · season_fit + 0.25 · venue_fit
+```
+
+**Formality fit** — per-item distance from occasion formality target, averaged:
+```
+formality_fit(item) = max(0, 1 − (|item_formality − event_formality| − 0.25) / 0.75)
+```
+Tolerance band = 0.25 (scores 1.0 within the band, decays linearly outside).
+
+**Season fit** — `"all"` season items always score 1.0; seasonal items matched against
+`temperature_context` from the occasion (warm/cold/mild/cool).
+
+**Venue fit** — derived from `event_tokens` parsed at occasion creation:
+- Heels/stilettos at outdoor events (beach, rooftop, park, garden, hiking) → `× 0.80`
+- Athletic/loungewear (formality < 0.25) at formal events (wedding, gala, cocktail, black-tie, interview) → `× 0.55`
+- Swimwear outside beach/pool context → `× 0.30`
+- Loungewear at formal events or occasion formality > 0.55 → `× 0.40`
+
+---
+
+### P — Preference `score_body_type_fit()`
+
+```
+P = 0.5 · feedback_weight + 0.5 · body_type_score
+```
+
+`feedback_weight` is the occasion-scoped combo reputation (see Feedback Loop below).
+
+`body_type_score` checks item descriptors against `BODY_TYPE_PREFERENCES` — a table
+mapping `hourglass / rectangle / pear / apple / inverted triangle / petite` to preferred
+`fit`, `neckline`, `leg_opening`, and `length` values:
+
+```
+body_type_score = 0.5 + 0.5 × (matched_descriptor_checks / total_descriptor_checks)
+```
+
+Returns 0.5 (neutral) when body type is unset or descriptor data is sparse.
+
+*Planned v2.0: replace with a learned user style embedding trained on rated outfit history.*
+
+---
+
+### N — Novelty `score_novelty()`
+
+```
+N = 1 − max{ cosine_sim(outfit_emb, past_emb) : past_emb ∈ H }
+```
+
+Where `outfit_emb` is the mean of item CLIP embeddings in the current outfit, and
+`H` is the set of past outfit embeddings reconstructed from `seen_item_combos`
+(no extra DB query — item embeddings are already loaded). Cosine similarity is
+normalised from [−1, 1] → [0, 1] before inversion.
+
+Defaults to **0.80** (slightly below max) for new users with no history —
+leaves room for the diversity signal.
+
+---
+
+### D — Diversity `score_diversity_completeness()`
+
+Rewards outfits that cover the expected slots for the occasion formality:
+
+| Completeness | Condition | Score |
+|---|---|---|
+| Complete layered look | core + shoes + outerwear (formality ≥ 0.4) | 0.95 |
+| Complete look | core garment(s) + shoes | 0.85 |
+| Missing footwear | core present, no shoes | 0.65 |
+| Incomplete | Missing top/bottom/dress | 0.50 |
+
+Core = (top + bottom) or (dress) or (set) or (swimwear).
+
+A co-ord **set** covers both the top and bottom slot in a single item.
+**Swimwear** is treated as a self-contained base garment.
+
+---
+
+### R — Risk Penalty `score_risk_penalty()`
+
+Penalty subtracted from the composite score (capped at 0.50):
+
+| Violation | Per-item penalty |
+|---|---|
+| Casual/athletic piece (formality < 0.20) at formal event | +0.25 |
+| Swimwear outside beach/pool context | +0.35 |
+| Loungewear at occasion formality > 0.40 | +0.20 |
+| Over-dressed (formality > 0.90) at casual occasion | +0.12 |
+| No descriptors and no color data | +0.04 |
+
+---
 
 ### Outfit Templates
 
-The engine builds candidates across four structural templates, selects the
-highest-scoring outfit from each, then fills remaining slots with overflow:
+The engine builds candidates across four structural templates, scores every
+combination, selects the top-ranked outfit from each template, then fills
+remaining slots from the overflow pool:
 
 | Template | Structure |
 |---|---|
@@ -293,17 +436,45 @@ highest-scoring outfit from each, then fills remaining slots with overflow:
 | B | top → bottom → outerwear → shoes |
 | C | dress → shoes |
 | D | dress → outerwear → shoes |
+| E | set → shoes |
+| F | set → outerwear → shoes |
+| G | swimwear → shoes |
 
-Accessories (bags, belts, scarves etc.) are attached after core scoring —
-up to 2 per outfit, rule-checked to avoid doubling the same subtype.
+A **set** (co-ord two-piece) fills the top+bottom slot as a single item.
+Template G surfaces only when the occasion scores well for beach/pool context.
+
+Accessories (bags, belts, scarves etc.) are scored and attached after core
+outfit scoring — up to 2 per outfit, deduplicated by subtype (no two bags).
+
+---
 
 ### Outfit Feedback Loop
 
 Ratings are tracked at **combo level** (the specific combination of item IDs),
-not at individual item level, preventing good items being penalised for a
-bad pairing. Combos are scoped to an occasion context using `occasion_type +
+not at individual item level — preventing good items being penalised for a bad
+pairing. Combos are scoped to an occasion context using `occasion_type +
 formality + event_tokens` similarity — so a "dinner date" rating influences
 future dinner suggestions but not job interview outfits.
+
+Occasion similarity uses **weighted Jaccard** on `event_tokens`:
+- Activity tokens (dinner, interview, wedding…): weight **3.0**
+- Setting tokens (rooftop, office, beach…): weight **2.0**
+- Other tokens: weight **1.0**
+
+Hard filter: `occasion_type` mismatch or formality gap > 0.25 → similarity = 0.
+
+```
+combo_weight = RATING_TO_WEIGHT[rating] × occasion_similarity
+```
+
+| Rating | Base weight |
+|---|---|
+| 0 (explicit bad) | 0.10 |
+| 1 ★ | 0.20 |
+| 2 ★★ | 0.40 |
+| 3 ★★★ | 0.60 |
+| 4 ★★★★ | 0.80 |
+| 5 ★★★★★ | 1.00 |
 
 The regenerate flow offers two signals:
 
@@ -315,6 +486,21 @@ The regenerate flow offers two signals:
 When every possible combo has been shown, an exhaustion banner appears with a
 **"Reset & start fresh"** option that clears ratings for the matching occasion
 context via `POST /recommend/reset-feedback`.
+
+---
+
+### Grounded Explanations
+
+After scoring, the `score_breakdown.tags` dict (color_story, silhouette, occasion,
+completeness, risk) is passed to GPT-4o-mini. The model is instructed to reference
+these specific signals — not generate generic praise. Example tags fed to the prompt:
+
+```
+• Color story: neutral base with navy accent
+• Proportion: balanced proportion — volume contrasted with fitted
+• Occasion fit: strong formality match
+• Look completeness: complete layered look
+```
 
 ---
 
@@ -362,7 +548,7 @@ Storage buckets: `clothing-images` (private), `profile-photos` (public)
 
 ## Common Issues
 
-**"No clothing items found"** — Upload at least a top + bottom + shoes, or a dress + shoes before generating outfits. Adding outerwear unlocks two additional outfit templates. Once you have items, an **"Unlock more looks"** nudge appears after generation to guide you toward filling gaps.
+**"No clothing items found"** — Upload at least a top + bottom + shoes, a dress + shoes, or a co-ord set + shoes before generating outfits. Adding outerwear unlocks layered templates; adding swimwear unlocks the beach/resort template. Once you have items, an **"Unlock more looks"** nudge appears after generation to guide you toward filling gaps.
 
 **Deleted an item by accident?** — Items are soft-deleted (moved to Trash, not permanently removed). Open the Trash via the button in the Wardrobe header and click **Restore** to bring an item back. If you've since uploaded a newer version of the same item, the old trash copy is auto-purged on restore attempt. Items in trash for 90+ days are permanently removed by the auto-purge cron (see `supabase_migrations.sql` for setup options).
 

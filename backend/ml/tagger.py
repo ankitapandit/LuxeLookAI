@@ -36,6 +36,9 @@ CATEGORY_LABELS: List[Tuple[str, str]] = [
     ("shoes",       "a photo of shoes, boots, heels, sneakers, sandals, or footwear"),
     ("outerwear",   "a photo of a coat, jacket, blazer, or cardigan worn as an outer layer"),
     ("accessories", "a photo of an accessory such as a handbag, jewelry, belt, scarf, or hat"),
+    ("set",         "a photo of a co-ord set or matching two-piece outfit with a coordinated top and bottom in the same fabric or print"),
+    ("swimwear",    "a photo of swimwear such as a bikini, one-piece swimsuit, tankini, monokini, or swim dress"),
+    ("loungewear",  "a photo of loungewear, pajamas, sweatpants, joggers, a hoodie, or comfortable home or sleepwear clothing"),
 ]
 
 COLOR_LABELS: List[Tuple[str, str]] = [
@@ -177,9 +180,11 @@ def _real_tag(image_bytes: bytes) -> Dict[str, Any]:
     image    = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     logger.info("Running CLIP zero-shot classification…")
 
-    category, cat_conf   = _classify(image, CATEGORY_LABELS)
-    color,    color_conf = _classify(image, COLOR_LABELS)
-    season,   _          = _classify(image, SEASON_LABELS)
+    from services.taxonomy import get_clip_labels
+    _clip = get_clip_labels()
+    category, cat_conf   = _classify(image, _clip.get("category", CATEGORY_LABELS))
+    color,    color_conf = _classify(image, _clip.get("color", COLOR_LABELS))
+    season,   _          = _classify(image, _clip.get("season", SEASON_LABELS))
     formality_score      = _compute_formality_score(image)
 
     # Category-based formality floor — prevents obviously dressable items
@@ -209,7 +214,7 @@ def _real_tag(image_bytes: bytes) -> Dict[str, Any]:
 
     accessory_subtype = None
     if item_type == "accessory":
-        accessory_subtype, _ = _classify(image, ACCESSORY_LABELS)
+        accessory_subtype, _ = _classify(image, _clip.get("accessory_type", ACCESSORY_LABELS))
 
     return {
         "category":          category,
@@ -333,13 +338,18 @@ def get_taggable_options() -> Dict[str, Any]:
     Called by the frontend to populate correction dropdowns and review forms.
     Kept in sync with the model's label lists above.
     """
+    from services.taxonomy import get_clip_labels
+    _clip = get_clip_labels()
+    _cats    = _clip.get("category", CATEGORY_LABELS)
+    _colors  = _clip.get("color", COLOR_LABELS)
+    _seasons = _clip.get("season", SEASON_LABELS)
     return {
-        "categories": [v for v, _ in CATEGORY_LABELS],
-        "colors":     [v for v, _ in COLOR_LABELS],
+        "categories": [v for v, _ in _cats],
+        "colors":     [v for v, _ in _colors],
         # Season options enriched with human descriptions for the review form
         "seasons": [
-            {"value": v, "label": SEASON_DESCRIPTIONS[v]}
-            for v, _ in SEASON_LABELS
+            {"value": v, "label": SEASON_DESCRIPTIONS.get(v, v)}
+            for v, _ in _seasons
         ],
         # Formality levels — user picks a named level, not a raw number
         "formality_levels": [
