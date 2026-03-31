@@ -269,9 +269,6 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
 
 const COMMON_DESCRIPTORS: Record<string, string[]> = {};  // all attributes are now per-category
 
-function svgToDataUrl(svg: string) {
-  return `data:image/svg+xml;base64,${btoa(svg)}`;
-}
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -910,41 +907,6 @@ function ColorPicker({ selected, onSelect }: { selected: string; onSelect: (key:
 }
 
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PatternPicker — dropdown with name + inline SVG swatch
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function PatternPicker({ selected, onSelect }: { selected: string; onSelect: (k: string) => void }) {
-  const current = PATTERNS.find(p => p.key === selected) || null;
-
-  return (
-    <div>
-      {/* Current selection preview */}
-      {current && (
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", background: "var(--surface)", borderRadius: "8px", marginBottom: "10px", border: "1px solid var(--border)" }}>
-          <img src={svgToDataUrl(current.svg)} width={36} height={36} style={{ borderRadius: "4px" }} alt={current.label} />
-          <span style={{ fontWeight: 500, fontSize: "14px" }}>{current.label}</span>
-        </div>
-      )}
-
-      {/* Pattern options grid */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-        {PATTERNS.map(p => (
-          <button key={p.key} onClick={() => onSelect(p.key)} style={{
-            display: "flex", alignItems: "center", gap: "12px",
-            padding: "8px 10px", borderRadius: "8px", border: "1px solid",
-            borderColor: selected === p.key ? "var(--charcoal)" : "var(--border)",
-            background:  selected === p.key ? "rgba(212,169,106,0.18)" : "var(--surface)",
-            cursor: "pointer", textAlign: "left", transition: "all 0.12s ease",
-          }}>
-            <img src={svgToDataUrl(p.svg)} width={32} height={32} style={{ borderRadius: "4px", flexShrink: 0 }} alt={p.label} />
-            <span style={{ fontSize: "13px", fontWeight: selected === p.key ? 600 : 400, color: "var(--ink)" }}>{p.label}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // StyleDetailsSection — dropdown with name + inline SVG swatch

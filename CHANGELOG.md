@@ -32,11 +32,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 - **Wardrobe delete / update silently no-ops** — PostgREST `PATCH` does not persist for this Supabase project regardless of RLS or schema-cache state. All clothing item writes now route through `SECURITY DEFINER` functions (`soft_delete_clothing_item`, `restore_clothing_item`, `update_clothing_item_tags`) that execute as the `postgres` owner, identical to the Supabase SQL editor.
 - **Descriptor edits lost on update** — `descriptors` JSONB was never sent to the backend (`api.ts` omitted it from query params). Individual descriptor keys (e.g. `fabric_type`) are now correctly sent, parsed by the router, and merged into the existing JSONB — changing one key never overwrites unrelated keys. Both addition (new key) and modification (existing key) are handled correctly.
-- **Debug `print("login", ...)` statement** removed from `routers/auth.py`.
-
-### Fixed
 - **Restored item shows without tags/descriptors** — `GET /clothing/items/deleted` was returning only 5 fields (`id, category, item_type, color, image_url, deleted_at`), so the trash copy lacked `season`, `formality_score`, `descriptors`, `pattern` etc. Now selects all display fields. Frontend also re-fetches the full active wardrobe after a successful restore instead of spreading the local trash copy.
 - **Trash button disappears when trash empties** — button was conditionally rendered on `deletedItems.length > 0`; once all items were restored the button vanished with no way back to the wardrobe view. Button now stays visible while `showTrash` is `true` and its label switches to `← Back to Wardrobe` when the trash is empty.
+- **Debug `print("login", ...)` statement** removed from `routers/auth.py`.
 
 ### Added
 - **Descriptor editing via PATCH** — `PATCH /clothing/item/{id}` now accepts a `descriptors` query param (JSON string). The `update_clothing_item_tags` RPC merges incoming keys into stored JSONB using `||`.
@@ -100,6 +98,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 **Taxonomy seed (`supabase_migrations.sql`)**
 - v1.9.2 migration block: 3 CLIP label rows, ~110 descriptor rows (set/swimwear/loungewear),
   ~70 body_type rows for all 6 body types × 3 new categories; idempotent (`ON CONFLICT DO NOTHING`)
+
+### Changed
+- **Wardrobe sort order** — wardrobe grid now displays newest items first (`created_at DESC`) so recently uploaded pieces are immediately visible at the top.
+- **"Has a Pattern" toggle removed** — replaced with an auto-detected `pattern` field populated by the AI tagger; the manual toggle was redundant and inconsistent with how pattern data is stored.
+
+### Fixed
+- **`correct_item_tags` Supabase path** — tag correction was falling back to mock-mode logic in real mode; real-mode path now uses the Supabase client correctly to persist category, color, season, formality, and descriptor updates.
 
 ---
 
