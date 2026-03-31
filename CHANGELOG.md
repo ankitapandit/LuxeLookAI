@@ -19,6 +19,223 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | 1.7.0   | 2026-03-30 | Scorer intelligence, outfit feedback loop, Editorial Dark theme |
 | 1.8.0   | 2026-03-30 | Soft delete & restore, smarter outfit explanations, wardrobe coverage nudge |
 | 1.8.1   | 2026-03-30 | Restore duplicate guard, auto-purge on supersede, 90-day seasonal purge     |
+| 1.9.0   | 2026-03-30 | Fashion-intuitive V2 scorer — outfit-level compatibility, color story, silhouette balance, novelty, risk |
+| 1.9.1   | 2026-03-30 | style_taxonomy DB table, 660-row seed, process-level taxonomy loader; live vocabulary without redeploy |
+| 1.9.2   | 2026-03-30 | New clothing categories: set (co-ord), swimwear, loungewear — CLIP labels, descriptors, body-type prefs, venue-aware scoring |
+
+---
+
+## [1.9.2] - 2026-03-30
+
+### Added
+- Three new clothing categories supported end-to-end: **set**, **swimwear**, **loungewear**
+
+**CLIP classification (`ml/tagger.py`)**
+- Added to `CATEGORY_LABELS` with category-specific zero-shot prompts:
+  - `set` — "a photo of a co-ord set or matching two-piece outfit…"
+  - `swimwear` — "a photo of swimwear such as a bikini, one-piece swimsuit, tankini…"
+  - `loungewear` — "a photo of loungewear, pajamas, sweatpants, joggers…"
+
+**Descriptor vocabulary (`ml/llm.py`)**
+- `set`: fabric_type, fit, top_style (crop/halter/bandeau/blazer…), bottom_style
+  (shorts/skirt/trousers/wide-leg…), pattern, closure, detailing
+- `swimwear`: swimwear_type (bikini/one-piece/tankini/monokini/swim dress…),
+  top_style, coverage (minimal/moderate/full), neckline, fabric_type, pattern, closure
+- `loungewear`: loungewear_type (hoodie/joggers/pajama set/robe/shorts set…),
+  fabric_type (cotton/fleece/modal/silk/satin/bamboo/waffle-knit), fit, closure,
+  length, pattern, detailing (ribbed/sherpa lined/kangaroo pocket…)
+
+**Body-type preferences (`services/recommender.py`)**
+- All six body types (hourglass/rectangle/pear/apple/inverted triangle/petite) updated
+  with `set`, `swimwear`, and `loungewear` preference blocks using category-appropriate
+  fit and style attributes
+
+**Scorer updates (`services/recommender.py`)**
+- `score_silhouette_balance()` — `set` and `loungewear` now included in the fit
+  proportion check (previously only tops/bottoms/dresses/outerwear were checked)
+- `score_diversity_completeness()` — `set` and `swimwear` both count as `core_complete`
+  (a co-ord set covers the top + bottom slots; a swimsuit is a complete base garment);
+  swimwear + shoes returns 0.85 "complete look" without needing separate top/bottom
+- `score_appropriateness_v2()` — venue multiplier penalties added:
+  - Swimwear outside beach/pool context → multiplier capped at 0.30
+  - Loungewear at formal events or occasion formality > 0.55 → multiplier capped at 0.40
+- `score_risk_penalty()` — hard risk penalties added:
+  - Swimwear outside beach/pool → +0.35 penalty ("swimwear outside beach/pool context")
+  - Loungewear at occasion formality > 0.40 → +0.20 ("loungewear inappropriate for occasion formality")
+
+**Taxonomy seed (`supabase_migrations.sql`)**
+- v1.9.2 migration block: 3 CLIP label rows, ~110 descriptor rows (set/swimwear/loungewear),
+  ~70 body_type rows for all 6 body types × 3 new categories; idempotent (`ON CONFLICT DO NOTHING`)
+
+---
+
+## [1.9.1] - 2026-03-30
+
+### Added
+- `style_taxonomy` table in `supabase_migrations.sql` — stores all fashion vocabulary
+  and configuration data that was previously hardcoded across backend files; columns:
+  `domain`, `category` (empty string sentinel for global rows), `attribute`, `value`,
+  `meta jsonb`, `sort_order`, `is_active`
+- 660-row seed data appended to `supabase_migrations.sql` across 5 domains:
+  - `descriptor` (450 rows) — full `CATEGORY_DESCRIPTORS` vocabulary from `ml/llm.py`;
+    all valid attribute values per clothing category (tops/dresses/outerwear/bottoms/shoes/accessories)
+  - `color` (34 rows) — `COLOR_RGB` mappings with embedded `clip_prompt` in `meta` jsonb;
+    consolidates two previously separate hardcoded dicts into one source of truth
+  - `clip_label` (17 rows) — CLIP zero-shot classification prompts for category,
+    season, and accessory type detection from `tagger.py`
+  - `body_type` (121 rows) — `BODY_TYPE_PREFERENCES` silhouette rules; keyed as
+    `category_attribute` (e.g. `tops_fit`, `bottoms_leg_opening`) with `category = body_type_name`
+  - `event_token` (38 rows) — activity and setting tokens with `jaccard_weight` in `meta`;
+    25 activity tokens (weight 3.0) + 14 setting tokens (weight 2.0) for weighted Jaccard scoring
+- `idx_style_taxonomy_domain` and `idx_style_taxonomy_domain_cat` performance indexes
+- `style_taxonomy_updated_at` trigger using existing `set_updated_at()` function
+- `idx_clothing_items_user_active` and `idx_clothing_items_trash` partial indexes
+  for soft-delete query performance (was given ad-hoc in v1.8.0, now formally in migrations)
+
+### Changed
+- `services/taxonomy.py` — new process-level taxonomy loader backed by `style_taxonomy`:
+  - `get_descriptors()`, `get_color_rgb()`, `get_clip_labels()`, `get_body_type_prefs()`,
+    `get_event_tokens()` — each function hits the DB once, caches result with `lru_cache`,
+    and falls back to the hardcoded Python constants if the DB is unreachable
+  - `_parse_meta()` helper handles both pre-parsed `dict` (Supabase client) and raw JSON string
+  - `invalidate_cache()` utility clears all five caches (call after admin writes to taxonomy)
+  - **Mock mode**: skips DB entirely and returns the module-level Python constants directly —
+    mock tests require no DB connection
+- `ml/llm.py` — `describe_clothing()` now calls `get_descriptors()` to resolve clothing
+  attribute vocabulary at runtime instead of reading the module-level dict directly;
+  new descriptor values added to `style_taxonomy` are picked up without a deploy
+- `ml/tagger.py` — `tag_clothing_image()` and `get_taggable_options()` now call
+  `get_clip_labels()` to resolve CATEGORY, COLOR, SEASON, and ACCESSORY zero-shot prompts at
+  runtime; `SEASON_DESCRIPTIONS` now uses `.get(v, v)` to handle future novel season values
+- `services/recommender.py` — `score_color_harmony()` and `classify_color_story()` call
+  `get_color_rgb()` at runtime; `score_body_type()` calls `get_body_type_prefs()` — both
+  resolve from DB in real mode so wardrobe vocabulary expansions take effect immediately
+- `routers/recommendations.py` — `_weighted_jaccard()` fetches activity and setting token sets
+  via `get_event_tokens()` instead of reading module-level sets; jaccard weights now extensible
+  by inserting new rows into `style_taxonomy` without redeployment
+
+### Fixed
+- `NULL` category rows in seed data replaced with `''` (empty string) — `UNIQUE` constraints
+  and `ON CONFLICT` clauses do not resolve correctly on nullable columns in PostgreSQL;
+  empty string sentinel ensures idempotent re-runs work as expected
+
+---
+
+## [1.9.0] - 2026-03-30
+
+### Added
+
+#### V2 Outfit-Level Scorer (`recommender.py`)
+- Replaced independent per-item scoring with a **composed outfit-level formula** that
+  judges the look as a whole: `Score = 0.28C + 0.24A + 0.22P + 0.10T + 0.08N + 0.05D − 0.03R`
+- `WEIGHTS_V2` dict + `RISK_WEIGHT = 0.03` constants; v1 `WEIGHTS` retained as fallback
+
+**C — Compatibility (`score_compatibility`)**
+- `classify_color_story()` — classifies outfit palette into: neutral base + accent (0.92),
+  all neutrals (0.88), monochromatic (0.86), analogous/tonal (0.84), complementary contrast
+  (0.80), mixed (0.70), clashing (0.58); returns a human-readable tag used in explanations
+- `score_silhouette_balance()` — scores proportion using the classic contrast rule: one
+  oversized + one fitted = 0.95 ("balanced proportion — volume contrasted with fitted"),
+  all fitted = 0.88, double oversized = 0.55 ("double-volume risk"); `_OVERSIZED_FITS`
+  extended to include `wide`, `wide-leg`, `flare`, `flared`, `bootcut`, `barrel`, `voluminous`
+  so wide-leg trousers correctly trigger the proportion contrast bonus
+- `score_pairwise_compatibility()` — scores each item pair on color harmony (60%) +
+  inter-item formality match (40%); outfit-level score is the average across all pairs
+
+**A — Appropriateness (`score_appropriateness_v2`)**
+- Extends v1 formality + season scoring with venue fit from `event_tokens`:
+  heels penalised at outdoor events (beach, rooftop, park), athletic/loungewear penalised
+  at formal events (wedding, gala, cocktail); returns labelled reason tag
+
+**N — Novelty (`score_novelty`)**
+- `1 − max_cosine_similarity(current_outfit_embedding, past_outfit_embeddings)`;
+  past outfit embeddings computed on-the-fly from `seen_item_combos` (IDs already loaded,
+  no extra DB query); defaults to 0.80 (below max) for new users
+
+**D — Diversity/completeness (`score_diversity_completeness`)**
+- Rewards outfits that cover expected slots: complete layered look = 0.95, complete
+  look = 0.85, missing footwear = 0.65, incomplete = 0.50
+
+**R — Risk penalty (`score_risk_penalty`)**
+- Subtracts up to 0.50 for: athletic piece at formal event (+0.25 each),
+  over-dressed for casual occasion (+0.12 each), low-confidence item data (+0.04 each)
+
+**T — Trend (placeholder)**
+- Neutral 0.50 for all outfits; pipeline deferred to v2.1 when external trend sources
+  (Pinterest Predicts, WGSN) are integrated
+
+**`score_outfit_v2()`**
+- New main scorer; returns `(composite_score, score_breakdown)` where `score_breakdown`
+  includes all component scores and a `tags` dict (color_story, silhouette, occasion,
+  completeness, risk) used to seed the LLM explanation
+- `generate_outfit_suggestions()` updated to use `score_outfit_v2`; now builds past
+  outfit embeddings from `seen_item_combos` for novelty scoring; appends `score_breakdown`
+  to each suggestion dict; strips `score_breakdown` before DB insert (not a DB column)
+
+#### Grounded LLM Explanations (`llm.py`)
+- `explain_outfit()` accepts new `score_breakdown: dict | None` parameter
+- Real mode: prompt seeded with structured scoring signals ("Color story: neutral base
+  with navy accent", "Proportion: balanced proportion — volume contrasted with fitted",
+  "Occasion fit: strong formality match"); LLM instructed to reference these specifically
+  rather than generate generic praise
+- Mock mode: `_mock_explain_outfit()` assembles explanation from breakdown tags for
+  richer, consistent test output
+- Legacy `coherence_score` parameter retained as fallback when breakdown is absent
+
+### Deferred
+- Trend pipeline (v2.1) — `T` score is neutral placeholder until Pinterest/WGSN data available
+- User style embedding (v2.0) — `P` score still uses feedback history + body-type priors;
+  learned outfit-level user embedding deferred until sufficient rating data exists
+
+---
+
+## [1.8.1] - 2026-03-30
+
+### Added
+
+#### Restore Duplicate Guard
+- `restore_item()` return type changed from `bool` to `RestoreResult` — a
+  `Literal["restored", "not_found", "duplicate_conflict", "auto_purged"]` string;
+  all callers pattern-match on this value
+- Before restoring a trashed item, the service now checks for an active duplicate:
+  - Real mode: embedding cosine similarity ≥ `DUPLICATE_THRESHOLD` (0.95) — same
+    threshold used by upload duplicate detection
+  - Mock mode: exact `category + color + item_type` match (mock embeddings are random)
+- **Timestamp tiebreak** determines the outcome when a duplicate is found:
+  - `active.created_at ≥ trash.created_at` → the active item is a replacement →
+    trash item is **auto-purged** (DB row + storage file hard-deleted); response
+    `status: "auto_purged"`
+  - `active.created_at < trash.created_at` → the trashed item is newer, unusual
+    case → **409 Conflict** returned; user must remove the active item manually first
+- `POST /clothing/item/{id}/restore` now returns `{"status": "restored"|"auto_purged", "item_id": "..."}`
+  instead of `{"restored": true}`
+- `RestoreStatus` TypeScript type exported from `api.ts`; `restoreClothingItem()` now
+  returns `Promise<RestoreStatus>` instead of `Promise<void>`
+- Three distinct toast messages in `wardrobe.tsx`:
+  - `"restored"` → "Item restored to wardrobe"
+  - `"auto_purged"` → "A newer version of this item is already in your wardrobe — old copy removed" (info icon, 4 s)
+  - 409 conflict → "A similar item is already in your wardrobe. Remove it first if you want to restore this one." (error, 5 s)
+
+#### 90-Day Auto-Purge (Season-Aligned)
+- `purge_old_deleted_items(user_id, days=90)` added to `clothing_service.py`:
+  - Fetches all trash items with `deleted_at < now() - 90 days`
+  - Removes storage files first (non-blocking, logs warnings on failure)
+  - Hard-deletes DB rows; returns count of purged items
+  - Both mock and real implementations
+- `POST /clothing/purge-deleted` endpoint — idempotent, safe to call repeatedly;
+  returns `{"purged": <count>}`. Intended as the target for an external cron job
+- `supabase_migrations.sql` updated with two documented options for scheduling the purge:
+  - **Option A** (pg_cron): SQL cron job running daily at 03:00 UTC — purges DB rows
+    only (storage cleanup still requires the backend endpoint)
+  - **Option B** (recommended): external cron service calls `POST /clothing/purge-deleted`
+    — handles both DB rows and storage files atomically
+- 90-day window is semantically aligned with one season change — items deleted in
+  winter survive through spring before being permanently removed
+
+### Changed
+- `POST /clothing/item/{id}/restore` response body changed:
+  `{"restored": true}` → `{"status": "restored"|"auto_purged", "item_id": "..."}`
+- `restoreClothingItem()` in `api.ts` now returns `Promise<RestoreStatus>` (was `Promise<void>`)
 
 ---
 
@@ -97,56 +314,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Deferred
 - Coverage nudge for accessories (bags, belts, scarves) — current logic only checks
   core structural item types; accessory gap detection deferred to a later version
-
----
-
-## [1.8.1] - 2026-03-30
-
-### Added
-
-#### Restore Duplicate Guard
-- `restore_item()` return type changed from `bool` to `RestoreResult` — a
-  `Literal["restored", "not_found", "duplicate_conflict", "auto_purged"]` string;
-  all callers pattern-match on this value
-- Before restoring a trashed item, the service now checks for an active duplicate:
-  - Real mode: embedding cosine similarity ≥ `DUPLICATE_THRESHOLD` (0.95) — same
-    threshold used by upload duplicate detection
-  - Mock mode: exact `category + color + item_type` match (mock embeddings are random)
-- **Timestamp tiebreak** determines the outcome when a duplicate is found:
-  - `active.created_at ≥ trash.created_at` → the active item is a replacement →
-    trash item is **auto-purged** (DB row + storage file hard-deleted); response
-    `status: "auto_purged"`
-  - `active.created_at < trash.created_at` → the trashed item is newer, unusual
-    case → **409 Conflict** returned; user must remove the active item manually first
-- `POST /clothing/item/{id}/restore` now returns `{"status": "restored"|"auto_purged", "item_id": "..."}`
-  instead of `{"restored": true}`
-- `RestoreStatus` TypeScript type exported from `api.ts`; `restoreClothingItem()` now
-  returns `Promise<RestoreStatus>` instead of `Promise<void>`
-- Three distinct toast messages in `wardrobe.tsx`:
-  - `"restored"` → "Item restored to wardrobe"
-  - `"auto_purged"` → "A newer version of this item is already in your wardrobe — old copy removed" (info icon, 4 s)
-  - 409 conflict → "A similar item is already in your wardrobe. Remove it first if you want to restore this one." (error, 5 s)
-
-#### 90-Day Auto-Purge (Season-Aligned)
-- `purge_old_deleted_items(user_id, days=90)` added to `clothing_service.py`:
-  - Fetches all trash items with `deleted_at < now() - 90 days`
-  - Removes storage files first (non-blocking, logs warnings on failure)
-  - Hard-deletes DB rows; returns count of purged items
-  - Both mock and real implementations
-- `POST /clothing/purge-deleted` endpoint — idempotent, safe to call repeatedly;
-  returns `{"purged": <count>}`. Intended as the target for an external cron job
-- `supabase_migrations.sql` updated with two documented options for scheduling the purge:
-  - **Option A** (pg_cron): SQL cron job running daily at 03:00 UTC — purges DB rows
-    only (storage cleanup still requires the backend endpoint)
-  - **Option B** (recommended): external cron service calls `POST /clothing/purge-deleted`
-    — handles both DB rows and storage files atomically
-- 90-day window is semantically aligned with one season change — items deleted in
-  winter survive through spring before being permanently removed
-
-### Changed
-- `POST /clothing/item/{id}/restore` response body changed:
-  `{"restored": true}` → `{"status": "restored"|"auto_purged", "item_id": "..."}`
-- `restoreClothingItem()` in `api.ts` now returns `Promise<RestoreStatus>` (was `Promise<void>`)
 
 ---
 

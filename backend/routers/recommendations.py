@@ -60,9 +60,12 @@ def _weighted_jaccard(tokens_a: list, tokens_b: list) -> float:
       setting tokens   → weight 2.0
       other tokens     → weight 1.0
     """
+    from services.taxonomy import get_event_tokens
+    _act, _set = get_event_tokens()
+
     def _w(t: str) -> float:
-        if t in _ACTIVITY_TOKENS: return 3.0
-        if t in _SETTING_TOKENS:  return 2.0
+        if t in _act: return 3.0
+        if t in _set: return 2.0
         return 1.0
 
     sa, sb = set(tokens_a), set(tokens_b)
@@ -324,7 +327,12 @@ def generate_outfits(
         )
 
     # ── Step 7-8: persist + return ─────────────────────────────────────────
-    _persist_suggestions(suggestions)
+    # Strip score_breakdown before DB insert (not a DB column), keep for response
+    suggestions_for_db = [
+        {k: v for k, v in s.items() if k != "score_breakdown"}
+        for s in suggestions
+    ]
+    _persist_suggestions(suggestions_for_db)
 
     coverage_hints = wardrobe_coverage_gaps(items)
     return {

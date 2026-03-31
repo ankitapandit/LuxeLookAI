@@ -117,10 +117,27 @@ def _mock_parse_occasion(raw_text: str) -> Dict[str, Any]:
     }
 
 
-def _mock_explain_outfit(items: List[Dict], user_body_type: str | None = None) -> str:
-    """Return a mock explanation cycling through canned responses."""
-    idx = (len(items) + (hash(user_body_type) if user_body_type else 0)) % len(_MOCK_EXPLANATIONS)
-    return _MOCK_EXPLANATIONS[idx]
+def _mock_explain_outfit(items: List[Dict], user_body_type: str | None = None, score_breakdown: dict | None = None) -> str:
+    """Return a mock explanation using v2 score breakdown tags when available."""
+    tags = (score_breakdown or {}).get("tags", {})
+    color_tag    = tags.get("color_story", "")
+    silhouette   = tags.get("silhouette",  "")
+    occasion_tag = tags.get("occasion",    "")
+    completeness = tags.get("completeness","")
+
+    cat_colors = [f"{i.get('color', '')} {i.get('category', '')}".strip() for i in items if i.get('category')]
+    item_line  = ", ".join(cat_colors[:3]) or "wardrobe pieces"
+
+    parts = [f"This outfit — {item_line} — pulls together well."]
+    if color_tag:
+        parts.append(f"The {color_tag} creates a cohesive feel.")
+    if silhouette and "risk" not in silhouette.lower() and "insufficient" not in silhouette.lower():
+        parts.append(f"The {silhouette}.")
+    if occasion_tag:
+        parts.append(f"This reads as {occasion_tag} for the event.")
+    if user_body_type:
+        parts.append(f"The proportions are well-suited to a {user_body_type} frame.")
+    return " ".join(parts)
 
 
 # ── Real LLM calls ────────────────────────────────────────────────────────────
@@ -180,11 +197,13 @@ def _real_explain_outfit(
     occasion: Dict,
     user_body_type: str | None = None,
     coherence_score: float | None = None,
+    score_breakdown: dict | None = None,
 ) -> str:
     """
     Generate a human-readable explanation for why this outfit was chosen.
     When body type is known, the prompt instructs the model to reference silhouette fit.
-    When coherence_score is notably high or low, the model is prompted to comment on pattern harmony.
+    When score_breakdown tags are present, they are used to ground the explanation in
+    actual scoring signals (v2). Falls back to coherence_score hint for legacy calls.
     """
     from openai import OpenAI
 
@@ -210,25 +229,40 @@ def _real_explain_outfit(
             "Where relevant, briefly mention how the silhouette or fit choice flatters their proportions."
         )
 
-    # Coherence hint
-    coherence_block = ""
-    if coherence_score is not None:
+    # Scoring context from v2 breakdown — grounds the explanation in actual reasons
+    scoring_context = ""
+    if score_breakdown:
+        tags = score_breakdown.get("tags", {})
+        hints: List[str] = []
+        if tags.get("color_story"):
+            hints.append(f"Color story: {tags['color_story']}")
+        if tags.get("silhouette") and "insufficient" not in tags["silhouette"].lower():
+            hints.append(f"Proportion: {tags['silhouette']}")
+        if tags.get("occasion"):
+            hints.append(f"Occasion fit: {tags['occasion']}")
+        if tags.get("completeness"):
+            hints.append(f"Look completeness: {tags['completeness']}")
+        if tags.get("risk") and tags["risk"] != "no significant risk":
+            hints.append(f"Note: {tags['risk']}")
+        if hints:
+            scoring_context = "\n\nStyling signals (reference these specifically, do not restate them verbatim):\n" + "\n".join(f"• {h}" for h in hints)
+    elif coherence_score is not None:
+        # Legacy fallback
         if coherence_score >= 0.90:
-            coherence_block = "\nThe outfit has excellent pattern harmony — feel free to highlight this."
+            scoring_context = "\nThe outfit has excellent pattern harmony — feel free to highlight this."
         elif coherence_score <= 0.55:
-            coherence_block = (
-                "\nThe outfit mixes patterns — acknowledge the bold choice without being negative."
-            )
+            scoring_context = "\nThe outfit mixes patterns — acknowledge the bold choice without being negative."
 
     prompt = (
         "You are a professional personal stylist. In 2–3 sentences explain why this outfit works "
         "for the occasion. Be warm, specific, and concise. No bullet points. "
-        "Speak to the wearer directly (use 'you' / 'your').\n\n"
+        "Speak to the wearer directly (use 'you' / 'your'). "
+        "Reference the specific styling signals provided — do not make up generic praise.\n\n"
         f"Occasion: {occasion.get('occasion_type')} — {occasion.get('setting', 'indoor')}\n"
         f"Formality: {occasion.get('formality_level', 0.5):.0%}\n"
         f"Items: {item_lines}"
         f"{body_block}"
-        f"{coherence_block}"
+        f"{scoring_context}"
     )
 
     response = client.chat.completions.create(
@@ -258,6 +292,7 @@ def explain_outfit(
     occasion: Dict,
     user_body_type: str | None = None,
     coherence_score: float | None = None,
+    score_breakdown: dict | None = None,
 ) -> str:
     """
     Generate a natural-language explanation for the recommended outfit.
@@ -265,12 +300,14 @@ def explain_outfit(
         items:           List of clothing item dicts (color, category, formality_score, descriptors).
         occasion:        Structured occasion dict from parse_occasion().
         user_body_type:  Optional body type string — enables silhouette-aware explanation copy.
-        coherence_score: Optional 0–1 score — used to highlight pattern harmony or flag pattern mixing.
+        coherence_score: Optional 0–1 score — legacy hint for pattern harmony (v1).
+        score_breakdown: Optional v2 score breakdown dict with tags — used to ground the
+                         explanation in actual scoring signals.
     """
     settings = get_settings()
     if settings.use_mock_ai:
-        return _mock_explain_outfit(items, user_body_type)
-    return _real_explain_outfit(items, occasion, user_body_type, coherence_score)
+        return _mock_explain_outfit(items, user_body_type, score_breakdown)
+    return _real_explain_outfit(items, occasion, user_body_type, coherence_score, score_breakdown)
 
 
 # ── Face Detection ──────────────────────────────────────────────────────────
@@ -423,6 +460,47 @@ CATEGORY_DESCRIPTORS = {
         "closure":        ["zipper", "magnetic", "snap", "drawstring"],
         "strap_type":     ["top handle", "crossbody", "shoulder", "chain"],
     },
+    # ── Set (co-ord / two-piece matching sets) ────────────────────────────────
+    "set": {
+        "fabric_type":   ["cotton", "polyester", "linen", "satin", "silk", "knit",
+                          "denim", "jersey", "terry", "tweed"],
+        "fit":           ["fitted", "regular", "relaxed", "oversized", "tailored", "wrap"],
+        "top_style":     ["crop", "halter", "bandeau", "off-shoulder", "bralette",
+                          "blazer", "shirt", "camisole", "waistcoat"],
+        "bottom_style":  ["shorts", "mini skirt", "midi skirt", "trousers", "wide-leg trousers",
+                          "straight trousers", "skirt", "leggings"],
+        "pattern":       ["solid", "floral", "striped", "plaid", "abstract", "animal print",
+                          "geometric", "tie-dye"],
+        "closure":       ["pullover", "button-front", "zip-up", "wrap", "hook-and-eye"],
+        "detailing":     ["ruffles", "pleats", "smocked", "cut-out", "lace trim", "embroidery"],
+    },
+    # ── Swimwear ──────────────────────────────────────────────────────────────
+    "swimwear": {
+        "swimwear_type": ["bikini", "one-piece", "tankini", "monokini", "swim dress",
+                          "rash guard", "swim shorts", "boardshorts"],
+        "top_style":     ["triangle", "bandeau", "underwire", "halter", "sports bra",
+                          "crop", "balconette"],
+        "coverage":      ["minimal", "moderate", "full"],
+        "neckline":      ["halter", "bandeau", "strapless", "V-neck", "square", "scoop",
+                          "off-shoulder", "high-neck"],
+        "fabric_type":   ["polyester", "nylon", "spandex", "lycra", "recycled nylon"],
+        "pattern":       ["solid", "floral", "animal print", "striped", "tropical",
+                          "geometric", "color-block"],
+        "closure":       ["pull-on", "tie-side", "buckle", "underwired"],
+    },
+    # ── Loungewear ────────────────────────────────────────────────────────────
+    "loungewear": {
+        "loungewear_type": ["hoodie", "sweatshirt", "sweatpants", "joggers", "pajama set",
+                            "robe", "shorts set", "tank set", "matching set", "onesie"],
+        "fabric_type":     ["cotton", "fleece", "modal", "silk", "satin", "jersey", "terry",
+                            "bamboo", "waffle-knit"],
+        "fit":             ["oversized", "relaxed", "fitted", "slim", "regular"],
+        "closure":         ["pullover", "zip-up", "button-front", "open-front"],
+        "length":          ["cropped", "regular", "longline"],
+        "pattern":         ["solid", "plaid", "striped", "graphic", "tie-dye", "floral"],
+        "detailing":       ["ribbed", "brushed", "waffle texture", "sherpa lined", "drawstring",
+                            "kangaroo pocket", "thumbhole"],
+    },
 }
 
 COMMON_DESCRIPTORS: dict = {}  # all attributes are now per-category
@@ -439,9 +517,11 @@ def describe_clothing(image_bytes: bytes, category: str, mime_type: str = "image
         return _mock_describe_clothing(category)
 
     cat = category.lower().rstrip("s")  # normalise e.g. "dresses" → "dress"
-    # Find matching key
-    cat_key = next((k for k in CATEGORY_DESCRIPTORS if k.startswith(cat) or cat in k), None)
-    cat_descriptors = CATEGORY_DESCRIPTORS.get(cat_key or "", {})
+    # Fetch descriptor vocabulary (DB-backed in real mode, hardcoded in mock)
+    from services.taxonomy import get_descriptors
+    _descriptors = get_descriptors()
+    cat_key = next((k for k in _descriptors if k.startswith(cat) or cat in k), None)
+    cat_descriptors = _descriptors.get(cat_key or "", {})
     all_descriptors = {**cat_descriptors, **COMMON_DESCRIPTORS}
 
     if not all_descriptors:
