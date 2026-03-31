@@ -213,7 +213,7 @@ Full interactive docs at [http://localhost:8000/docs](http://localhost:8000/docs
 | POST | `/clothing/tag-preview` | AI tag + descriptor preview (no save) |
 | POST | `/clothing/upload-item` | Upload, tag, embed and save item |
 | GET | `/clothing/items` | List active wardrobe items |
-| PATCH | `/clothing/item/{id}` | Correct tags on saved item |
+| PATCH | `/clothing/item/{id}` | Correct tags on saved item (category, color, season, formality, descriptors) |
 | DELETE | `/clothing/item/{id}` | Soft-delete item (moves to trash, restorable) |
 | GET | `/clothing/items/deleted` | List soft-deleted items (trash view) |
 | POST | `/clothing/item/{id}/restore` | Restore a soft-deleted item (with duplicate guard) |
@@ -247,8 +247,17 @@ All routes except `/auth/*` require `Authorization: Bearer <token>` header.
 | **shoes** | Heels, sneakers, boots, sandals, flats | Required in all templates |
 | **accessories** | Handbags, belts, scarves, hats, jewelry | Attached after core scoring (up to 2) |
 
-Each category has a dedicated descriptor vocabulary (fabric, fit, neckline, pattern etc.)
-extracted at upload time by GPT-4o Vision and used for body-type matching and scoring.
+Each category has a dedicated descriptor vocabulary extracted at upload time by GPT-4o Vision
+and used for body-type matching and scoring. Descriptors can be edited per-item after upload
+(individual keys are merged — unrelated fields are preserved).
+
+| Category | Descriptor highlights |
+|---|---|
+| tops / bottoms / dresses | fabric, fit, neckline, sleeve length/style, strap type, back style, waist, hemline, pattern, detailing |
+| **set** | All of the above combined — top-half + bottom-half described together |
+| **swimwear** | Swimwear type, top style, support, structure, function, fit intent, bottom rise, back coverage, bottom fit style, bottom visibility |
+| **loungewear** | Loungewear type, fabric, neckline, sleeve length, strap type, support, structure, waist structure, bottom length |
+| outerwear / shoes / accessories | Category-specific vocabularies |
 
 ---
 
@@ -534,6 +543,21 @@ Run in order:
 Key tables: `users`, `clothing_items`, `events`, `outfit_suggestions`, `outfit_feedback`
 Storage buckets: `clothing-images` (private), `profile-photos` (public)
 
+### SECURITY DEFINER helpers (v1.9.4)
+
+All clothing item writes use `SECURITY DEFINER` RPC functions instead of PostgREST table
+`UPDATE` directly — required because PostgREST `PATCH` silently no-ops on this Supabase
+project regardless of RLS policy. The three functions are defined in `supabase_migrations.sql`
+and must be present before soft-delete / restore / tag-correction will persist:
+
+| Function | Purpose |
+|---|---|
+| `soft_delete_clothing_item(item_id, user_id)` | Sets `is_active=false`, records `deleted_at` |
+| `restore_clothing_item(item_id, user_id)` | Clears `is_active=true`, nulls `deleted_at` |
+| `update_clothing_item_tags(item_id, user_id, ...)` | Updates scalar columns + merges descriptor JSONB |
+
+After running the migration, reload the PostgREST schema cache: `NOTIFY pgrst, 'reload schema';`
+
 ---
 
 ## Deployment
@@ -547,6 +571,8 @@ Storage buckets: `clothing-images` (private), `profile-photos` (public)
 ---
 
 ## Common Issues
+
+**Item delete / update has no effect on the DB** — This project requires `SECURITY DEFINER` RPC functions for all clothing item writes (see Supabase Schema section). Run the v1.9.4 migration block from `supabase_migrations.sql` in the Supabase SQL editor, then run `NOTIFY pgrst, 'reload schema';`.
 
 **"No clothing items found"** — Upload at least a top + bottom + shoes, a dress + shoes, or a co-ord set + shoes before generating outfits. Adding outerwear unlocks layered templates; adding swimwear unlocks the beach/resort template. Once you have items, an **"Unlock more looks"** nudge appears after generation to guide you toward filling gaps.
 

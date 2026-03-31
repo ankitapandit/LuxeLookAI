@@ -154,6 +154,8 @@ export async function correctItem(
   if (corrections.pattern)         params.append("pattern",         corrections.pattern);
   if (corrections.season)          params.append("season",          corrections.season);
   if (corrections.formality_label) params.append("formality_label", corrections.formality_label);
+  if (corrections.descriptors && Object.keys(corrections.descriptors).length > 0)
+    params.append("descriptors", JSON.stringify(corrections.descriptors));
   const { data } = await api.patch<ClothingItem>(`/clothing/item/${itemId}?${params}`);
   return data;
 }

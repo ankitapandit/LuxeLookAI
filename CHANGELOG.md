@@ -7,21 +7,55 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Version Summary
 
-| Version | Date       | Description                                                  |
-|---------|------------|--------------------------------------------------------------|
-| 1.0.0   | 2026-03-16 | Initial upload — base codebase                               |
-| 1.1.0   | 2026-03-16 | Development environment and dependency fixes                 |
-| 1.2.0   | 2026-03-24 | Real mode support, UI overhaul, occasion/outfit improvements |
-| 1.3.0   | 2026-03-24 | Supabase migrations file                                     |
-| 1.4.0   | 2026-03-25 | User profile page and personalization foundations            |
-| 1.5.0   | 2026-03-25 | Clothing descriptors, duplicate detection, wardrobe hygiene  |
-| 1.6.0   | 2026-03-27 | Descriptor overhaul, outfit templates, UX fixes              |
-| 1.7.0   | 2026-03-30 | Scorer intelligence, outfit feedback loop, Editorial Dark theme |
-| 1.8.0   | 2026-03-30 | Soft delete & restore, smarter outfit explanations, wardrobe coverage nudge |
-| 1.8.1   | 2026-03-30 | Restore duplicate guard, auto-purge on supersede, 90-day seasonal purge     |
-| 1.9.0   | 2026-03-30 | Fashion-intuitive V2 scorer — outfit-level compatibility, color story, silhouette balance, novelty, risk |
-| 1.9.1   | 2026-03-30 | style_taxonomy DB table, 660-row seed, process-level taxonomy loader; live vocabulary without redeploy |
+| Version | Date       | Description																												  |
+|---------|------------|------------------------------------------------------------------------------------------------------------------------------|
+| 1.0.0   | 2026-03-16 | Initial upload — base codebase 																							  |
+| 1.1.0   | 2026-03-16 | Development environment and dependency fixes																				  |
+| 1.2.0   | 2026-03-24 | Real mode support, UI overhaul, occasion/outfit improvements																  |
+| 1.3.0   | 2026-03-24 | Supabase migrations file																									  |
+| 1.4.0   | 2026-03-25 | User profile page and personalization foundations																			  |
+| 1.5.0   | 2026-03-25 | Clothing descriptors, duplicate detection, wardrobe hygiene 																  |
+| 1.6.0   | 2026-03-27 | Descriptor overhaul, outfit templates, UX fixes																			  |
+| 1.7.0   | 2026-03-30 | Scorer intelligence, outfit feedback loop, Editorial Dark theme															  |
+| 1.8.0   | 2026-03-30 | Soft delete & restore, smarter outfit explanations, wardrobe coverage nudge												  |
+| 1.8.1   | 2026-03-30 | Restore duplicate guard, auto-purge on supersede, 90-day seasonal purge													  |
+| 1.9.0   | 2026-03-30 | Fashion-intuitive V2 scorer — outfit-level compatibility, color story, silhouette balance, novelty, risk 					  |
+| 1.9.1   | 2026-03-30 | style_taxonomy DB table, 660-row seed, process-level taxonomy loader; live vocabulary without redeploy 					  |
 | 1.9.2   | 2026-03-30 | New clothing categories: set (co-ord), swimwear, loungewear — CLIP labels, descriptors, body-type prefs, venue-aware scoring |
+| 1.9.3   | 2026-03-30 | Expanded descriptors for set/swimwear/loungewear — top+bottom combos, bra-type attributes, underwear-bottom attributes 	  |
+| 1.9.4   | 2026-03-31 | SECURITY DEFINER RPCs for reliable DB writes; descriptor edit support; wardrobe UI & auth cleanup                           |
+
+---
+
+## [1.9.4] - 2026-03-31
+
+### Fixed
+- **Wardrobe delete / update silently no-ops** — PostgREST `PATCH` does not persist for this Supabase project regardless of RLS or schema-cache state. All clothing item writes now route through `SECURITY DEFINER` functions (`soft_delete_clothing_item`, `restore_clothing_item`, `update_clothing_item_tags`) that execute as the `postgres` owner, identical to the Supabase SQL editor.
+- **Descriptor edits lost on update** — `descriptors` JSONB was never sent to the backend (`api.ts` omitted it from query params). Individual descriptor keys (e.g. `fabric_type`) are now correctly sent, parsed by the router, and merged into the existing JSONB — changing one key never overwrites unrelated keys. Both addition (new key) and modification (existing key) are handled correctly.
+- **Debug `print("login", ...)` statement** removed from `routers/auth.py`.
+
+### Fixed
+- **Restored item shows without tags/descriptors** — `GET /clothing/items/deleted` was returning only 5 fields (`id, category, item_type, color, image_url, deleted_at`), so the trash copy lacked `season`, `formality_score`, `descriptors`, `pattern` etc. Now selects all display fields. Frontend also re-fetches the full active wardrobe after a successful restore instead of spreading the local trash copy.
+- **Trash button disappears when trash empties** — button was conditionally rendered on `deletedItems.length > 0`; once all items were restored the button vanished with no way back to the wardrobe view. Button now stays visible while `showTrash` is `true` and its label switches to `← Back to Wardrobe` when the trash is empty.
+
+### Added
+- **Descriptor editing via PATCH** — `PATCH /clothing/item/{id}` now accepts a `descriptors` query param (JSON string). The `update_clothing_item_tags` RPC merges incoming keys into stored JSONB using `||`.
+- **`supabase_migrations.sql` v1.9.4** — three `CREATE OR REPLACE FUNCTION … SECURITY DEFINER` statements (`soft_delete_clothing_item`, `restore_clothing_item`, `update_clothing_item_tags`). Idempotent, safe to re-run. After applying, run `NOTIFY pgrst, 'reload schema';`.
+
+### Changed
+- **Set descriptor vocabulary** — expanded with full top-half (`neckline`, `sleeve_length`, `sleeve_style`, `strap_type`, `back_style`) and bottom-half (`waist_position`, `waist_structure`, `leg_opening`, `hemline`, `length`, `elasticity`) attributes.
+- **Swimwear descriptor vocabulary** — renamed `coverage` → `top_coverage`; added bra-type (`support`, `structure`, `function`, `fit_intent`) and underwear-bottom (`bottom_rise`, `back_coverage`, `bottom_fit_style`, `bottom_visibility`) attributes.
+- **Loungewear descriptor vocabulary** — added top-half (`neckline`, `sleeve_length`, `strap_type`), light-bra (`support`, `structure`, `fit_intent`), and bottom-half (`waist_structure`, `bottom_length`) attributes.
+
+---
+
+## [1.9.3] - 2026-03-30
+
+### Added
+- **Set** — top-half descriptors: `neckline`, `sleeve_length`, `sleeve_style`, `strap_type`, `back_style`; bottom-half descriptors: `waist_position`, `waist_structure`, `leg_opening`, `hemline`, `length`, `elasticity`
+- **Swimwear** — bra-type attributes: `support` (low/medium/high), `structure` (wired/wireless/padded/unlined), `function` (everyday/sports/beach/special occasion), `fit_intent` (enhance/minimize/natural); renamed `coverage` → `top_coverage`; underwear-bottom attributes: `bottom_rise`, `back_coverage`, `bottom_fit_style` (thong/bikini/boyshort/brief/high-waist/hipster/cheeky/string), `bottom_visibility` (seamless/no-show/regular)
+- **Loungewear** — top-half: `neckline`, `sleeve_length`, `strap_type`; light-bra: `support` (none/light/medium), `structure` (wireless/padded/unlined/built-in), `fit_intent`; bottom-half: `waist_structure` (elastic/drawstring/tie), `bottom_length` (shorts/capri/ankle/full-length)
+- `supabase_migrations.sql` v1.9.3 block (3 idempotent INSERT statements, ~100 new descriptor rows)
 
 ---
 

@@ -9,7 +9,8 @@ DELETE /clothing/item/{id}     — remove an item
 GET    /clothing/tag-options   — return valid category + color values for dropdowns
 """
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+import json
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from typing import List, Optional
 
 from services.clothing_service import (
@@ -147,12 +148,14 @@ def correct_item(
     season:          Optional[str] = None,
     pattern:         Optional[str] = None,
     formality_label: Optional[str] = None,
+    descriptors:     Optional[str] = Query(None, description="JSON-encoded descriptor overrides"),
     user_id: str = Depends(get_current_user_id),
 ):
     """
     Correct any tag on an already-saved item.
-    All fields are now user-editable: category, color, season, formality.
+    All fields are now user-editable: category, color, season, formality, descriptors.
     formality_label is the human string (e.g. 'Smart casual') — backend maps to score.
+    descriptors is a JSON string e.g. '{"fabric_type":"polyester"}'.
     """
     corrections: dict = {}
     if category: corrections["category"] = category
@@ -161,6 +164,11 @@ def correct_item(
     if season:   corrections["season"]   = season
     if formality_label and formality_label in _FORMALITY_SCORE_MAP:
         corrections["formality_score"] = _FORMALITY_SCORE_MAP[formality_label]
+    if descriptors:
+        try:
+            corrections["descriptors"] = json.loads(descriptors)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="descriptors must be valid JSON")
 
     if not corrections:
         raise HTTPException(status_code=400, detail="Provide at least one correction field")

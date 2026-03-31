@@ -46,7 +46,6 @@ def _login_real(email: str, password: str) -> str:
     from utils.db import get_supabase
     db = get_supabase()
     result = db.auth.sign_in_with_password({"email": email, "password": password})
-    print("login", result.user.id)
     return result.user.id
 
 

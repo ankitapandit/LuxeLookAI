@@ -1281,3 +1281,260 @@ VALUES
   ('body_type','petite','loungewear_loungewear_type','shorts set','{}',1),
   ('body_type','petite','loungewear_loungewear_type','tank set','{}',2)
 ON CONFLICT DO NOTHING;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v1.9.3 — expanded descriptors for set / swimwear / loungewear
+-- Adds top-half + bottom-half combo attributes for set, bra-type + bottom-type
+-- attributes for swimwear, and top/bra/bottom additions for loungewear.
+-- ON CONFLICT DO NOTHING = idempotent.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Set: additional top-half descriptors
+INSERT INTO public.style_taxonomy (domain, category, attribute, value, meta, sort_order)
+VALUES
+  ('descriptor','set','neckline','crew neck','{}',1),
+  ('descriptor','set','neckline','V-neck','{}',2),
+  ('descriptor','set','neckline','square','{}',3),
+  ('descriptor','set','neckline','scoop','{}',4),
+  ('descriptor','set','neckline','off-shoulder','{}',5),
+  ('descriptor','set','neckline','halter','{}',6),
+  ('descriptor','set','neckline','high neck','{}',7),
+  ('descriptor','set','neckline','cowl','{}',8),
+  ('descriptor','set','sleeve_length','sleeveless','{}',1),
+  ('descriptor','set','sleeve_length','short sleeve','{}',2),
+  ('descriptor','set','sleeve_length','3/4 sleeve','{}',3),
+  ('descriptor','set','sleeve_length','long sleeve','{}',4),
+  ('descriptor','set','sleeve_style','straight','{}',1),
+  ('descriptor','set','sleeve_style','flared','{}',2),
+  ('descriptor','set','sleeve_style','puffed','{}',3),
+  ('descriptor','set','sleeve_style','flutter','{}',4),
+  ('descriptor','set','sleeve_style','bishop','{}',5),
+  ('descriptor','set','strap_type','none','{}',1),
+  ('descriptor','set','strap_type','spaghetti','{}',2),
+  ('descriptor','set','strap_type','thick','{}',3),
+  ('descriptor','set','strap_type','one-shoulder','{}',4),
+  ('descriptor','set','back_style','open back','{}',1),
+  ('descriptor','set','back_style','closed back','{}',2),
+  ('descriptor','set','back_style','lace-up back','{}',3),
+  ('descriptor','set','back_style','keyhole back','{}',4),
+  -- Set: additional bottom-half descriptors
+  ('descriptor','set','waist_position','low-rise','{}',1),
+  ('descriptor','set','waist_position','mid-rise','{}',2),
+  ('descriptor','set','waist_position','high-rise','{}',3),
+  ('descriptor','set','waist_structure','elastic','{}',1),
+  ('descriptor','set','waist_structure','drawstring','{}',2),
+  ('descriptor','set','waist_structure','structured','{}',3),
+  ('descriptor','set','waist_structure','tie','{}',4),
+  ('descriptor','set','leg_opening','straight','{}',1),
+  ('descriptor','set','leg_opening','flared','{}',2),
+  ('descriptor','set','leg_opening','tapered','{}',3),
+  ('descriptor','set','leg_opening','wide','{}',4),
+  ('descriptor','set','hemline','straight','{}',1),
+  ('descriptor','set','hemline','asymmetric','{}',2),
+  ('descriptor','set','hemline','ruffled','{}',3),
+  ('descriptor','set','hemline','hi-lo','{}',4),
+  ('descriptor','set','length','mini','{}',1),
+  ('descriptor','set','length','midi','{}',2),
+  ('descriptor','set','length','maxi','{}',3),
+  ('descriptor','set','length','cropped','{}',4),
+  ('descriptor','set','elasticity','stretch','{}',1),
+  ('descriptor','set','elasticity','non-stretch','{}',2),
+  ('descriptor','set','elasticity','4-way stretch','{}',3)
+ON CONFLICT DO NOTHING;
+
+-- Swimwear: top_coverage + bra-type + underwear-bottom attributes
+INSERT INTO public.style_taxonomy (domain, category, attribute, value, meta, sort_order)
+VALUES
+  -- top_coverage (replaces the old "coverage" key in LLM descriptors)
+  ('descriptor','swimwear','top_coverage','minimal','{}',1),
+  ('descriptor','swimwear','top_coverage','moderate','{}',2),
+  ('descriptor','swimwear','top_coverage','full','{}',3),
+  -- bra-type: support level
+  ('descriptor','swimwear','support','low','{}',1),
+  ('descriptor','swimwear','support','medium','{}',2),
+  ('descriptor','swimwear','support','high','{}',3),
+  -- bra-type: structure
+  ('descriptor','swimwear','structure','wired','{}',1),
+  ('descriptor','swimwear','structure','wireless','{}',2),
+  ('descriptor','swimwear','structure','padded','{}',3),
+  ('descriptor','swimwear','structure','unlined','{}',4),
+  -- bra-type: function
+  ('descriptor','swimwear','function','everyday','{}',1),
+  ('descriptor','swimwear','function','sports','{}',2),
+  ('descriptor','swimwear','function','beach','{}',3),
+  ('descriptor','swimwear','function','special occasion','{}',4),
+  -- bra-type: fit intent
+  ('descriptor','swimwear','fit_intent','enhance','{}',1),
+  ('descriptor','swimwear','fit_intent','minimize','{}',2),
+  ('descriptor','swimwear','fit_intent','natural','{}',3),
+  -- bottom: rise
+  ('descriptor','swimwear','bottom_rise','low','{}',1),
+  ('descriptor','swimwear','bottom_rise','mid','{}',2),
+  ('descriptor','swimwear','bottom_rise','high','{}',3),
+  -- bottom: back coverage
+  ('descriptor','swimwear','back_coverage','minimal','{}',1),
+  ('descriptor','swimwear','back_coverage','partial','{}',2),
+  ('descriptor','swimwear','back_coverage','full','{}',3),
+  -- bottom: fit style
+  ('descriptor','swimwear','bottom_fit_style','thong','{}',1),
+  ('descriptor','swimwear','bottom_fit_style','bikini','{}',2),
+  ('descriptor','swimwear','bottom_fit_style','boyshort','{}',3),
+  ('descriptor','swimwear','bottom_fit_style','brief','{}',4),
+  ('descriptor','swimwear','bottom_fit_style','high-waist','{}',5),
+  ('descriptor','swimwear','bottom_fit_style','hipster','{}',6),
+  ('descriptor','swimwear','bottom_fit_style','cheeky','{}',7),
+  ('descriptor','swimwear','bottom_fit_style','string','{}',8),
+  -- bottom: visibility / lining
+  ('descriptor','swimwear','bottom_visibility','seamless','{}',1),
+  ('descriptor','swimwear','bottom_visibility','no-show','{}',2),
+  ('descriptor','swimwear','bottom_visibility','regular','{}',3)
+ON CONFLICT DO NOTHING;
+
+-- Loungewear: top-half, light-bra, and bottom-half additions
+INSERT INTO public.style_taxonomy (domain, category, attribute, value, meta, sort_order)
+VALUES
+  -- top-half: neckline
+  ('descriptor','loungewear','neckline','crew neck','{}',1),
+  ('descriptor','loungewear','neckline','V-neck','{}',2),
+  ('descriptor','loungewear','neckline','scoop','{}',3),
+  ('descriptor','loungewear','neckline','square','{}',4),
+  ('descriptor','loungewear','neckline','cowl','{}',5),
+  ('descriptor','loungewear','neckline','mock neck','{}',6),
+  -- top-half: sleeve length
+  ('descriptor','loungewear','sleeve_length','sleeveless','{}',1),
+  ('descriptor','loungewear','sleeve_length','short sleeve','{}',2),
+  ('descriptor','loungewear','sleeve_length','3/4 sleeve','{}',3),
+  ('descriptor','loungewear','sleeve_length','long sleeve','{}',4),
+  -- top-half: strap type
+  ('descriptor','loungewear','strap_type','none','{}',1),
+  ('descriptor','loungewear','strap_type','spaghetti','{}',2),
+  ('descriptor','loungewear','strap_type','thick','{}',3),
+  -- light bra: support level
+  ('descriptor','loungewear','support','none','{}',1),
+  ('descriptor','loungewear','support','light','{}',2),
+  ('descriptor','loungewear','support','medium','{}',3),
+  -- light bra: structure
+  ('descriptor','loungewear','structure','wireless','{}',1),
+  ('descriptor','loungewear','structure','padded','{}',2),
+  ('descriptor','loungewear','structure','unlined','{}',3),
+  ('descriptor','loungewear','structure','built-in','{}',4),
+  -- light bra: fit intent
+  ('descriptor','loungewear','fit_intent','enhance','{}',1),
+  ('descriptor','loungewear','fit_intent','minimize','{}',2),
+  ('descriptor','loungewear','fit_intent','natural','{}',3),
+  -- bottom-half: waist structure
+  ('descriptor','loungewear','waist_structure','elastic','{}',1),
+  ('descriptor','loungewear','waist_structure','drawstring','{}',2),
+  ('descriptor','loungewear','waist_structure','tie','{}',3),
+  -- bottom-half: bottom length
+  ('descriptor','loungewear','bottom_length','shorts','{}',1),
+  ('descriptor','loungewear','bottom_length','capri','{}',2),
+  ('descriptor','loungewear','bottom_length','ankle','{}',3),
+  ('descriptor','loungewear','bottom_length','full-length','{}',4)
+ON CONFLICT DO NOTHING;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v1.9.4 — SECURITY DEFINER helper functions for reliable clothing item writes
+-- PostgREST UPDATE is unreliable with supabase-py 2.4.x / postgrest-py.
+-- These functions run as the table OWNER (postgres), bypassing RLS entirely,
+-- identical to what the Supabase SQL editor executes directly.
+-- Run each CREATE OR REPLACE statement in the Supabase SQL editor.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- 1. Soft-delete an item (sets is_active=false, records deleted_at).
+--    Returns true if the row was found and updated, false otherwise.
+CREATE OR REPLACE FUNCTION public.soft_delete_clothing_item(
+  p_item_id  uuid,
+  p_user_id  uuid
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE clothing_items
+     SET is_active  = false,
+         deleted_at = now()
+   WHERE id      = p_item_id
+     AND user_id = p_user_id;
+  RETURN FOUND;
+END;
+$$;
+
+-- 2. Restore a soft-deleted item (sets is_active=true, clears deleted_at).
+--    Returns true if found and restored.
+CREATE OR REPLACE FUNCTION public.restore_clothing_item(
+  p_item_id  uuid,
+  p_user_id  uuid
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE clothing_items
+     SET is_active  = true,
+         deleted_at = null
+   WHERE id      = p_item_id
+     AND user_id = p_user_id;
+  RETURN FOUND;
+END;
+$$;
+
+-- 3. Update editable tags on a clothing item.
+--    Only non-NULL arguments overwrite the stored value (COALESCE pattern).
+--    p_descriptors is a JSON string; its keys are merged into the existing descriptors JSONB.
+--    Returns the updated row as JSONB, or NULL if not found.
+CREATE OR REPLACE FUNCTION public.update_clothing_item_tags(
+  p_item_id         uuid,
+  p_user_id         uuid,
+  p_category        text    DEFAULT NULL,
+  p_color           text    DEFAULT NULL,
+  p_season          text    DEFAULT NULL,
+  p_formality_score float   DEFAULT NULL,
+  p_item_type       text    DEFAULT NULL,
+  p_descriptors     text    DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_result      jsonb;
+  v_descriptors jsonb;
+BEGIN
+  -- Parse descriptor overrides (null-safe)
+  IF p_descriptors IS NOT NULL THEN
+    v_descriptors := p_descriptors::jsonb;
+  END IF;
+
+  UPDATE clothing_items
+     SET category        = COALESCE(p_category,        category),
+         color           = COALESCE(p_color,           color),
+         season          = COALESCE(p_season,          season),
+         formality_score = COALESCE(p_formality_score, formality_score),
+         item_type       = COALESCE(p_item_type,       item_type),
+         -- merge: existing descriptors || new keys (new keys win on conflict)
+         descriptors     = CASE
+                             WHEN v_descriptors IS NOT NULL
+                             THEN COALESCE(descriptors, '{}'::jsonb) || v_descriptors
+                             ELSE descriptors
+                           END
+   WHERE id      = p_item_id
+     AND user_id = p_user_id;
+
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT to_jsonb(ci.*)
+    INTO v_result
+    FROM clothing_items ci
+   WHERE id = p_item_id;
+
+  RETURN v_result;
+END;
+$$;
