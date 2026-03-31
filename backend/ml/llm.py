@@ -461,45 +461,93 @@ CATEGORY_DESCRIPTORS = {
         "strap_type":     ["top handle", "crossbody", "shoulder", "chain"],
     },
     # ── Set (co-ord / two-piece matching sets) ────────────────────────────────
+    # Full tops + bottoms descriptor combo — both halves are described together.
     "set": {
-        "fabric_type":   ["cotton", "polyester", "linen", "satin", "silk", "knit",
-                          "denim", "jersey", "terry", "tweed"],
-        "fit":           ["fitted", "regular", "relaxed", "oversized", "tailored", "wrap"],
-        "top_style":     ["crop", "halter", "bandeau", "off-shoulder", "bralette",
-                          "blazer", "shirt", "camisole", "waistcoat"],
-        "bottom_style":  ["shorts", "mini skirt", "midi skirt", "trousers", "wide-leg trousers",
-                          "straight trousers", "skirt", "leggings"],
-        "pattern":       ["solid", "floral", "striped", "plaid", "abstract", "animal print",
-                          "geometric", "tie-dye"],
-        "closure":       ["pullover", "button-front", "zip-up", "wrap", "hook-and-eye"],
-        "detailing":     ["ruffles", "pleats", "smocked", "cut-out", "lace trim", "embroidery"],
+        # Fabric
+        "fabric_type":    ["cotton", "polyester", "linen", "satin", "silk", "knit", "denim",
+                           "jersey", "terry", "tweed", "chiffon", "lace", "mesh", "rayon"],
+        # Top-half attributes
+        "top_style":      ["crop", "halter", "bandeau", "off-shoulder", "bralette", "corset",
+                           "blazer", "shirt", "camisole", "waistcoat", "longline"],
+        "neckline":       ["crew", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
+                           "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
+        "sleeve_length":  ["sleeveless", "cap", "short", "3/4", "long"],
+        "sleeve_style":   ["puff", "bishop", "balloon", "bell", "raglan", "batwing", "cold shoulder", "flutter"],
+        "strap_type":     ["strapless", "spaghetti", "wide", "adjustable", "racerback", "cross-back", "halter"],
+        "back_style":     ["open back", "low back", "keyhole", "strappy", "tie-back", "zipper back"],
+        # Bottom-half attributes
+        "bottom_style":   ["shorts", "mini skirt", "midi skirt", "maxi skirt", "trousers",
+                           "wide-leg trousers", "straight trousers", "skirt", "leggings", "flared trousers"],
+        "waist_position": ["high", "mid", "low", "empire"],
+        "waist_structure":["elastic", "drawstring", "belted", "paperbag", "corset"],
+        "leg_opening":    ["skinny", "straight", "wide", "flare", "bootcut", "tapered"],
+        # Shared
+        "fit":            ["slim", "regular", "relaxed", "oversized", "tailored", "wrap", "bodycon", "A-line"],
+        "length":         ["mini", "midi", "maxi", "crop", "regular"],
+        "closure":        ["pullover", "button-front", "zip-up", "wrap", "hook-and-eye", "tie"],
+        "hemline":        ["straight", "curved", "asymmetrical", "high-low", "ruffle hem"],
+        "detailing":      ["ruffles", "pleats", "ruched", "smocked", "tiered", "draped",
+                           "cut-out", "slit", "bow", "lace trim", "embroidery"],
+        "elasticity":     ["non-stretch", "slight stretch", "medium stretch", "high stretch"],
+        "pattern":        ["solid", "floral", "striped", "plaid", "abstract", "animal print",
+                           "geometric", "tie-dye", "color-block"],
     },
     # ── Swimwear ──────────────────────────────────────────────────────────────
+    # Existing swimwear + bra-type descriptors (top) + underwear-bottom descriptors.
     "swimwear": {
-        "swimwear_type": ["bikini", "one-piece", "tankini", "monokini", "swim dress",
-                          "rash guard", "swim shorts", "boardshorts"],
-        "top_style":     ["triangle", "bandeau", "underwire", "halter", "sports bra",
-                          "crop", "balconette"],
-        "coverage":      ["minimal", "moderate", "full"],
-        "neckline":      ["halter", "bandeau", "strapless", "V-neck", "square", "scoop",
-                          "off-shoulder", "high-neck"],
-        "fabric_type":   ["polyester", "nylon", "spandex", "lycra", "recycled nylon"],
-        "pattern":       ["solid", "floral", "animal print", "striped", "tropical",
-                          "geometric", "color-block"],
-        "closure":       ["pull-on", "tie-side", "buckle", "underwired"],
+        # Garment type
+        "swimwear_type":    ["bikini", "one-piece", "tankini", "monokini", "swim dress",
+                             "rash guard", "swim shorts", "boardshorts"],
+        # Top-half style
+        "top_style":        ["triangle", "bandeau", "underwire", "halter", "sports bra",
+                             "crop", "balconette", "longline", "bralette"],
+        "neckline":         ["halter", "bandeau", "strapless", "V-neck", "square", "scoop",
+                             "off-shoulder", "high-neck"],
+        "top_coverage":     ["minimal", "moderate", "full"],
+        # Bra-type descriptors (coverage, support, structure, function, fit intent)
+        "support":          ["low", "medium", "high"],
+        "structure":        ["wired", "wireless", "padded", "unlined"],
+        "function":         ["everyday", "sports", "beach", "special occasion"],
+        "fit_intent":       ["enhance", "minimize", "natural"],
+        # Bottom-half descriptors
+        "bottom_rise":      ["low", "mid", "high"],
+        "back_coverage":    ["minimal", "partial", "full"],
+        "bottom_fit_style": ["thong", "bikini", "boyshort", "brief", "high-waist",
+                             "hipster", "cheeky", "string"],
+        "bottom_visibility":["seamless", "no-show", "regular"],
+        # Fabric & finish
+        "fabric_type":      ["polyester", "nylon", "spandex", "lycra", "recycled nylon"],
+        "pattern":          ["solid", "floral", "animal print", "striped", "tropical",
+                             "geometric", "color-block"],
+        "closure":          ["pull-on", "tie-side", "buckle", "underwired"],
     },
     # ── Loungewear ────────────────────────────────────────────────────────────
+    # Existing + top-half details (neckline/sleeve/strap) + light bra/waist attributes
+    # for cami sets, bralette-top sets, and shorts/jogger bottoms.
     "loungewear": {
-        "loungewear_type": ["hoodie", "sweatshirt", "sweatpants", "joggers", "pajama set",
-                            "robe", "shorts set", "tank set", "matching set", "onesie"],
-        "fabric_type":     ["cotton", "fleece", "modal", "silk", "satin", "jersey", "terry",
-                            "bamboo", "waffle-knit"],
-        "fit":             ["oversized", "relaxed", "fitted", "slim", "regular"],
-        "closure":         ["pullover", "zip-up", "button-front", "open-front"],
-        "length":          ["cropped", "regular", "longline"],
-        "pattern":         ["solid", "plaid", "striped", "graphic", "tie-dye", "floral"],
-        "detailing":       ["ribbed", "brushed", "waffle texture", "sherpa lined", "drawstring",
-                            "kangaroo pocket", "thumbhole"],
+        "loungewear_type":  ["hoodie", "sweatshirt", "sweatpants", "joggers", "pajama set",
+                             "robe", "shorts set", "tank set", "matching set", "onesie"],
+        "fabric_type":      ["cotton", "fleece", "modal", "silk", "satin", "jersey", "terry",
+                             "bamboo", "waffle-knit"],
+        "fit":              ["oversized", "relaxed", "fitted", "slim", "regular"],
+        # Top-half
+        "neckline":         ["crew", "V-neck", "scoop", "square", "sweetheart", "halter",
+                             "off-shoulder", "turtleneck"],
+        "sleeve_length":    ["sleeveless", "cap", "short", "3/4", "long"],
+        "strap_type":       ["spaghetti", "wide", "adjustable", "racerback", "strapless"],
+        # Bra-relevant (cami/bralette tops in tank sets, pajama sets)
+        "support":          ["none", "light", "medium"],
+        "structure":        ["wireless", "padded", "unlined", "built-in"],
+        "fit_intent":       ["enhance", "minimize", "natural"],
+        # Bottom-half
+        "waist_structure":  ["elastic", "drawstring", "tie"],
+        "bottom_length":    ["shorts", "capri", "ankle", "full-length"],
+        # Shared
+        "closure":          ["pullover", "zip-up", "button-front", "open-front"],
+        "length":           ["cropped", "regular", "longline"],
+        "pattern":          ["solid", "plaid", "striped", "graphic", "tie-dye", "floral"],
+        "detailing":        ["ribbed", "brushed", "waffle texture", "sherpa lined", "drawstring",
+                             "kangaroo pocket", "thumbhole"],
     },
 }
 

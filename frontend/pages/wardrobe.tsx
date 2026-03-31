@@ -10,7 +10,7 @@
  *   - Custom hex input fallback
  *
  * Pattern section (separate from color):
- *   - Shown only when "Has a pattern" is toggled on
+ *   - Pattern is captured via the descriptor picker (pattern attribute per category)
  *   - Dropdown with pattern name + inline SVG swatch preview
  */
 
@@ -291,8 +291,6 @@ export default function WardrobePage() {
   const [aiTags,         setAiTags]         = useState<TagPreview | null>(null);
   const [correctedCat,   setCorrectedCat]   = useState<string>("");
   const [correctedColor, setCorrectedColor] = useState<string>("");  // color key or custom hex
-  const [correctedPattern, setCorrectedPattern] = useState<string>("");  // pattern key or ""
-  const [hasPattern,     setHasPattern]     = useState(false);
   const [step,           setStep]           = useState<"idle"|"analysing"|"review"|"saving">("idle");
   const [filter,         setFilter]         = useState("all");
   const [descriptors, setDescriptors] = useState<Record<string, string>>({});
@@ -315,16 +313,7 @@ export default function WardrobePage() {
       const tags = await tagPreview(file);
       setAiTags(tags);
       setCorrectedCat(tags.category);
-      // If AI returned "pattern" as color, pre-check the pattern toggle
-      if (tags.color === "pattern") {
-        setCorrectedColor("pattern");
-        setHasPattern(true);
-        setCorrectedPattern("");
-      } else {
-        setCorrectedColor(tags.color);
-        setHasPattern(false);
-        setCorrectedPattern("");
-      }
+      setCorrectedColor(tags.color);
       setDescriptors(tags.descriptors || {});
       setDuplicate(tags.duplicate || null);
       setStep("review");
@@ -342,13 +331,10 @@ export default function WardrobePage() {
   async function handleConfirm() {
     if (!pendingFile || !aiTags) return;
     setStep("saving");
-    // Final color value: if pattern toggle is on, use "pattern", else use the color key/hex
-    const finalColor = hasPattern ? "pattern" : correctedColor;
     try {
       const newItem = await uploadClothingItem(pendingFile, {
-        category: correctedCat  !== aiTags.category ? correctedCat  : undefined,
-        color:    finalColor    !== aiTags.color    ? finalColor    : undefined,
-        pattern:  hasPattern ? (correctedPattern || undefined) : undefined,
+        category: correctedCat   !== aiTags.category ? correctedCat   : undefined,
+        color:    correctedColor  !== aiTags.color   ? correctedColor  : undefined,
         descriptors: Object.keys(descriptors).length > 0 ? descriptors : undefined,
       });
       setItems(prev => [newItem, ...prev]);
@@ -361,8 +347,7 @@ export default function WardrobePage() {
   function resetWizard() {
     if (pendingPreview) URL.revokeObjectURL(pendingPreview);
     setPendingFile(null); setPendingPreview(null); setAiTags(null);
-    setCorrectedCat(""); setCorrectedColor(""); setCorrectedPattern("");
-    setHasPattern(false); setStep("idle");
+    setCorrectedCat(""); setCorrectedColor(""); setStep("idle");
     setDescriptors({});
     setDuplicate(null);
   }
@@ -388,11 +373,12 @@ export default function WardrobePage() {
   async function handleRestore(itemId: string) {
     try {
       const status = await restoreClothingItem(itemId);
-      const trashItem = deletedItems.find(i => i.id === itemId);
       // Remove from trash view in all success cases
       setDeletedItems(prev => prev.filter(i => i.id !== itemId));
-      if (status === "restored" && trashItem) {
-        setItems(prev => [{ ...trashItem, is_active: true }, ...prev]);
+      if (status === "restored") {
+        // Re-fetch the full wardrobe so the restored item has all its tags/descriptors
+        const refreshed = await getWardrobeItems();
+        setItems(refreshed);
         toast.success("Item restored to wardrobe");
       } else if (status === "auto_purged") {
         // Item was superseded by a newer active version — already in wardrobe
@@ -430,7 +416,7 @@ export default function WardrobePage() {
               {items.length} item{items.length !== 1 ? "s" : ""} · AI detects category &amp; color · you confirm before saving
             </p>
           </div>
-          {deletedItems.length > 0 && (
+          {(deletedItems.length > 0 || showTrash) && (
             <button
               onClick={() => setShowTrash(t => !t)}
               style={{
@@ -443,7 +429,7 @@ export default function WardrobePage() {
               }}
             >
               <Trash2 size={14} />
-              Trash ({deletedItems.length})
+              {showTrash ? "← Back to Wardrobe" : `Trash (${deletedItems.length})`}
             </button>
           )}
         </div>
@@ -481,14 +467,10 @@ export default function WardrobePage() {
             tagOptions={tagOptions}
             correctedCat={correctedCat}
             correctedColor={correctedColor}
-            hasPattern={hasPattern}
-            correctedPattern={correctedPattern}
             descriptors={descriptors}
             duplicate={duplicate}
             onCatChange={setCorrectedCat}
             onColorChange={setCorrectedColor}
-            onPatternToggle={setHasPattern}
-            onPatternChange={setCorrectedPattern}
             onDescriptorChange={(key, val) =>
               setDescriptors((prev: Record<string, string>) => ({ ...prev, [key]: val }))}
             onReplaceExisting={async () => {
@@ -595,9 +577,9 @@ export default function WardrobePage() {
 
 function ReviewPanel({
   previewUrl, aiTags, tagOptions,
-  correctedCat, correctedColor, hasPattern, correctedPattern,
+  correctedCat, correctedColor,
   descriptors, duplicate,
-  onCatChange, onColorChange, onPatternToggle, onPatternChange,
+  onCatChange, onColorChange,
   onDescriptorChange, onReplaceExisting, onKeepBoth,
   onConfirm, onCancel,
 }: {
@@ -606,12 +588,8 @@ function ReviewPanel({
   tagOptions: TagOptions;
   correctedCat: string;
   correctedColor: string;
-  hasPattern: boolean;
-  correctedPattern: string;
   onCatChange: (v: string) => void;
   onColorChange: (v: string) => void;
-  onPatternToggle: (v: boolean) => void;
-  onPatternChange: (v: string) => void;
   descriptors: Record<string, string>;
   onDescriptorChange: (key: string, val: string) => void;
   duplicate?: TagPreview["duplicate"];
@@ -621,7 +599,7 @@ function ReviewPanel({
   onCancel: () => void;
 }) {
   const catChanged = correctedCat !== aiTags.category;
-  const colorChanged = (hasPattern ? "pattern" : correctedColor) !== aiTags.color;
+  const colorChanged = correctedColor !== aiTags.color;
   const aiUnavailable = !!aiTags.needs_review;
 
   return (
@@ -642,7 +620,6 @@ function ReviewPanel({
         <ImageEyedropper
           previewUrl={previewUrl}
           onColorPicked={onColorChange}
-          onPatternToggle={onPatternToggle}
         />
 
         {/* Fields */}
@@ -731,34 +708,12 @@ function ReviewPanel({
           <div style={{ marginBottom: "20px" }}>
             <label style={labelStyle}>Colour {colorChanged && <ChangedBadge />}</label>
             <ColorPicker
-              selected={hasPattern ? "pattern" : correctedColor}
-              onSelect={key => { onColorChange(key); if (key !== "pattern") onPatternToggle(false); }}
+              selected={correctedColor}
+              onSelect={onColorChange}
             />
             {colorChanged && <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "6px" }}>AI said: <em style={{ textTransform: "capitalize" }}>{aiTags.color}</em></p>}
           </div>
 
-          {/* Pattern toggle + picker */}
-          <div style={{ marginBottom: "20px" }}>
-            <label style={labelStyle}>Pattern</label>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
-              <button
-                onClick={() => { onPatternToggle(!hasPattern); if (!hasPattern) onColorChange("pattern"); }}
-                style={{
-                  padding: "6px 16px", borderRadius: "20px", border: "1px solid",
-                  borderColor: hasPattern ? "var(--charcoal)" : "var(--border)",
-                  background:  hasPattern ? "var(--charcoal)" : "transparent",
-                  color:       hasPattern ? "var(--cream)"    : "var(--muted)",
-                  fontSize: "13px", cursor: "pointer", transition: "all 0.15s ease",
-                }}
-              >
-                {hasPattern ? "✓ Has a pattern" : "Has a pattern"}
-              </button>
-            </div>
-
-            {hasPattern && (
-              <PatternPicker selected={correctedPattern} onSelect={onPatternChange} />
-            )}
-          </div>
           {/* Style details — collapsible */}
           {(() => {
             const catKey = correctedCat.toLowerCase();
@@ -792,10 +747,9 @@ function ReviewPanel({
 // ImageEyedropper — click anywhere on the preview image to sample its color
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function ImageEyedropper({ previewUrl, onColorPicked, onPatternToggle }: {
+function ImageEyedropper({ previewUrl, onColorPicked }: {
   previewUrl: string;
   onColorPicked: (hex: string) => void;
-  onPatternToggle: (v: boolean) => void;
 }) {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const [ready,    setReady]    = useState(false);
@@ -828,8 +782,7 @@ function ImageEyedropper({ previewUrl, onColorPicked, onPatternToggle }: {
     const b = data[2];
     const hex = `#${r.toString(16).padStart(2,"0")}${g.toString(16).padStart(2,"0")}${b.toString(16).padStart(2,"0")}`;
     setPickedHex(hex);
-    onColorPicked(hex);          // pass custom hex directly as the color value
-    onPatternToggle(false);      // custom hex means solid color, not pattern
+    onColorPicked(hex);
     setEyedrop(false);
     toast.success("Colour sampled!");
   }

@@ -69,7 +69,8 @@ def _upload_mock(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
 def _get_items_mock(user_id: str) -> List[Dict]:
     from utils.mock_db_store import select_all
     rows = select_all(TABLE, {"user_id": user_id})
-    return [r for r in rows if r.get("is_active", True)]
+    active = [r for r in rows if r.get("is_active", True)]
+    return sorted(active, key=lambda r: r.get("created_at", ""), reverse=True)
 
 
 def _get_deleted_items_mock(user_id: str) -> List[Dict]:
@@ -165,6 +166,7 @@ def _get_items_real(user_id: str) -> List[Dict]:
         .select("*, embedding_vector")
         .eq("user_id", user_id)
         .eq("is_active", True)
+        .order("created_at", desc=True)
         .execute().data
     )
     # Parse embedding_vector from string back to list if needed
@@ -183,7 +185,8 @@ def _get_deleted_items_real(user_id: str) -> List[Dict]:
     db = get_supabase()
     return (
         db.table(TABLE)
-        .select("id, category, item_type, color, image_url, deleted_at")
+        .select("id, category, item_type, accessory_subtype, color, pattern, season, "
+                "formality_score, image_url, descriptors, created_at, deleted_at")
         .eq("user_id", user_id)
         .eq("is_active", False)
         .order("deleted_at", desc=True)
@@ -192,17 +195,13 @@ def _get_deleted_items_real(user_id: str) -> List[Dict]:
 
 
 def _delete_item_real(item_id: str, user_id: str) -> bool:
-    """Soft-delete: mark is_active=False, preserve storage so item can be restored."""
+    """Soft-delete via SECURITY DEFINER RPC — reliable regardless of PostgREST UPDATE quirks."""
     from utils.db import get_supabase
-    from datetime import datetime, timezone
     db = get_supabase()
-    result = (
-        db.table(TABLE)
-        .update({"is_active": False, "deleted_at": datetime.now(timezone.utc).isoformat()})
-        .eq("id", item_id)
-        .eq("user_id", user_id)
-        .execute()
-    )
+    result = db.rpc("soft_delete_clothing_item", {
+        "p_item_id": item_id,
+        "p_user_id": user_id,
+    }).execute()
     return bool(result.data)
 
 
@@ -292,8 +291,11 @@ def _restore_item_real(item_id: str, user_id: str) -> RestoreResult:
             return "auto_purged"
         return "duplicate_conflict"
 
-    # No duplicate — restore normally
-    db.table(TABLE).update({"is_active": True, "deleted_at": None}).eq("id", item_id).eq("user_id", user_id).execute()
+    # No duplicate — restore normally via SECURITY DEFINER RPC
+    db.rpc("restore_clothing_item", {
+        "p_item_id": item_id,
+        "p_user_id": user_id,
+    }).execute()
     return "restored"
 
 
@@ -424,7 +426,9 @@ def _purge_old_deleted_real(user_id: str, days: int) -> int:
 
 def correct_item_tags(item_id: str, user_id: str, corrections: Dict) -> Optional[Dict]:
     """
-    Apply user corrections (category and/or color) to an existing item.
+    Apply user corrections to an existing item.
+    Handles both addition (new descriptor key) and modification (existing key).
+    Descriptor updates are always merged into the existing JSONB — never a full replace.
     If category changes, item_type is automatically re-derived.
     Returns the updated item, or None if not found.
     """
@@ -440,19 +444,37 @@ def correct_item_tags(item_id: str, user_id: str, corrections: Dict) -> Optional
 
     settings = get_settings()
     if settings.use_mock_auth:
-        from utils.mock_db_store import update
-        return update(TABLE, item_id, corrections, extra_filters={"user_id": user_id})
+        from utils.mock_db_store import select_one, update as mock_update
+
+        # Descriptor update: merge incoming keys with existing ones (add or modify)
+        if "descriptors" in corrections:
+            existing = select_one(TABLE, {"id": item_id, "user_id": user_id})
+            if existing:
+                merged = {**existing.get("descriptors", {}), **corrections["descriptors"]}
+                corrections = {**corrections, "descriptors": merged}
+
+        return mock_update(TABLE, item_id, corrections, extra_filters={"user_id": user_id})
     else:
         from utils.db import get_supabase
-        result = (
-            get_supabase().table(TABLE)
-            .update(corrections)
-            .eq("id", item_id)
-            .eq("user_id", user_id)
-            .select()
-            .execute()
-        )
-        return result.data[0] if result.data else None
+        import json as _json
+        db = get_supabase()
+
+        # Use SECURITY DEFINER RPC — PostgREST table UPDATE is unreliable for this project.
+        # The RPC merges p_descriptors into existing descriptors via JSONB || operator,
+        # so individual keys are added or overwritten without affecting unrelated keys.
+        desc = corrections.get("descriptors")
+        rpc_args: Dict[str, Any] = {
+            "p_item_id":         item_id,
+            "p_user_id":         user_id,
+            "p_category":        corrections.get("category"),
+            "p_color":           corrections.get("color"),
+            "p_season":          corrections.get("season"),
+            "p_formality_score": corrections.get("formality_score"),
+            "p_item_type":       corrections.get("item_type"),
+            "p_descriptors":     _json.dumps(desc) if desc else None,
+        }
+        result = db.rpc("update_clothing_item_tags", rpc_args).execute()
+        return result.data if result.data else None
 
 
 def find_duplicate(user_id: str, image_bytes: bytes, new_color: Optional[str] = None) -> Optional[dict]:
