@@ -12,11 +12,52 @@ REAL mode  → calls OpenAI gpt-4o-mini (cheap, fast, sufficient for V1).
 from __future__ import annotations
 import json
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from config import get_settings
+from utils.color_utils import normalize_color as _nc
 
 logger = logging.getLogger(__name__)
+
+_CONFIDENCE_VALUES = {"high", "medium", "low"}
+
+
+def _strip_json_fence(raw: str) -> str:
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    return raw.strip()
+
+
+def _normalize_trait(
+    trait: Any,
+    allowed_values: Optional[set[str]] = None,
+    default_reason: str = "Trait not detected",
+) -> Dict[str, Any]:
+    if not isinstance(trait, dict):
+        return {"value": None, "confidence": "low", "reason": default_reason}
+
+    value = trait.get("value")
+    if isinstance(value, str):
+        value = value.strip().lower() or None
+    else:
+        value = None
+
+    if allowed_values is not None and value not in allowed_values:
+        value = None
+
+    confidence = str(trait.get("confidence") or "low").strip().lower()
+    if confidence not in _CONFIDENCE_VALUES:
+        confidence = "low"
+
+    reason = str(trait.get("reason") or default_reason).strip()
+    return {
+        "value": value,
+        "confidence": confidence,
+        "reason": reason or default_reason,
+    }
 
 
 # ── Mock responses ────────────────────────────────────────────────────────────
@@ -117,6 +158,21 @@ def _mock_parse_occasion(raw_text: str) -> Dict[str, Any]:
     }
 
 
+_MOCK_VERDICTS = [
+    "Polished with a pop. The color combo is doing the most in the best way — structured, sharp, and totally event-ready.",
+    "Clean slate, big impact. The tonal palette lets the silhouette speak. Minimal effort, maximum elegance.",
+    "Main character energy, unlocked. Every piece earns its place here — nothing extra, nothing missing.",
+    "This look hits different. The balance between bold and restrained is exactly where it needs to be for this occasion.",
+    "Effortless but make it fashion. The proportions are giving, the color story is coherent, and it reads confident.",
+]
+
+
+def _mock_generate_stylist_verdict(vibe: list, fit_check: str, color_story: str) -> str:
+    """Return a deterministic mock stylist verdict seeded by card context."""
+    idx = hash(f"{vibe}{fit_check}{color_story}") % len(_MOCK_VERDICTS)
+    return _MOCK_VERDICTS[idx]
+
+
 def _mock_explain_outfit(items: List[Dict], user_body_type: str | None = None, score_breakdown: dict | None = None) -> str:
     """Return a mock explanation using v2 score breakdown tags when available."""
     tags = (score_breakdown or {}).get("tags", {})
@@ -125,7 +181,7 @@ def _mock_explain_outfit(items: List[Dict], user_body_type: str | None = None, s
     occasion_tag = tags.get("occasion",    "")
     completeness = tags.get("completeness","")
 
-    cat_colors = [f"{i.get('color', '')} {i.get('category', '')}".strip() for i in items if i.get('category')]
+    cat_colors = [f"{_nc(i.get('color', ''))} {i.get('category', '')}".strip() for i in items if i.get('category')]
     item_line  = ", ".join(cat_colors[:3]) or "wardrobe pieces"
 
     parts = [f"This outfit — {item_line} — pulls together well."]
@@ -211,7 +267,7 @@ def _real_explain_outfit(
 
     # Summarise items — include descriptor hints when available
     def _item_line(i: Dict) -> str:
-        parts = [i.get("color", ""), i.get("category", "item")]
+        parts = [_nc(i.get("color", "")), i.get("category", "item")]
         descriptors = i.get("descriptors") or {}
         if descriptors.get("fit"):      parts.append(f"{descriptors['fit']} fit")
         if descriptors.get("neckline"): parts.append(f"{descriptors['neckline']} neckline")
@@ -274,6 +330,46 @@ def _real_explain_outfit(
     return response.choices[0].message.content.strip()
 
 
+def _real_generate_stylist_verdict(
+    items: List[Dict],
+    occasion: Dict,
+    vibe: list,
+    color_story: str,
+    fit_check: str,
+) -> str:
+    """
+    Call GPT-4o-mini to generate a 2-3 sentence punchy stylist verdict.
+    Language target: Zara editorial meets TikTok fashion — specific, confident, quick.
+    """
+    from openai import OpenAI
+
+    client = OpenAI(api_key=get_settings().openai_api_key)
+
+    cat_colors = [f"{_nc(i.get('color', ''))} {i.get('category', '')}".strip() for i in items if i.get("category")]
+    item_line  = ", ".join(cat_colors[:3]) or "wardrobe pieces"
+
+    prompt = (
+        "You are a razor-sharp fashion stylist writing quick outfit verdicts for a luxury styling app. "
+        "Think Zara editorial copy meets TikTok fashion commentary — punchy, specific, confident. "
+        "No generic phrases. No 'this outfit'. No filler. Max 40 words. 2-3 sentences.\n\n"
+        f"Items: {item_line}\n"
+        f"Occasion: {occasion.get('occasion_type')} ({occasion.get('setting', 'indoor')})\n"
+        f"Vibe: {', '.join(vibe)}\n"
+        f"Color story: {color_story}\n"
+        f"Fit rating: {fit_check}\n\n"
+        "Write the verdict. Start with a punchy one-liner (e.g. 'Polished with a pop.' or 'Clean slate, big impact.'). "
+        "Then add 1-2 sentences explaining why it works. Be specific about the actual pieces."
+    )
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.8,
+        max_tokens=70,
+    )
+    return response.choices[0].message.content.strip()
+
+
 # ── Public interface ──────────────────────────────────────────────────────────
 
 def parse_occasion(raw_text: str) -> Dict[str, Any]:
@@ -308,6 +404,32 @@ def explain_outfit(
     if settings.use_mock_ai:
         return _mock_explain_outfit(items, user_body_type, score_breakdown)
     return _real_explain_outfit(items, occasion, user_body_type, coherence_score, score_breakdown)
+
+
+def generate_stylist_verdict(
+    items: List[Dict],
+    occasion: Dict,
+    vibe: list,
+    color_story: str,
+    fit_check: str,
+) -> str:
+    """
+    Generate a short 2-3 sentence stylist verdict for an outfit card.
+
+    Args:
+        items:        List of clothing item dicts (color, category).
+        occasion:     Structured occasion dict from parse_occasion().
+        vibe:         Vibe labels already computed for this outfit (e.g. ["Main Character", "Evening Royalty"]).
+        color_story:  Human-readable color story label (e.g. "Tonal Moment").
+        fit_check:    Fit compatibility label (e.g. "Snatched 🔥").
+
+    Returns:
+        2-3 sentence punchy verdict in Zara/TikTok language. Max ~40 words.
+    """
+    settings = get_settings()
+    if settings.use_mock_ai:
+        return _mock_generate_stylist_verdict(vibe, fit_check, color_story)
+    return _real_generate_stylist_verdict(items, occasion, vibe, color_story, fit_check)
 
 
 # ── Face Detection ──────────────────────────────────────────────────────────
@@ -349,14 +471,122 @@ def detect_face_shape(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict
                 ]
             }]
         )
-        raw = resp.choices[0].message.content.strip()
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        return json.loads(raw.strip())
+        raw = _strip_json_fence(resp.choices[0].message.content)
+        parsed = json.loads(raw)
+        trait = _normalize_trait(
+            {
+                "value": parsed.get("face_shape"),
+                "confidence": parsed.get("confidence"),
+                "reason": parsed.get("reason"),
+            },
+            {"oval", "round", "square", "heart", "diamond", "oblong"},
+            "No face detected",
+        )
+        return {
+            "face_shape": trait["value"],
+            "confidence": trait["confidence"],
+            "reason": trait["reason"],
+        }
     except Exception as e:
         return {"face_shape": None, "confidence": "low", "reason": f"Detection failed: {str(e)}"}
+
+
+def analyze_profile_traits(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
+    """
+    Analyze a profiling photo and infer styling traits.
+    Returns normalized JSON keyed by face/body/complexion/hair traits.
+    """
+    settings = get_settings()
+    if settings.use_mock_ai:
+        skipped = {"value": None, "confidence": "low", "reason": "Mock mode — AI profiling skipped"}
+        return {
+            "source": "ai_profile_photo",
+            "face_shape": skipped,
+            "body_type": skipped,
+            "complexion": skipped,
+            "hair_texture": skipped,
+            "hair_length": skipped,
+        }
+
+    try:
+        import base64
+        from openai import OpenAI
+
+        print(f"[llm] analyze_profile_traits start mime_type={mime_type!r} bytes={len(image_bytes)}")
+        client = OpenAI(api_key=settings.openai_api_key)
+        b64 = base64.b64encode(image_bytes).decode()
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            max_tokens=450,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime_type};base64,{b64}"},
+                    },
+                    {
+                        "type": "text",
+                        "text": """Analyze this AI profiling photo for styling traits.
+Return ONLY valid JSON, no markdown, no code fences:
+{
+  "face_shape": {"value": "oval|round|square|heart|diamond|oblong|null", "confidence": "high|medium|low", "reason": "one concise sentence"},
+  "body_type": {"value": "hourglass|pear|apple|rectangle|inverted triangle|null", "confidence": "high|medium|low", "reason": "one concise sentence"},
+  "complexion": {"value": "fair|light|medium|olive|tan|deep|null", "confidence": "high|medium|low", "reason": "one concise sentence"},
+  "hair_texture": {"value": "straight|wavy|curly|coily|null", "confidence": "high|medium|low", "reason": "one concise sentence"},
+  "hair_length": {"value": "short|medium|long|null", "confidence": "high|medium|low", "reason": "one concise sentence"}
+}
+Rules:
+- Use null with low confidence if a trait is not visible enough.
+- Body type must describe overall silhouette only when upper/lower body is visible enough.
+- Hair texture/length should refer to the visible hair in the photo only.
+- Keep reasons brief and grounded in visible cues."""
+                    },
+                ],
+            }],
+        )
+        print("[llm] analyze_profile_traits OpenAI response received")
+        parsed = json.loads(_strip_json_fence(resp.choices[0].message.content))
+        print(f"[llm] analyze_profile_traits parsed keys={list(parsed.keys())}")
+        return {
+            "source": "ai_profile_photo",
+            "face_shape": _normalize_trait(
+                parsed.get("face_shape"),
+                {"oval", "round", "square", "heart", "diamond", "oblong"},
+                "Face shape is not clearly visible",
+            ),
+            "body_type": _normalize_trait(
+                parsed.get("body_type"),
+                {"hourglass", "pear", "apple", "rectangle", "inverted triangle"},
+                "Body shape is not clearly visible",
+            ),
+            "complexion": _normalize_trait(
+                parsed.get("complexion"),
+                {"fair", "light", "medium", "olive", "tan", "deep"},
+                "Complexion is not clearly visible",
+            ),
+            "hair_texture": _normalize_trait(
+                parsed.get("hair_texture"),
+                {"straight", "wavy", "curly", "coily"},
+                "Hair texture is not clearly visible",
+            ),
+            "hair_length": _normalize_trait(
+                parsed.get("hair_length"),
+                {"short", "medium", "long"},
+                "Hair length is not clearly visible",
+            ),
+        }
+    except Exception as e:
+        print(f"[llm] analyze_profile_traits failed error={e}")
+        failed = {"value": None, "confidence": "low", "reason": f"Analysis failed: {str(e)}"}
+        return {
+            "source": "ai_profile_photo",
+            "face_shape": failed,
+            "body_type": failed,
+            "complexion": failed,
+            "hair_texture": failed,
+            "hair_length": failed,
+        }
 
 # ── Clothing descriptor definitions ──────────────────────────────────────────
 

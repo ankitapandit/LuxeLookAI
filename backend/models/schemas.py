@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
@@ -33,6 +33,20 @@ class AuthResponse(BaseModel):
 
 # ── Users ────────────────────────────────────────────────────────────────────
 
+class ProfileTraitAnalysis(BaseModel):
+    value: Optional[str] = None
+    confidence: str = "low"
+    reason: str = ""
+
+
+class AIProfileAnalysis(BaseModel):
+    source: str = "ai_profile_photo"
+    face_shape: ProfileTraitAnalysis = Field(default_factory=ProfileTraitAnalysis)
+    body_type: ProfileTraitAnalysis = Field(default_factory=ProfileTraitAnalysis)
+    complexion: ProfileTraitAnalysis = Field(default_factory=ProfileTraitAnalysis)
+    hair_texture: ProfileTraitAnalysis = Field(default_factory=ProfileTraitAnalysis)
+    hair_length: ProfileTraitAnalysis = Field(default_factory=ProfileTraitAnalysis)
+
 class UserProfile(BaseModel):
     id: UUID
     email: str
@@ -42,9 +56,13 @@ class UserProfile(BaseModel):
     complexion: Optional[str] = None
     face_shape: Optional[str] = None
     hairstyle: Optional[str] = None
+    age_range: Optional[str] = None
     preferred_styles: Optional[dict] = None
     disliked_styles: Optional[dict] = None
     photo_url: Optional[str] = None
+    ai_profile_photo_url: Optional[str] = None
+    ai_profile_analysis: Optional[AIProfileAnalysis] = None
+    ai_profile_analyzed_at: Optional[datetime] = None
     is_pro: bool = False
 
 
@@ -55,6 +73,17 @@ class UpdateProfileRequest(BaseModel):
     complexion: Optional[str]   = None
     face_shape: Optional[str]   = None
     hairstyle:  Optional[str]   = None
+    age_range:  Optional[str]   = None
+
+
+class PhotoUploadResponse(BaseModel):
+    photo_url: str
+
+
+class AIProfilePhotoUploadResponse(BaseModel):
+    ai_profile_photo_url: str
+    ai_profile_analysis: AIProfileAnalysis
+    ai_profile_analyzed_at: Optional[datetime] = None
 
 
 # ── Clothing Items ────────────────────────────────────────────────────────────
@@ -107,15 +136,47 @@ class Event(BaseModel):
 
 # ── Outfit Suggestions ────────────────────────────────────────────────────────
 
+class OutfitCard(BaseModel):
+    """Structured 5-row at-a-glance card for an outfit suggestion (v2.0+).
+
+    Each row maps to one attribute with a single human-readable value
+    derived from the V2 scorer outputs — unique per outfit even within
+    the same event.
+    """
+
+    # 🔥 Trend-o-meter — 1-5 stars + label (Outdated / Basic / Classic / Trendy / Statement)
+    trend_stars: int   # 1–5
+    trend_label: str   # e.g. "Trendy"
+
+    # 💃 Vibe Check — "CoreVibe + Energy" e.g. "Elegant + Confident"
+    vibe: str
+
+    # 🎨 Color Theory — palette label e.g. "Neutral Base + Pop", "Monochrome"
+    color_theory: str
+
+    # 👗 Fit Check — e.g. "Snatched", "Tailored", "Flowing"
+    fit_check: str
+
+    # 🌡️ Weather Sync — "MatchLevel (Setting / TempLabel)" e.g. "Perfect (Indoor / Mild Weather)"
+    weather_sync: str
+
+    # Optional risk flag — only present when dress-code rules are stretched
+    risk_flag: Optional[str] = None
+
+    # Stylist verdict — 2-3 sentence punchy copy in Zara/TikTok language
+    verdict: str
+
+
 class OutfitSuggestion(BaseModel):
     id: UUID
     user_id: UUID
     event_id: UUID
-    item_ids: List[UUID]              # core garments (top + bottom or dress, shoes)
+    item_ids: List[UUID]                    # core garments (top + bottom or dress, shoes)
     accessory_ids: Optional[List[UUID]] = []  # max 2 accessories
-    score: float                      # 0.0 → 1.0 composite ranking score
-    explanation: str                  # LLM-generated human-readable rationale
-    user_rating: Optional[int] = None # 1-5 after feedback
+    score: float                            # 0.0 → 1.0 composite ranking score
+    explanation: Optional[str] = None      # legacy field — now holds the short stylist verdict
+    card: Optional[OutfitCard] = None      # structured quick-glance card (v2.0+)
+    user_rating: Optional[int] = None      # 1–5 star rating from user feedback
     generated_at: datetime
 
     class Config:

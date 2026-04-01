@@ -19,6 +19,7 @@ from services.clothing_service import (
 )
 from ml.tagger import tag_clothing_item, get_taggable_options
 from utils.auth import get_current_user_id
+from utils.color_utils import normalize_color
 
 router = APIRouter()
 
@@ -112,7 +113,7 @@ async def upload_item(
     }
     manual_tags: dict = {}
     if category:          manual_tags["category"]          = category
-    if color:             manual_tags["color"]             = color
+    if color:             manual_tags["color"]             = normalize_color(color)
     if pattern:           manual_tags["pattern"]           = pattern
     if item_type:         manual_tags["item_type"]         = item_type
     if accessory_subtype: manual_tags["accessory_subtype"] = accessory_subtype
@@ -159,7 +160,7 @@ def correct_item(
     """
     corrections: dict = {}
     if category: corrections["category"] = category
-    if color:    corrections["color"]    = color
+    if color:    corrections["color"]    = normalize_color(color)
     if pattern:  corrections["pattern"]  = pattern
     if season:   corrections["season"]   = season
     if formality_label and formality_label in _FORMALITY_SCORE_MAP:

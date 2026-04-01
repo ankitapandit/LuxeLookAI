@@ -9,6 +9,7 @@ import { useState } from "react";
 import Head from "next/head";
 import Navbar from "@/components/layout/Navbar";
 import { createEvent, generateOutfits, resetFeedback, getWardrobeItems, rateOutfit, OutfitSuggestion, ClothingItem } from "@/services/api";
+import OutfitMetricCard, { isCurrentCardSchema } from "@/components/OutfitCard";
 import { CalendarDays, Sparkles, Info, X, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -305,10 +306,10 @@ export default function EventsPage() {
                       ))}
                     </div>
                     </div>
-                    <div style={{ background: "var(--surface)", borderRadius: "8px", padding: "14px", marginBottom: "16px", display: "flex", gap: "8px" }}>
-                      <Info size={15} color="var(--gold)" style={{ flexShrink: 0, marginTop: "2px" }} />
-                      <p style={{ fontSize: "14px", color: "var(--ink)", lineHeight: 1.6 }}>{s.explanation}</p>
-                    </div>
+                    {isCurrentCardSchema(s.card)
+                      ? <div style={{ marginBottom: "16px" }}><OutfitMetricCard card={s.card} /></div>
+                      : null
+                    }
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                       <span style={{ fontSize: "13px", color: "var(--muted)" }}>Rate this look:</span>
                       <div style={{ display: "flex", gap: "4px" }}>

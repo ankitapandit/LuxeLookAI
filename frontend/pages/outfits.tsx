@@ -11,7 +11,8 @@ import {
   generateOutfits, rateOutfit, getWardrobeItems, getEvents, getSuggestions,
   OutfitSuggestion, ClothingItem, Event,
 } from "@/services/api";
-import { Sparkles, Info } from "lucide-react";
+import OutfitMetricCard, { isCurrentCardSchema } from "@/components/OutfitCard";
+import { Sparkles } from "lucide-react";
 import toast from "react-hot-toast";
 
 export default function OutfitsPage() {
@@ -63,6 +64,23 @@ export default function OutfitsPage() {
         try { suggMap[ev.id] = await getSuggestions(ev.id); }
         catch { suggMap[ev.id] = []; }
       }));
+
+      // Auto-regenerate suggestions that have no card OR have an outdated card schema
+      // (pre-v2.0 cards used trend_meter + array vibe + color_story — detect by absence of trend_stars).
+      await Promise.all(eventsData.map(async (ev) => {
+        const existing = suggMap[ev.id] || [];
+        const isOutdated = (s: OutfitSuggestion) =>
+          !s.card || !("trend_stars" in s.card) || typeof s.card.trend_stars !== "number";
+        const needsUpgrade = existing.length > 0 && existing.every(isOutdated);
+        if (!needsUpgrade) return;
+        try {
+          const fresh = await generateOutfits(ev.id, 5);
+          suggMap[ev.id] = fresh.suggestions;
+        } catch {
+          // Upgrade failed silently — old suggestions kept, card section hidden
+        }
+      }));
+
       setSuggestionsMap(suggMap);
 
       // Only show events that have suggestions, collapsed by default
@@ -234,7 +252,7 @@ export default function OutfitsPage() {
                         <div style={{ display: "flex", gap: "20px", overflowX: "auto", paddingBottom: "12px" }}>
                           {suggestions.map((s, idx) => (
                             <div key={s.id} style={{ minWidth: "340px", maxWidth: "380px", flexShrink: 0 }}>
-                              <OutfitCard
+                              <OutfitSuggestionCard
                                 suggestion={s}
                                 rank={idx + 1}
                                 wardrobeMap={wardrobeMap}
@@ -281,7 +299,7 @@ export default function OutfitsPage() {
 
 // ── Outfit Card ────────────────────────────────────────────────────────────
 
-function OutfitCard({
+function OutfitSuggestionCard({
   suggestion, rank, wardrobeMap, onRate,
 }: {
   suggestion: OutfitSuggestion;
@@ -320,11 +338,12 @@ function OutfitCard({
         )}
       </div>
 
-      {/* AI explanation */}
-      <div style={{ background: "var(--surface)", borderRadius: "8px", padding: "16px", marginBottom: "20px", display: "flex", gap: "10px", alignItems: "flex-start" }}>
-        <Info size={16} color="var(--gold)" style={{ flexShrink: 0, marginTop: "2px" }} />
-        <p style={{ fontSize: "14px", color: "var(--ink)", lineHeight: 1.6 }}>{suggestion.explanation}</p>
-      </div>
+      {/* Outfit card metrics — only render if card has the current v2.0 schema */}
+      {isCurrentCardSchema(suggestion.card) && (
+        <div style={{ marginBottom: "20px" }}>
+          <OutfitMetricCard card={suggestion.card} />
+        </div>
+      )}
 
       {/* Star rating */}
       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
