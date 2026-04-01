@@ -21,7 +21,15 @@ router = APIRouter()
 def _signup_mock(email: str, password: str) -> str:
     """Use the in-memory mock store — no external services required."""
     from utils.mock_auth_store import mock_signup
-    return mock_signup(email, password)
+    from utils.mock_db_store import insert
+
+    user_id = mock_signup(email, password)
+    insert("users", {
+        "id": user_id,
+        "email": email.lower().strip(),
+        "is_pro": False,
+    })
+    return user_id
 
 
 def _signup_real(email: str, password: str) -> str:
@@ -87,4 +95,3 @@ def login(payload: LoginRequest):
 
     token = create_access_token(user_id)
     return AuthResponse(access_token=token, user_id=user_id)
-

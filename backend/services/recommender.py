@@ -37,7 +37,7 @@ from uuid import uuid4
 from datetime import datetime
 
 from ml.embeddings import cosine_similarity
-from ml.llm import explain_outfit
+from ml.llm import explain_outfit, generate_stylist_verdict
 
 logger = logging.getLogger(__name__)
 
@@ -799,6 +799,293 @@ def score_outfit_v2(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Outfit card builder
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Warm / cool color sets for tone detection
+_WARM_COLORS = {"red", "orange", "yellow", "beige", "brown", "gold", "pink",
+                "coral", "rust", "cream", "nude", "tan", "camel", "khaki",
+                "burgundy", "maroon", "copper", "peach", "terracotta"}
+_COOL_COLORS = {"blue", "green", "purple", "grey", "gray", "navy", "teal",
+                "mint", "lavender", "white", "silver", "lilac", "cobalt",
+                "sage", "olive", "emerald", "indigo", "steel", "charcoal"}
+
+# Fabric → breathability bucket
+_BREATHABLE_FABRICS  = {"cotton", "linen", "chiffon", "silk", "bamboo", "rayon", "satin"}
+_INSULATING_FABRICS  = {"wool", "fleece", "velvet", "cashmere", "knit", "waffle-knit",
+                        "sherpa", "faux-fur", "tweed", "corduroy"}
+
+# Light vs heavy outerwear for layering
+_LIGHT_OUTERWEAR  = {"blazer", "cardigan", "denim jacket", "bomber", "vest", "cape"}
+_HEAVY_OUTERWEAR  = {"coat", "puffer", "trench", "overcoat", "leather jacket", "parka"}
+
+
+# ── Trend-o-meter ─────────────────────────────────────────────────────────────
+
+def _trend_stars_and_label(novelty: float, compat: float, approp: float) -> tuple:
+    """
+    Derive 1–5 star rating and label from scorer components.
+
+    Weighted: novelty 40% + compat 35% + approp 25%.
+    Returns (stars: int, label: str).
+    """
+    score = novelty * 0.40 + compat * 0.35 + approp * 0.25
+    stars = max(1, min(5, round(score * 5)))
+    labels = {1: "Outdated", 2: "Basic", 3: "Classic", 4: "Trendy", 5: "Statement"}
+    return stars, labels[stars]
+
+
+# ── Vibe Check ────────────────────────────────────────────────────────────────
+
+_CORE_VIBE_MAP = [
+    # (occasion_type_keywords, formality_range, color_signals) → (core_vibe, energy)
+    # Formal / high formality
+    ({"formal", "gala", "wedding"},       (0.80, 1.0),  None,         "Elegant",  "Confident"),
+    # Business / smart-casual
+    ({"business", "office", "interview"}, (0.60, 1.0),  None,         "Chic",     "Powerful"),
+    # Party / night out — bold colors → Edgy; muted → Chic
+    ({"party", "cocktail", "night"},      (0.50, 0.80), {"contrast"}, "Edgy",     "Confident"),
+    ({"party", "cocktail", "night"},      (0.50, 0.80), None,         "Bold",     "Effortless"),
+    # Date / romantic
+    ({"date", "romantic", "dinner"},      (0.40, 0.75), None,         "Chic",     "Flirty"),
+    # Brunch / social casual
+    ({"brunch", "lunch", "friends"},      (0.20, 0.55), None,         "Playful",  "Effortless"),
+    # Athletic
+    ({"athletic", "gym", "workout"},      (0.00, 0.30), None,         "Minimal",  "Confident"),
+    # Casual / vacation
+    ({"beach", "vacation", "outdoor"},    (0.00, 0.40), None,         "Casual",   "Effortless"),
+]
+
+
+def _vibe_check(
+    occasion_type: str,
+    formality: float,
+    event_tokens: List[str],
+    raw_color_label: str,
+    compat: float,
+) -> str:
+    """
+    Derive a 'CoreVibe + Energy' string unique to this outfit.
+
+    Uses occasion type, formality, event tokens, color contrast signal,
+    and compatibility score so each outfit in the same event yields a
+    different vibe when the outfits themselves differ.
+    """
+    tokens   = set(event_tokens or []) | {occasion_type.lower()}
+    has_contrast = any(k in raw_color_label.lower()
+                       for k in ("complementary", "clashing", "color block"))
+
+    # Walk the map — first match wins
+    for occ_set, (f_min, f_max), color_sig, core, energy in _CORE_VIBE_MAP:
+        if not (occ_set & tokens):
+            continue
+        if not (f_min <= formality <= f_max):
+            continue
+        if color_sig == {"contrast"} and not has_contrast:
+            continue
+        # Modulate energy by compat score so different outfit strengths show differently
+        if compat >= 0.85 and energy == "Effortless":
+            energy = "Confident"
+        elif compat < 0.60 and energy == "Confident":
+            energy = "Soft"
+        return f"{core} + {energy}"
+
+    # Fallback: derive from formality band alone
+    if formality >= 0.75:
+        base, nrg = "Elegant", "Powerful" if compat >= 0.80 else "Confident"
+    elif formality >= 0.50:
+        base, nrg = "Chic",    "Confident" if compat >= 0.75 else "Soft"
+    elif has_contrast:
+        base, nrg = "Bold",    "Confident"
+    else:
+        base, nrg = "Casual",  "Effortless"
+    return f"{base} + {nrg}"
+
+
+# ── Color Theory ──────────────────────────────────────────────────────────────
+
+def _color_theory_label(raw_color_label: str, items: List[Dict]) -> str:
+    """
+    Build a single human-readable Color Theory value.
+
+    Format: "{Palette}" — e.g. "Neutral Base + Pop", "Monochrome", "Color Block".
+    """
+    raw = raw_color_label.lower()
+
+    if "neutral base with" in raw:
+        palette = "Neutral Base + Pop"
+    elif "clean neutral" in raw or "all neutral" in raw:
+        palette = "All Neutral"
+    elif "monochromatic" in raw:
+        palette = "Monochrome"
+    elif "tonal analogous" in raw or "analogous" in raw:
+        palette = "Analogous"
+    elif "complementary contrast" in raw:
+        palette = "Complementary"
+    elif "clashing" in raw:
+        palette = "Color Block"
+    elif "mixed" in raw:
+        palette = "Mixed"
+    else:
+        palette = "Eclectic"
+
+    return palette
+
+
+# ── Fit Check ─────────────────────────────────────────────────────────────────
+
+def _fit_check_label(compat: float, silhouette_tag: str, items: List[Dict]) -> str:
+    """
+    Single fit label derived from compatibility score + silhouette balance tag
+    + item descriptor data so different outfits produce different values.
+    """
+    cats  = {(i.get("category") or "").lower() for i in items}
+    fits  = [(i.get("descriptors") or {}).get("fit", "").lower() for i in items]
+    has_outerwear = "outerwear" in cats
+
+    n_bodycon = sum(1 for f in fits if "bodycon" in f or "second-skin" in f)
+    n_fitted  = sum(1 for f in fits if any(v in f for v in _FITTED_FITS))
+    n_oversized = sum(1 for f in fits if any(v in f for v in _OVERSIZED_FITS))
+    n_flowing = sum(1 for f in fits if any(v in f for v in {"flowy", "flare", "flowing", "wide", "maxi"}))
+
+    # Layered always wins when outerwear is present
+    if has_outerwear:
+        return "Structured"
+
+    # Bodycon is the most specific — check first
+    if n_bodycon >= 1:
+        return "Snatched" if compat >= 0.75 else "Bodycon"
+
+    # High compatibility + all fitted = Snatched
+    if compat >= 0.85 and n_fitted >= 2:
+        return "Snatched"
+
+    # Tailored: business/smart look with fitted pieces
+    if n_fitted >= 1 and n_oversized == 0 and not n_flowing:
+        return "Tailored" if compat >= 0.70 else "Structured"
+
+    # Flowing / relaxed silhouette
+    if n_flowing >= 1 or n_oversized >= 2:
+        return "Flowing" if n_flowing > n_oversized else "Relaxed"
+
+    # Contrast silhouette (volume + fitted)
+    if n_oversized >= 1 and n_fitted >= 1:
+        return "Structured"
+
+    # Fallback on raw compat
+    if compat >= 0.80: return "Snatched"
+    if compat >= 0.65: return "Tailored"
+    return "Relaxed"
+
+
+# ── Weather Sync ──────────────────────────────────────────────────────────────
+
+def _weather_sync_label(
+    approp: float,
+    temp: str,
+    setting: str,
+    items: List[Dict],
+) -> str:
+    """
+    Build 'MatchLevel (Setting / TempLabel)' string.
+
+    Match level from appropriateness score; setting + temp from occasion;
+    layer hint from whether outerwear is present.
+    """
+    # Match level
+    if approp >= 0.82:   match = "Perfect"
+    elif approp >= 0.65: match = "Good"
+    elif approp >= 0.45: match = "Risky"
+    else:                match = "Not Suitable"
+
+    # Setting label
+    setting_label = setting.title() if setting else "Indoor"
+
+    # Temperature label
+    temp_labels = {
+        "hot":  "Hot Weather", "warm": "Mild Weather",
+        "cool": "Cool Weather", "cold": "Cold Weather",
+    }
+    temp_label = temp_labels.get(temp, "Mild Weather")
+
+    return f"{match} ({setting_label} / {temp_label})"
+
+
+# ── Card builder ──────────────────────────────────────────────────────────────
+
+def _build_outfit_card(
+    items:           List[Dict],
+    occasion:        Dict,
+    score_breakdown: Dict,
+) -> Dict:
+    """
+    Build a structured at-a-glance outfit card from scorer outputs.
+
+    Every attribute is derived from real per-outfit data so each card
+    is unique even within the same event. No LLM call except for the
+    short stylist verdict.
+
+    Args:
+        items:           All items in the outfit (core + accessories).
+        occasion:        Structured occasion dict from parse_occasion().
+        score_breakdown: V2 score breakdown dict from score_outfit_v2().
+
+    Returns:
+        Dict matching the OutfitCard schema.
+    """
+    tags    = score_breakdown.get("tags", {})
+    compat  = score_breakdown.get("compatibility", 0.5)
+    approp  = score_breakdown.get("appropriateness", 0.5)
+    novelty = score_breakdown.get("novelty", 0.5)
+    risk_label = tags.get("risk", "no significant risk")
+
+    raw_color_label  = tags.get("color_story", "mixed palette")
+    silhouette_tag   = tags.get("silhouette",  "")
+
+    occ_type    = occasion.get("occasion_type",       "casual")
+    formality   = occasion.get("formality_level",      0.5)
+    temp        = occasion.get("temperature_context",  "warm")
+    setting     = occasion.get("setting",              "indoor")
+    event_tokens = occasion.get("event_tokens",        [])
+
+    # ── 🔥 Trend-o-meter ──────────────────────────────────────────────────────
+    trend_stars, trend_label = _trend_stars_and_label(novelty, compat, approp)
+
+    # ── 💃 Vibe Check ─────────────────────────────────────────────────────────
+    vibe = _vibe_check(occ_type, formality, event_tokens, raw_color_label, compat)
+
+    # ── 🎨 Color Theory ───────────────────────────────────────────────────────
+    color_theory = _color_theory_label(raw_color_label, items)
+
+    # ── 👗 Fit Check ──────────────────────────────────────────────────────────
+    fit_check = _fit_check_label(compat, silhouette_tag, items)
+
+    # ── 🌡️ Weather Sync ──────────────────────────────────────────────────────
+    weather_sync = _weather_sync_label(approp, temp, setting, items)
+
+    # ── Risk flag ─────────────────────────────────────────────────────────────
+    risk_flag = None
+    if risk_label and risk_label != "no significant risk":
+        risk_flag = risk_label
+
+    # ── Stylist verdict ───────────────────────────────────────────────────────
+    verdict = generate_stylist_verdict(
+        items, occasion, [vibe], color_theory, fit_check
+    )
+
+    return {
+        "trend_stars":  trend_stars,
+        "trend_label":  trend_label,
+        "vibe":         vibe,
+        "color_theory": color_theory,
+        "fit_check":    fit_check,
+        "weather_sync": weather_sync,
+        "risk_flag":    risk_flag,
+        "verdict":      verdict,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Composite outfit scorer
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1196,25 +1483,22 @@ def generate_outfit_suggestions(
             core_items, accessories, occasion, user_body_type=user_body_type
         )
 
-        all_items   = core_items + selected_accessories
-        explanation = explain_outfit(
-            all_items, occasion,
-            user_body_type=user_body_type,
-            score_breakdown=score_breakdown,
-        )
+        all_items = core_items + selected_accessories
+        card      = _build_outfit_card(all_items, occasion, score_breakdown)
 
         is_seen = frozenset(str(i["id"]) for i in core_items) in seen_sets
         suggestion = {
-            "id":             str(uuid4()),
-            "user_id":        user_id,
-            "event_id":       event_id,
-            "item_ids":       [item["id"] for item in core_items],
-            "accessory_ids":  [acc["id"] for acc in selected_accessories],
-            "score":          outfit_score,
-            "score_breakdown": score_breakdown,
-            "explanation":    explanation,
-            "user_rating":    None,
-            "generated_at":   datetime.utcnow().isoformat(),
+            "id":              str(uuid4()),
+            "user_id":         user_id,
+            "event_id":        event_id,
+            "item_ids":        [item["id"] for item in core_items],
+            "accessory_ids":   [acc["id"] for acc in selected_accessories],
+            "score":           outfit_score,
+            "score_breakdown": score_breakdown,   # stripped before DB insert
+            "explanation":     card["verdict"],   # short verdict kept in legacy column
+            "card":            card,              # full structured card
+            "user_rating":     None,
+            "generated_at":    datetime.utcnow().isoformat(),
         }
         suggestions.append(suggestion)
         logger.info(

@@ -54,6 +54,45 @@ function resolveColorName(color: string): string {
   return color;
 }
 
+// Maps any stored color name back to the nearest SOLID_COLORS key so the
+// correct swatch is highlighted in the edit modal for existing items.
+function normalizeToPresetKey(color: string): string | null {
+  if (!color) return null;
+  if (color.startsWith("#")) return null; // custom hex — no swatch match
+  if (SOLID_COLORS.some(c => c.key === color)) return color;
+  const lower = color.toLowerCase();
+  // Explicit overrides for common normalized names
+  const overrides: Record<string, string> = {
+    "charcoal": "black", "ebony": "black", "jet black": "black", "onyx": "black",
+    "ivory": "white", "off white": "white", "cream": "white", "snow": "white",
+    "midnight blue": "navy", "dark blue": "navy", "indigo": "navy", "slate blue": "navy",
+    "camel": "beige", "tan": "beige", "khaki": "beige", "sand": "beige", "wheat": "beige",
+    "sandybrown": "beige", "sandy brown": "beige",
+    "crimson": "red", "scarlet": "red", "maroon": "red", "burgundy": "red",
+    "deep red": "red", "dark red": "red", "tomato red": "red",
+    "sage": "green", "olive": "green", "forest green": "green", "dark green": "green",
+    "lime green": "green", "lime": "green", "sea green": "green", "mint green": "green",
+    "dark grey": "grey", "light grey": "grey", "silver": "grey",
+    "slate grey": "grey", "dark slate grey": "grey", "light slate grey": "grey",
+    "charcoal grey": "grey",
+    "chocolate brown": "brown", "dark brown": "brown", "sienna": "brown",
+    "blush": "pink", "dusty rose": "pink", "hot pink": "pink", "light pink": "pink",
+    "deep pink": "pink", "rose": "pink", "deep rose": "pink",
+    "sky blue": "blue", "light blue": "blue", "steel blue": "blue", "royal blue": "blue",
+    "cornflower blue": "blue", "bright blue": "blue", "teal": "blue", "cyan": "blue",
+    "light yellow": "yellow", "gold": "yellow",
+    "dark orange": "orange", "peach": "orange", "coral": "orange",
+    "dark violet": "purple", "plum": "purple", "violet": "purple",
+    "orchid": "purple", "lavender": "purple", "magenta": "purple",
+  };
+  if (overrides[lower]) return overrides[lower];
+  // Substring fallback: if color name contains a key (e.g. "dark blue" → "blue")
+  for (const c of [...SOLID_COLORS].sort((a, b) => b.key.length - a.key.length)) {
+    if (lower.includes(c.key)) return c.key;
+  }
+  return null;
+}
+
 // ── Preset solid colors (pattern removed — handled separately) ────────────────
 const SOLID_COLORS: { key: string; hex: string; label: string }[] = [
   { key: "black",  hex: "#1a1a1a", label: "Black"  },
@@ -289,7 +328,9 @@ export default function WardrobePage() {
   const [correctedCat,   setCorrectedCat]   = useState<string>("");
   const [correctedColor, setCorrectedColor] = useState<string>("");  // color key or custom hex
   const [step,           setStep]           = useState<"idle"|"analysing"|"review"|"saving">("idle");
-  const [filter,         setFilter]         = useState("all");
+  const [filterCat,       setFilterCat]       = useState("all");
+  const [filterSeason,    setFilterSeason]    = useState("all");
+  const [filterFormality, setFilterFormality] = useState("all");
   const [descriptors, setDescriptors] = useState<Record<string, string>>({});
   const [duplicate, setDuplicate] = useState<TagPreview["duplicate"]>(null);
 
@@ -397,8 +438,29 @@ export default function WardrobePage() {
     }
   }
 
-  const categories = ["all", ...Array.from(new Set(items.map(i => i.category)))];
-  const visible    = filter === "all" ? items : items.filter(i => i.category === filter);
+  const uniqueCategories = Array.from(new Set(items.map(i => i.category))).sort();
+
+  // Helper: map formality_score to the same bucket label used in the filter
+  function formalityBucket(score: number | undefined): string {
+    if (score === undefined || score === null) return "";
+    if (score >= 0.75) return "Formal";
+    if (score >= 0.50) return "Smart casual";
+    if (score >= 0.25) return "Casual";
+    return "Loungewear";
+  }
+
+  const visible = items.filter(item => {
+    if (filterCat !== "all" && item.category !== filterCat) return false;
+    if (filterSeason !== "all") {
+      // Items tagged "all" (all-season) appear in every seasonal view
+      if (item.season !== filterSeason && item.season !== "all" && item.season) return false;
+      if (!item.season) return false;
+    }
+    if (filterFormality !== "all") {
+      if (formalityBucket(item.formality_score) !== filterFormality) return false;
+    }
+    return true;
+  });
 
   return (
     <>
@@ -410,7 +472,7 @@ export default function WardrobePage() {
           <div>
             <h1 style={{ fontSize: "36px", marginBottom: "8px" }}>My Wardrobe</h1>
             <p style={{ color: "var(--muted)", fontSize: "15px" }}>
-              {items.length} item{items.length !== 1 ? "s" : ""} · AI detects category &amp; color · you confirm before saving
+              {items.length} item{items.length !== 1 ? "s" : ""} · Clothing auto detect
             </p>
           </div>
           {(deletedItems.length > 0 || showTrash) && (
@@ -529,17 +591,70 @@ export default function WardrobePage() {
           /* ── Active wardrobe view ─────────────────────────────────────── */
           <>
             {items.length > 0 && (
-              <div style={{ display: "flex", gap: "8px", marginBottom: "24px", flexWrap: "wrap" }}>
-                {categories.map(cat => (
-                  <button key={cat} onClick={() => setFilter(cat)} style={{
-                    padding: "6px 16px", borderRadius: "20px", border: "1px solid",
-                    borderColor: filter === cat ? "var(--charcoal)" : "var(--border)",
-                    background:  filter === cat ? "var(--charcoal)" : "transparent",
-                    color:       filter === cat ? "var(--cream)"    : "var(--muted)",
-                    fontSize: "13px", fontWeight: 500, cursor: "pointer",
-                    textTransform: "capitalize", transition: "all 0.15s ease",
-                  }}>{cat}</button>
-                ))}
+              <div style={{
+                display: "flex", alignItems: "flex-start",
+                background: "var(--surface)", border: "1px solid var(--border)",
+                borderRadius: "14px", padding: "14px 20px",
+                marginBottom: "28px", gap: "0", flexWrap: "wrap", overflowX: "visible", rowGap: "16px",
+              }}>
+
+                {/* Type */}
+                <div style={{ flex: "1 1 350px", minWidth: "280px", paddingRight: "20px" }}>
+                  <p style={{ fontSize: "10px", fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Type</p>
+                  <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+                    {["all", ...uniqueCategories].map(cat => (
+                      <button key={cat} onClick={() => setFilterCat(cat)} style={{
+                        padding: "4px 12px", borderRadius: "20px", fontSize: "12px",
+                        fontWeight: filterCat === cat ? 600 : 400, cursor: "pointer",
+                        border: `1px solid ${filterCat === cat ? "var(--charcoal)" : "var(--border)"}`,
+                        background: filterCat === cat ? "var(--charcoal)" : "transparent",
+                        color: filterCat === cat ? "var(--cream)" : "var(--muted)",
+                        textTransform: "capitalize", transition: "all 0.15s ease",
+                      }}>{cat === "all" ? "All" : cat}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div style={{ width: "1px", background: "var(--border)", alignSelf: "stretch", margin: "0 4px" }} />
+
+                {/* Season */}
+                <div style={{ flex: "1 1 300px", minWidth: "240px", paddingLeft: "20px", paddingRight: "20px" }}>
+                  <p style={{ fontSize: "10px", fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Season</p>
+                  <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+                    {["all", "spring", "summer", "fall", "winter"].map(s => (
+                      <button key={s} onClick={() => setFilterSeason(s)} style={{
+                        padding: "4px 12px", borderRadius: "20px", fontSize: "12px",
+                        fontWeight: filterSeason === s ? 600 : 400, cursor: "pointer",
+                        border: `1px solid ${filterSeason === s ? "var(--charcoal)" : "var(--border)"}`,
+                        background: filterSeason === s ? "var(--charcoal)" : "transparent",
+                        color: filterSeason === s ? "var(--cream)" : "var(--muted)",
+                        textTransform: "capitalize", transition: "all 0.15s ease",
+                      }}>{s === "all" ? "All" : s}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div style={{ width: "1px", background: "var(--border)", alignSelf: "stretch", margin: "0 4px" }} />
+
+                {/* Dress code */}
+                <div style={{ flex: "1 1 350px", minWidth: "280px", paddingLeft: "20px" }}>
+                  <p style={{ fontSize: "10px", fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Dress code</p>
+                  <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+                    {["all", "Loungewear", "Casual", "Smart casual", "Formal"].map(f => (
+                      <button key={f} onClick={() => setFilterFormality(f)} style={{
+                        padding: "4px 12px", borderRadius: "20px", fontSize: "12px",
+                        fontWeight: filterFormality === f ? 600 : 400, cursor: "pointer",
+                        border: `1px solid ${filterFormality === f ? "var(--charcoal)" : "var(--border)"}`,
+                        background: filterFormality === f ? "var(--charcoal)" : "transparent",
+                        color: filterFormality === f ? "var(--cream)" : "var(--muted)",
+                        transition: "all 0.15s ease",
+                      }}>{f === "all" ? "Any" : f}</button>
+                    ))}
+                  </div>
+                </div>
+
               </div>
             )}
 
@@ -1077,6 +1192,13 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
   const [editPattern,     setEditPattern]     = useState(item.pattern || "");
   const [editDescriptors, setEditDescriptors] = useState<Record<string, string>>(item.descriptors || {});
 
+  // Map the current editColor to the nearest preset swatch key so it
+  // appears selected even when the value is a normalized name like "dark slate grey".
+  // Re-evaluated every render, so it stays in sync as editColor changes.
+  const activeColorKey = editColor === "" ? null
+    : SOLID_COLORS.some(c => c.key === editColor) ? editColor
+    : normalizeToPresetKey(editColor);
+
   const formalityLabel =
     item.formality_score !== undefined
       ? item.formality_score >= 0.75 ? "Formal"
@@ -1220,9 +1342,11 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
                 {SOLID_COLORS.map(c => (
                   <button key={c.key} title={c.label} onClick={() => setEditColor(c.key)} style={{
                     width: "26px", height: "26px", borderRadius: "50%", background: c.hex,
-                    border: editColor === c.key ? "3px solid var(--charcoal)" : "2px solid transparent",
-                    outline: editColor === c.key ? "2px solid var(--cream)" : "none",
+                    border: activeColorKey === c.key ? "3px solid var(--charcoal)" : "2px solid transparent",
+                    outline: activeColorKey === c.key ? "2px solid var(--cream)" : "none",
                     cursor: "pointer",
+                    transform: activeColorKey === c.key ? "scale(1.15)" : "scale(1)",
+                    transition: "transform 0.1s ease",
                   }} />
                 ))}
               </div>

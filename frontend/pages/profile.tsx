@@ -2,10 +2,10 @@
  * pages/profile.tsx — User profile page
  * - Body type: inline calculator with scored matching, top-2 on borderline
  * - Complexion: inline 3-question guide, slash notation on ambiguous result
- * - Face shape: auto-detected from profile photo via OpenAI Vision; guide chart shown
+ * - AI profiling photo: separate analysis image for face/body/complexion/hair suggestions
  * - Height: cm / in toggle, stores cm
  * - Weight: kg / lbs toggle, stores kg
- * - Photo: uploads to profile-photos bucket, triggers face shape detection
+ * - Photo: uploads a cropped display avatar only
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -13,8 +13,16 @@ import Head from "next/head";
 import Navbar from "@/components/layout/Navbar";
 import { FaceShapeTool } from "@/components/FaceShapeTool";
 import { PhotoCropper } from "@/components/PhotoCropper";
-import { getProfile, updateProfile, UserProfile } from "@/services/api";
-import { User, ChevronDown, ChevronUp, Camera, AlertCircle, CheckCircle } from "lucide-react";
+import {
+  AIProfileAnalysis,
+  ProfileTraitAnalysis,
+  getProfile,
+  updateProfile,
+  uploadAIProfilePhoto,
+  uploadProfilePhoto,
+  UserProfile,
+} from "@/services/api";
+import { User, ChevronDown, ChevronUp, Camera, AlertCircle } from "lucide-react";
 import toast from "react-hot-toast";
 
 // ── Static data ───────────────────────────────────────────────────────────────
@@ -24,6 +32,8 @@ const COMPLEXIONS = ["fair", "light", "medium", "olive", "tan", "deep"];
 const FACE_SHAPES = ["oval", "round", "square", "heart", "diamond", "oblong"];
 const HAIR_TEXTURE = ["straight", "wavy", "curly", "coily"];
 const HAIR_LENGTH  = ["short", "medium", "long"];
+const AGE_RANGES  = ["under 18", "18–24", "25–34", "35–44", "45–54", "55+"];
+const ALLOWED_UPLOAD_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 const BODY_TYPE_GUIDE: Record<string, { desc: string; hint: string }> = {
   hourglass:           { desc: "Bust and hips roughly equal width, waist noticeably narrower", hint: "Bust ≈ Hip, Waist 25%+ smaller than Bust" },
@@ -327,6 +337,73 @@ function ResultRow({ label, sublabel, note, onUse, onUseAlt, altLabel }: {
   );
 }
 
+function TraitCard({
+  label,
+  trait,
+  currentValue,
+  onApply,
+}: {
+  label: string;
+  trait: ProfileTraitAnalysis;
+  currentValue?: string;
+  onApply?: () => void;
+}) {
+  const hasValue = !!trait.value;
+  const showApply = !!trait.value && trait.value !== currentValue && trait.confidence !== "low" && !!onApply;
+
+  return (
+    <div style={{
+      padding: "12px 14px",
+      borderRadius: "8px",
+      border: "1px solid var(--border)",
+      background: "var(--surface)",
+      display: "flex",
+      justifyContent: "space-between",
+      gap: "12px",
+      alignItems: "flex-start",
+    }}>
+      <div style={{ flex: 1 }}>
+        <p style={{ fontSize: "12px", color: "var(--muted)", fontWeight: 600, margin: 0 }}>{label}</p>
+        <p style={{ fontSize: "14px", color: "var(--charcoal)", fontWeight: 600, margin: "4px 0 0", textTransform: "capitalize" }}>
+          {hasValue ? trait.value : "No suggestion yet"}
+        </p>
+        <p style={{ fontSize: "12px", color: "var(--muted)", margin: "4px 0 0" }}>
+          {trait.reason || "Upload a clearer AI profiling photo to improve this signal."}
+        </p>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px", alignItems: "flex-end", flexShrink: 0 }}>
+        <span style={{
+          fontSize: "11px",
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          color: trait.confidence === "high" ? "var(--sage)" : trait.confidence === "medium" ? "var(--gold)" : "var(--muted)",
+        }}>
+          {trait.confidence}
+        </span>
+        {showApply && (
+          <button
+            onClick={onApply}
+            style={{
+              fontSize: "12px",
+              fontWeight: 600,
+              color: "var(--gold)",
+              background: "none",
+              border: "1px solid var(--gold)",
+              borderRadius: "4px",
+              padding: "4px 10px",
+              cursor: "pointer",
+              textTransform: "capitalize",
+            }}
+          >
+            Apply
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function ProfilePage() {
@@ -334,14 +411,19 @@ export default function ProfilePage() {
   const [loading,        setLoading]        = useState(true);
   const [saving,         setSaving]         = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
-  const [cropFile, setCropFile] = useState<File | null>(null);
-  const [photoPreview,   setPhotoPreview]   = useState<string | null>(null);
-  const [faceDetected,   setFaceDetected]   = useState<{ shape: string; confidence: string; reason: string } | null>(null);
-  const [showFaceTool, setShowFaceTool] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [aiPhotoUploading, setAiPhotoUploading] = useState(false);
+  const [cropFile,         setCropFile]         = useState<File | null>(null);
+  const [photoPreview,     setPhotoPreview]     = useState<string | null>(null);
+  const [aiPhotoPreview,   setAiPhotoPreview]   = useState<string | null>(null);
+  const [profileAnalysis,  setProfileAnalysis]  = useState<AIProfileAnalysis | null>(null);
+  const [showFaceTool,     setShowFaceTool]     = useState(false);
+  const [showAIProfiling,  setShowAIProfiling]  = useState(true);
+  const profilePhotoInputRef = useRef<HTMLInputElement>(null);
+  const aiPhotoInputRef = useRef<HTMLInputElement>(null);
 
   // Core form state
   const [bodyType,    setBodyType]    = useState("");
+  const [ageRange,    setAgeRange]    = useState("");
   const [heightVal,   setHeightVal]   = useState("");
   const [heightUnit,  setHeightUnit]  = useState<"cm" | "in">("cm");
   const [weightVal,   setWeightVal]   = useState("");
@@ -374,6 +456,72 @@ export default function ProfilePage() {
     ? calcComplexion(vein, sun, depth)
     : null;
 
+  function syncProfileState(p: UserProfile) {
+    setProfile(p);
+    setBodyType(p.body_type || "");
+    setAgeRange(p.age_range || "");
+    setComplexion(p.complexion || "");
+    setFaceShape(p.face_shape || "");
+
+    const parts = (p.hairstyle || "").split(",").map(s => s.trim());
+    setHairTexture(parts.find(part => HAIR_TEXTURE.includes(part)) || "");
+    setHairLength(parts.find(part => HAIR_LENGTH.includes(part)) || "");
+
+    setPhotoPreview(p.photo_url || null);
+    setAiPhotoPreview(p.ai_profile_photo_url || null);
+    setProfileAnalysis(p.ai_profile_analysis || null);
+  }
+
+  function validateImageFile(file: File): boolean {
+    if (!ALLOWED_UPLOAD_TYPES.includes(file.type)) {
+      toast.error("Please upload a JPG, PNG or WEBP image");
+      return false;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Photo must be under 10MB");
+      return false;
+    }
+    return true;
+  }
+
+  function applyHighConfidenceSuggestions(analysis: AIProfileAnalysis) {
+    const applied: string[] = [];
+
+    if (!faceShape && analysis.face_shape.value && analysis.face_shape.confidence === "high") {
+      setFaceShape(analysis.face_shape.value);
+      applied.push("face shape");
+    }
+    if (!bodyType && analysis.body_type.value && analysis.body_type.confidence === "high") {
+      setBodyType(analysis.body_type.value);
+      applied.push("body type");
+    }
+    if (!complexion && analysis.complexion.value && analysis.complexion.confidence === "high") {
+      setComplexion(analysis.complexion.value);
+      applied.push("complexion");
+    }
+    if (!hairTexture && analysis.hair_texture.value && analysis.hair_texture.confidence === "high") {
+      setHairTexture(analysis.hair_texture.value);
+      applied.push("hair texture");
+    }
+    if (!hairLength && analysis.hair_length.value && analysis.hair_length.confidence === "high") {
+      setHairLength(analysis.hair_length.value);
+      applied.push("hair length");
+    }
+
+    if (applied.length) {
+      toast.success(`Applied high-confidence suggestions for ${applied.join(", ")}`);
+    }
+  }
+
+  function applyAnalysisValue(field: "body_type" | "complexion" | "face_shape" | "hair_texture" | "hair_length", value?: string | null) {
+    if (!value) return;
+    if (field === "body_type") setBodyType(value);
+    if (field === "complexion") setComplexion(value);
+    if (field === "face_shape") setFaceShape(value);
+    if (field === "hair_texture") setHairTexture(value);
+    if (field === "hair_length") setHairLength(value);
+  }
+
   // Load profile
   useEffect(() => {
     const hu = (localStorage.getItem("luxelook_height_unit") || "cm") as "cm" | "in";
@@ -382,15 +530,7 @@ export default function ProfilePage() {
     setWeightUnit(wu);
     getProfile()
       .then(p => {
-        setProfile(p);
-        setBodyType(p.body_type   || "");
-        setComplexion(p.complexion || "");
-        setFaceShape(p.face_shape  || "");
-        // stored as "texture, length" — split back into two fields
-        const parts = (p.hairstyle || "").split(",").map(s => s.trim());
-        setHairTexture(parts.find(p => HAIR_TEXTURE.includes(p)) || "");
-        setHairLength(parts.find(p => HAIR_LENGTH.includes(p))  || "");
-        setPhotoPreview(p.photo_url || null);
+        syncProfileState(p);
         if (p.height_cm) setHeightVal(
           hu === "in" ? (p.height_cm / 2.54).toFixed(1) : String(p.height_cm)
         );
@@ -425,72 +565,63 @@ export default function ProfilePage() {
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!validateImageFile(file)) return;
 
-    // Validate type
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please upload an image file (JPG, PNG, WEBP)");
-      return;
-    }
-    // Validate size — max 10MB
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("Photo must be under 10MB");
-      return;
-    }
-
-    // Show cropper instead of uploading directly
     setCropFile(file);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (profilePhotoInputRef.current) profilePhotoInputRef.current.value = "";
+  }
 
-    // Show preview immediately
-    const reader = new FileReader();
-    reader.onload = ev => setPhotoPreview(ev.target?.result as string);
-    reader.readAsDataURL(file);
+  async function uploadAIPhotoBlob(blob: Blob, filename: string) {
+    setAiPhotoUploading(true);
+    const previewUrl = URL.createObjectURL(blob);
+    setAiPhotoPreview(previewUrl);
 
-    setPhotoUploading(true);
-    setFaceDetected(null);
     try {
-      const formData = new FormData();
-      formData.append("photo", file);
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/profile/photo`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${localStorage.getItem("luxelook_token")}` },
-          body: formData,
-        }
-      );
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.detail || "Upload failed");
-      }
-
-      const data = await res.json();
-      toast.success("Photo uploaded!");
-
-      if (data.face_shape && data.face_confidence !== "low") {
-        setFaceDetected({
-          shape:      data.face_shape,
-          confidence: data.face_confidence,
-          reason:     data.face_reason || "",
-        });
-        // Auto-fill only on high confidence
-        if (data.face_confidence === "high") {
-          setFaceShape(data.face_shape);
-          toast.success(`Face shape detected: ${data.face_shape}`, { duration: 4000 });
-        }
-      } else if (data.face_shape === null) {
-        toast("No face detected in photo — face shape not updated", { icon: "ℹ️", duration: 4000 });
-        setShowFaceTool(true);
-      }
+      const data = await uploadAIProfilePhoto(blob, filename);
+      setAiPhotoPreview(data.ai_profile_photo_url);
+      URL.revokeObjectURL(previewUrl);
+      setProfileAnalysis(data.ai_profile_analysis);
+      setProfile(prev => prev ? {
+        ...prev,
+        ai_profile_photo_url: data.ai_profile_photo_url,
+        ai_profile_analysis: data.ai_profile_analysis,
+        ai_profile_analyzed_at: data.ai_profile_analyzed_at,
+      } : prev);
+      applyHighConfidenceSuggestions(data.ai_profile_analysis);
+      toast.success("AI profiling photo analyzed!");
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Could not upload photo — please try again");
-      // Revert preview on failure
-      setPhotoPreview(profile?.photo_url || null);
+      toast.error(err instanceof Error ? err.message : "Could not analyze AI profiling photo — please try again");
+      setAiPhotoPreview(profile?.ai_profile_photo_url || null);
+      URL.revokeObjectURL(previewUrl);
     } finally {
-      setPhotoUploading(false);
-      // Reset file input so same file can be re-uploaded
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      setAiPhotoUploading(false);
+    }
+  }
+
+  async function handleAIPhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!validateImageFile(file)) return;
+    if (aiPhotoInputRef.current) aiPhotoInputRef.current.value = "";
+    await uploadAIPhotoBlob(file, file.name || "ai-profile.jpg");
+  }
+
+  async function handleUseProfilePhotoForAnalysis() {
+    if (!photoPreview) {
+      toast.error("Upload a profile photo first");
+      return;
+    }
+
+    setAiPhotoUploading(true);
+    try {
+      const response = await fetch(photoPreview);
+      if (!response.ok) throw new Error("Could not load the profile photo");
+      const blob = await response.blob();
+      await uploadAIPhotoBlob(blob, "profile-photo-analysis.jpg");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Could not reuse the profile photo");
+    } finally {
+      if (aiPhotoInputRef.current) aiPhotoInputRef.current.value = "";
     }
   }
 
@@ -523,13 +654,14 @@ export default function ProfilePage() {
 
       const updated = await updateProfile({
         body_type:  bodyType   || undefined,
+        age_range:  ageRange   || undefined,
         height_cm: heightCm,
         weight_kg: weightKg,
         complexion: complexion || undefined,
         face_shape: faceShape  || undefined,
         hairstyle: [hairTexture, hairLength].filter(Boolean).join(", ") || undefined,
       });
-      setProfile(updated);
+      syncProfileState(updated);
       toast.success("Profile saved!");
     } catch {
       toast.error("Could not save profile — please try again");
@@ -541,48 +673,17 @@ export default function ProfilePage() {
   async function handleCropComplete(blob: Blob) {
     setCropFile(null);
     setPhotoUploading(true);
-    setFaceDetected(null);
 
     // Show preview immediately from blob
     const previewUrl = URL.createObjectURL(blob);
     setPhotoPreview(previewUrl);
 
     try {
-      const formData = new FormData();
-      formData.append("photo", blob, "profile.jpg");
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/profile/photo`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${localStorage.getItem("luxelook_token")}` },
-          body: formData,
-        }
-      );
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.detail || "Upload failed");
-      }
-
-      const data = await res.json();
+      const data = await uploadProfilePhoto(blob, "profile.jpg");
       setPhotoPreview(data.photo_url);
+      setProfile(prev => prev ? { ...prev, photo_url: data.photo_url } : prev);
       URL.revokeObjectURL(previewUrl);
       toast.success("Photo uploaded!");
-
-      if (data.face_shape && data.face_confidence !== "low") {
-        setFaceDetected({
-          shape:      data.face_shape,
-          confidence: data.face_confidence,
-          reason:     data.face_reason || "",
-        });
-        if (data.face_confidence === "high") {
-          setFaceShape(data.face_shape);
-          toast.success(`Face shape detected: ${data.face_shape}`, { duration: 4000 });
-        }
-      } else if (data.face_shape === null) {
-        toast("No face detected — mark your face shape manually", { icon: "ℹ️", duration: 4000 });
-        setShowFaceTool(true);
-      }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Could not upload photo — please try again");
       setPhotoPreview(profile?.photo_url || null);
@@ -647,7 +748,7 @@ export default function ProfilePage() {
               )}
             </div>
             <button
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => profilePhotoInputRef.current?.click()}
               disabled={photoUploading}
               title="Upload photo"
               style={{
@@ -659,7 +760,7 @@ export default function ProfilePage() {
               }}>
               <Camera size={13} color="white" />
             </button>
-            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp"
+            <input ref={profilePhotoInputRef} type="file" accept="image/jpeg,image/png,image/webp"
               style={{ display: "none" }} onChange={handlePhotoChange} />
           </div>
 
@@ -668,62 +769,208 @@ export default function ProfilePage() {
               Profile photo
             </p>
             <p style={{ fontSize: "13px", color: "var(--muted)", lineHeight: 1.6, marginBottom: "8px" }}>
-              Upload a clear front-facing photo. We use it to detect your face shape automatically
-              and will use it for outfit previews in a future update.
+              This is your visible avatar. We crop it to a square and use it for your profile display only.
             </p>
             <p style={{ fontSize: "11px", color: "var(--muted)" }}>
               JPG, PNG or WEBP · Max 10MB
             </p>
+          </div>
+        </section>
 
-            {/* Face detection result banner */}
-            {faceDetected && (
-              <div style={{
-                marginTop: "10px", padding: "10px 14px", borderRadius: "8px",
-                background: faceDetected.confidence === "high" ? "rgba(122,148,104,0.15)" : "rgba(212,169,106,0.12)",
-                border: `1px solid ${faceDetected.confidence === "high" ? "rgba(122,148,104,0.40)" : "rgba(212,169,106,0.40)"}`,
-                display: "flex", alignItems: "flex-start", gap: "8px",
-              }}>
-                {faceDetected.confidence === "high"
-                  ? <CheckCircle size={15} color="var(--sage)" style={{ flexShrink: 0, marginTop: "1px" }} />
-                  : <AlertCircle size={15} color="var(--gold)" style={{ flexShrink: 0, marginTop: "1px" }} />
-                }
-                <div>
-                  <p style={{ fontSize: "13px", fontWeight: 600, color: "var(--charcoal)",
-                    margin: 0, textTransform: "capitalize" }}>
-                    {faceDetected.confidence === "high"
-                      ? `Face shape detected: ${faceDetected.shape}`
-                      : `Possible face shape: ${faceDetected.shape} (review recommended)`
+        {/* ── AI profiling photo ── */}
+        <section style={{
+          marginBottom: "40px",
+          border: "1px solid var(--border)",
+          borderRadius: "16px",
+          background: "var(--surface)",
+          overflow: "hidden",
+        }}>
+          <button
+            onClick={() => setShowAIProfiling(prev => !prev)}
+            style={{
+              width: "100%",
+              padding: "16px 18px",
+              background: "transparent",
+              border: "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              cursor: "pointer",
+            }}
+          >
+            <div style={{ textAlign: "left" }}>
+              <p style={{ fontSize: "14px", color: "var(--ink)", fontWeight: 600, margin: 0 }}>
+                AI profiling photo
+              </p>
+              <p style={{ fontSize: "12px", color: "var(--muted)", margin: "4px 0 0" }}>
+                {aiPhotoPreview
+                  ? "Separate analysis image for face, body, complexion, and hair suggestions"
+                  : "Add a dedicated analysis photo without changing your visible avatar"}
+              </p>
+            </div>
+            {showAIProfiling
+              ? <ChevronUp size={16} color="var(--muted)" />
+              : <ChevronDown size={16} color="var(--muted)" />}
+          </button>
+
+          {showAIProfiling && (
+            <div style={{ padding: "0 18px 18px" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "24px", flexWrap: "wrap" }}>
+                <div style={{ position: "relative", flexShrink: 0 }}>
+                  <div style={{
+                    width: "104px", minHeight: "132px", borderRadius: "18px",
+                    background: "var(--surface)", border: "2px solid var(--border)",
+                    overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    {aiPhotoPreview
+                      ? <img src={aiPhotoPreview} alt="AI profiling" style={{ width: "100%", height: "132px", objectFit: "cover" }} />
+                      : <User size={40} color="var(--border)" />
                     }
+                    {aiPhotoUploading && (
+                      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)",
+                        display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "18px" }}>
+                        <div style={{ width: "20px", height: "20px", border: "2px solid white",
+                          borderTop: "2px solid transparent", borderRadius: "50%",
+                          animation: "spin 0.8s linear infinite" }} />
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => aiPhotoInputRef.current?.click()}
+                    disabled={aiPhotoUploading}
+                    title="Upload AI profiling photo"
+                    style={{
+                      position: "absolute", bottom: 0, right: 0,
+                      width: "28px", height: "28px", borderRadius: "50%",
+                      background: "var(--gold)", border: "2px solid var(--surface)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      cursor: aiPhotoUploading ? "not-allowed" : "pointer",
+                    }}>
+                    <Camera size={13} color="white" />
+                  </button>
+                  <input ref={aiPhotoInputRef} type="file" accept="image/jpeg,image/png,image/webp"
+                    style={{ display: "none" }} onChange={handleAIPhotoChange} />
+                </div>
+
+                <div style={{ flex: 1, minWidth: "280px" }}>
+                  <p style={{ fontSize: "13px", color: "var(--muted)", lineHeight: 1.6, marginBottom: "8px" }}>
+                    Upload a clear front-facing photo for AI analysis. We use this separately from your avatar
+                    to suggest face shape, body type, complexion, and hair traits.
                   </p>
-                  {faceDetected.reason && (
-                    <p style={{ fontSize: "12px", color: "var(--muted)", margin: "2px 0 0" }}>
-                      {faceDetected.reason}
-                    </p>
-                  )}
-                  {faceDetected.confidence === "medium" && (
-                    <button onClick={() => { setFaceShape(faceDetected.shape); setFaceDetected(null); }}
-                      style={{ marginTop: "6px", fontSize: "12px", fontWeight: 600, color: "var(--gold)",
-                        background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                      Accept this result →
+                  <p style={{ fontSize: "12px", color: "var(--muted)", margin: "0 0 10px" }}>
+                    The AI photo and analysis are saved immediately. Your chosen profile fields update only when you click Save Profile.
+                  </p>
+                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "8px" }}>
+                    <button
+                      onClick={() => aiPhotoInputRef.current?.click()}
+                      disabled={aiPhotoUploading}
+                      style={{
+                        padding: "8px 14px",
+                        borderRadius: "999px",
+                        border: "1px solid var(--gold)",
+                        background: "var(--gold)",
+                        color: "#0A0908",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        cursor: aiPhotoUploading ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {aiPhotoPreview ? "Replace AI photo" : "Upload AI photo"}
                     </button>
+                    <button
+                      onClick={handleUseProfilePhotoForAnalysis}
+                      disabled={aiPhotoUploading || !photoPreview}
+                      style={{
+                        padding: "8px 14px",
+                        borderRadius: "999px",
+                        border: "1px solid var(--border)",
+                        background: "var(--surface)",
+                        color: photoPreview ? "var(--charcoal)" : "var(--muted)",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        cursor: aiPhotoUploading || !photoPreview ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      Use profile photo
+                    </button>
+                  </div>
+                  <p style={{ fontSize: "11px", color: "var(--muted)", margin: 0 }}>
+                    JPG, PNG or WEBP · Max 10MB
+                  </p>
+
+                  {profileAnalysis && (
+                    <div style={{ marginTop: "14px", display: "grid", gap: "10px" }}>
+                      <TraitCard
+                        label="Face shape"
+                        trait={profileAnalysis.face_shape}
+                        currentValue={faceShape}
+                        onApply={() => applyAnalysisValue("face_shape", profileAnalysis.face_shape.value)}
+                      />
+                      <TraitCard
+                        label="Body type"
+                        trait={profileAnalysis.body_type}
+                        currentValue={bodyType}
+                        onApply={() => applyAnalysisValue("body_type", profileAnalysis.body_type.value)}
+                      />
+                      <TraitCard
+                        label="Complexion"
+                        trait={profileAnalysis.complexion}
+                        currentValue={complexion}
+                        onApply={() => applyAnalysisValue("complexion", profileAnalysis.complexion.value)}
+                      />
+                      <TraitCard
+                        label="Hair texture"
+                        trait={profileAnalysis.hair_texture}
+                        currentValue={hairTexture}
+                        onApply={() => applyAnalysisValue("hair_texture", profileAnalysis.hair_texture.value)}
+                      />
+                      <TraitCard
+                        label="Hair length"
+                        trait={profileAnalysis.hair_length}
+                        currentValue={hairLength}
+                        onApply={() => applyAnalysisValue("hair_length", profileAnalysis.hair_length.value)}
+                      />
+                    </div>
                   )}
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </section>
 
         {/* ── Basic info ── */}
         <section style={{ marginBottom: "40px" }}>
           <p style={{ ...labelStyle, fontSize: "13px", marginBottom: "20px" }}>Basic info</p>
 
+          {/* Age range */}
+          <div style={{ marginBottom: "24px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" }}>
+              <label style={{ ...labelStyle, marginBottom: 0 }}>Age range</label>
+              {AGE_RANGES.map(opt => (
+                <button key={opt} onClick={() => setAgeRange(prev => prev === opt ? "" : opt)}
+                  style={{
+                    padding: "7px 16px", fontSize: "13px", borderRadius: "20px", cursor: "pointer",
+                    border: `1px solid ${ageRange === opt ? "var(--charcoal)" : "var(--border)"}`,
+                    background: ageRange === opt ? "var(--gold)" : "var(--surface)",
+                    color: ageRange === opt ? "#0A0908" : "var(--muted)",
+                    fontWeight: ageRange === opt ? 600 : 400,
+                    transition: "all 0.15s",
+                  }}>
+                  {opt}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Body type */}
           <div style={{ marginBottom: "24px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap", marginBottom: "6px" }}>
               <label style={{ ...labelStyle, marginBottom: 0 }}>Body type</label>
+              <div style={{ width: "220px", maxWidth: "100%", marginRight: "auto" }}>
+                <SelectField value={bodyType} onChange={setBodyType} options={BODY_TYPES} />
+              </div>
               <CalcLinkButton label="Calculate mine" open={showBodyCalc} onClick={() => setShowBodyCalc(p => !p)} />
             </div>
-            <SelectField value={bodyType} onChange={setBodyType} options={BODY_TYPES} />
 
             {showBodyCalc && (
               <InlinePanel>
@@ -746,7 +993,6 @@ export default function ProfilePage() {
                   ))}
                 </div>
 
-                {/* Validation warning */}
                 {bust && waist && hip && !bodyResult && (
                   <div style={{ marginTop: "10px", padding: "10px 12px", background: "rgba(212,169,106,0.12)",
                     borderRadius: "6px", border: "1px solid rgba(212,169,106,0.35)", display: "flex", gap: "8px", alignItems: "center" }}>
@@ -757,7 +1003,6 @@ export default function ProfilePage() {
                   </div>
                 )}
 
-                {/* Result */}
                 {bodyResult && (
                   <ResultRow
                     label={bodyResult.result}
@@ -809,11 +1054,13 @@ export default function ProfilePage() {
 
           {/* Complexion */}
           <div style={{ marginBottom: "24px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap", marginBottom: "6px" }}>
               <label style={{ ...labelStyle, marginBottom: 0 }}>Complexion</label>
+              <div style={{ width: "220px", maxWidth: "100%", marginRight: "auto" }}>
+                <SelectField value={complexion} onChange={setComplexion} options={COMPLEXIONS} />
+              </div>
               <CalcLinkButton label="Help me identify" open={showComplexCalc} onClick={() => setShowComplexCalc(p => !p)} />
             </div>
-            <SelectField value={complexion} onChange={setComplexion} options={COMPLEXIONS} />
 
             {showComplexCalc && (
               <InlinePanel>
@@ -848,14 +1095,12 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                {/* Incomplete state */}
                 {(vein || sun || depth) && !(vein && sun && depth) && (
                   <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "12px" }}>
                     Answer all 3 questions to see your result
                   </p>
                 )}
 
-                {/* Result */}
                 {complexResult && (
                   <ResultRow
                     label={complexResult.display}
@@ -881,11 +1126,15 @@ export default function ProfilePage() {
 
           {/* Face shape */}
           <div style={{ marginBottom: "24px" }}>
-            <label style={labelStyle}>Face shape</label>
-            <SelectField value={faceShape} onChange={setFaceShape} options={FACE_SHAPES} />
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" }}>
+              <label style={{ ...labelStyle, marginBottom: 0 }}>Face shape</label>
+              <div style={{ width: "220px", maxWidth: "100%" }}>
+                <SelectField value={faceShape} onChange={setFaceShape} options={FACE_SHAPES} />
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "8px", flexWrap: "wrap" }}>
               <p style={{ fontSize: "12px", color: "var(--muted)", margin: 0 }}>
-                {faceDetected ? "AI detected above — or" : "Upload a photo for auto-detection, or"}
+                {profileAnalysis?.face_shape.value ? "AI suggested a result above — or" : "Use the AI profiling photo above, or"}
               </p>
               <button onClick={() => setShowFaceTool(p => !p)}
                 style={{ fontSize: "12px", fontWeight: 600, color: "var(--gold)",
@@ -901,8 +1150,8 @@ export default function ProfilePage() {
                   Drag any placed point to reposition it.
                 </p>
                 <FaceShapeTool
-                    key={photoPreview || "no-photo"}
-                  photoUrl={photoPreview}
+                  key={aiPhotoPreview || photoPreview || "no-photo"}
+                  photoUrl={aiPhotoPreview || photoPreview}
                   onResult={(shape) => {
                     setFaceShape(shape);
                     setShowFaceTool(false);
@@ -922,8 +1171,8 @@ export default function ProfilePage() {
             <label style={labelStyle}>Hairstyle</label>
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
 
-              <div>
-                <p style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "8px" }}>Texture</p>
+              <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+                <p style={{ fontSize: "12px", color: "var(--muted)", margin: 0, minWidth: "56px" }}>Texture</p>
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                   {HAIR_TEXTURE.map(opt => (
                     <button key={opt} onClick={() => setHairTexture(prev => prev === opt ? "" : opt)}
@@ -940,8 +1189,8 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              <div>
-                <p style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "8px" }}>Length</p>
+              <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+                <p style={{ fontSize: "12px", color: "var(--muted)", margin: 0, minWidth: "56px" }}>Length</p>
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                   {HAIR_LENGTH.map(opt => (
                     <button key={opt} onClick={() => setHairLength(prev => prev === opt ? "" : opt)}
@@ -957,12 +1206,6 @@ export default function ProfilePage() {
                   ))}
                 </div>
               </div>
-
-              {(hairTexture || hairLength) && (
-                <p style={{ fontSize: "12px", color: "var(--muted)" }}>
-                  {[hairTexture, hairLength].filter(Boolean).join(", ")}
-                </p>
-              )}
             </div>
           </div>
         </section>

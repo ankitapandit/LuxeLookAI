@@ -327,7 +327,8 @@ def generate_outfits(
         )
 
     # ── Step 7-8: persist + return ─────────────────────────────────────────
-    # Strip score_breakdown before DB insert (not a DB column), keep for response
+    # Strip score_breakdown (not a DB column) before persisting.
+    # card is persisted as a jsonb column; explanation holds the short verdict.
     suggestions_for_db = [
         {k: v for k, v in s.items() if k != "score_breakdown"}
         for s in suggestions

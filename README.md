@@ -21,7 +21,7 @@ luxelook-ai/
 │   │   ├── events.py           # POST /events/create-event, GET /events/list
 │   │   ├── recommendations.py  # POST /recommend/generate-outfits
 │   │   ├── feedback.py         # POST /feedback/rate-outfit
-│   │   └── profile.py          # GET/PUT /profile, POST /profile/photo
+│   │   └── profile.py          # GET/PUT /profile, POST /profile/photo, /profile/ai-photo
 │   ├── services/               # Business logic layer
 │   │   ├── recommender.py      # Core outfit scoring engine
 │   │   ├── clothing_service.py # Upload, tag, embed, duplicate detection
@@ -90,6 +90,7 @@ pip works as a fallback — everything works without uv, just slower.
 4. Go to **Storage → New bucket**:
    - Create `clothing-images` (private)
    - Create `profile-photos` (public)
+   - Create `ai-profile-photos` (public)
 5. Go to **Settings → API** and copy:
    - Project URL
    - anon public key
@@ -164,7 +165,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 3. **Set up your profile** — body type, height, weight, complexion, face shape
    - Body type calculator from bust/waist/hip measurements
    - Complexion identifier from 3 questions
-   - Face shape auto-detected from profile photo via GPT-4o Vision
+   - Separate AI profiling photo suggests face shape, body type, complexion and hair traits
 4. **Create an event** — type e.g. _"Dinner party Friday evening, smart casual"_
    - Click **Generate Outfit Suggestions** — occasion is parsed silently on the backend,
      outfit generation begins immediately with no intermediate step
@@ -197,7 +198,7 @@ First run downloads the CLIP model (~1.7GB, cached locally afterwards).
 |---|---|---|
 | Occasion parsing | GPT-4o-mini | ~$0.001 per event |
 | Outfit explanation | GPT-4o-mini | ~$0.002 per outfit |
-| Face shape detection | GPT-4o | ~$0.02 per photo upload |
+| AI profiling analysis | GPT-4o | ~$0.02 per profiling photo |
 | Clothing descriptors | GPT-4o | ~$0.02 per item upload |
 
 ---
@@ -227,7 +228,8 @@ Full interactive docs at [http://localhost:8000/docs](http://localhost:8000/docs
 | POST | `/feedback/rate-outfit` | Submit 1–5 star rating |
 | GET | `/profile` | Get user profile |
 | PUT | `/profile` | Update profile fields |
-| POST | `/profile/photo` | Upload photo + face shape detection |
+| POST | `/profile/photo` | Upload cropped profile/avatar photo |
+| POST | `/profile/ai-photo` | Upload AI profiling photo + analyze face/body/complexion/hair traits |
 
 All routes except `/auth/*` require `Authorization: Bearer <token>` header.
 

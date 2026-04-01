@@ -8,7 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## Version Summary
 
 | Version | Date       | Description																												  |
-|---------|------------|------------------------------------------------------------------------------------------------------------------------------|
+|---------|------------|-----------------------------------------------------------------------------------------------------------------------------|
 | 1.0.0   | 2026-03-16 | Initial upload — base codebase 																							  |
 | 1.1.0   | 2026-03-16 | Development environment and dependency fixes																				  |
 | 1.2.0   | 2026-03-24 | Real mode support, UI overhaul, occasion/outfit improvements																  |
@@ -21,11 +21,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | 1.8.1   | 2026-03-30 | Restore duplicate guard, auto-purge on supersede, 90-day seasonal purge													  |
 | 1.9.0   | 2026-03-30 | Fashion-intuitive V2 scorer — outfit-level compatibility, color story, silhouette balance, novelty, risk 					  |
 | 1.9.1   | 2026-03-30 | style_taxonomy DB table, 660-row seed, process-level taxonomy loader; live vocabulary without redeploy 					  |
-| 1.9.2   | 2026-03-30 | New clothing categories: set (co-ord), swimwear, loungewear — CLIP labels, descriptors, body-type prefs, venue-aware scoring |
+| 1.9.2   | 2026-03-30 | New clothing categories: set (co-ord), swimwear, loungewear — CLIP labels, descriptors, body-type prefs, venue-aware scoring|
 | 1.9.3   | 2026-03-30 | Expanded descriptors for set/swimwear/loungewear — top+bottom combos, bra-type attributes, underwear-bottom attributes 	  |
 | 1.9.4   | 2026-03-31 | SECURITY DEFINER RPCs for reliable DB writes; descriptor edit support; wardrobe UI & auth cleanup                           |
+| 2.0.0   | 2026-04-01 | Structured outfit cards, smarter color/stylist scoring, richer wardrobe filters, and split AI profiling photo flow          |
 
 ---
+
+## [2.0.0] - 2026-04-01
+
+### Added
+- **Structured outfit cards end-to-end** — outfit suggestions now carry a persisted `card` JSON payload with `trend_stars`, `trend_label`, `vibe`, `color_theory`, `fit_check`, `weather_sync`, optional `risk_flag`, and a short `verdict`. Added to backend schemas, API types, and `outfit_suggestions.card` via `supabase_migrations.sql`.
+- **Shared outfit card component** — added `frontend/components/OutfitCard.tsx` so the same metric-card UI, schema guard, and verdict formatting are reused consistently on both Events and Outfits pages.
+- **Editorial stylist verdict generation** — `ml/llm.py` now generates punchier short-form stylist verdicts tuned for the new outfit card instead of relying only on a long explanation paragraph.
+- **AI profiling photo flow** — profile now supports a dedicated `POST /profile/ai-photo` endpoint, separate `ai-profile-photos` bucket, `ai_profile_photo_url`, `ai_profile_analysis`, and `ai_profile_analyzed_at` fields, plus frontend helpers and UI for a dedicated analysis image distinct from the visible avatar.
+- **Age range profile field** — added to backend schemas, API types, user profile persistence, migrations, and the profile page UI.
+- **Wardrobe filtering improvements** — wardrobe now supports multi-axis filtering by clothing type, season, and dress code instead of a single category-only filter.
+- **Color normalization utility** — `backend/utils/color_utils.py` is now used by clothing upload/edit paths and wardrobe editing to keep stored color names and swatch highlighting consistent.
+- **`webcolors` dependency** — added to backend requirements to support CSS color-name resolution, nearest-color fallback, and friendlier fashion-facing color labels.
+
+### Changed
+- **Outfit history and event suggestion UI** — `events.tsx` and `outfits.tsx` now render the structured metric card when present, hide stale schemas safely, and silently refresh outdated pre-card suggestions when needed.
+- **Recommendation engine output** — `services/recommender.py` now builds metric cards directly from scorer breakdowns and stores the short verdict in the legacy `explanation` field for backward compatibility.
+- **Color language normalization in LLM copy** — outfit explanations and stylist verdicts now normalize color names before generating copy so raw hex codes like `#245761` do not leak into user-facing fashion copy.
+- **Profile photo semantics** — `/profile/photo` is now avatar-only; AI analysis is handled by the separate AI profiling photo flow. The profile page copy and API docs were updated to reflect that split.
+- **Profile page UX** — AI profiling is now a distinct, minimizable section with “Use profile photo” support, per-trait AI suggestions, manual apply controls, and clearer messaging about what is saved immediately versus on `Save Profile`.
+- **Wardrobe edit swatch matching** — normalized stored colors such as dark/variant shades now map back to the nearest preset swatch so existing items no longer appear unselected in the edit modal when their saved color is a normalized variant name.
+
+### Fixed
+- **Profile cropper double-upload path** — selecting a profile avatar no longer uploads immediately and then again after crop; the avatar upload now occurs once from the crop completion path.
+- **Mock auth profile bootstrap** — mock signup now seeds a matching `users` row so `/profile` and profile photo flows work correctly in local mock mode.
+- **Face-shape parsing robustness** — face-shape detection now strips fenced JSON and normalizes the returned payload more defensively before persisting results.
+- **AI profile upload debugging** — added targeted server-side debug prints around AI profiling validation, storage upload, analysis, and DB update steps to make local upload failures easier to trace.
+- **Wardrobe color correction persistence** — clothing upload and correction routes now normalize incoming color values before storing them, preventing mismatches between saved values and UI swatches.
+
+### Docs
+- **README updated for profile flow changes** — docs now describe the dedicated AI profiling photo, the new `/profile/ai-photo` endpoint, the `ai-profile-photos` bucket, and updated OpenAI cost wording for profiling analysis.
 
 ## [1.9.4] - 2026-03-31
 

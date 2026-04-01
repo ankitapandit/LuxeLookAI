@@ -219,6 +219,26 @@ export async function getEvents(): Promise<Event[]> {
 
 // ── Recommendations ───────────────────────────────────────────────────────
 
+/** Structured 5-row at-a-glance card for an outfit suggestion (v2.0+). */
+export interface OutfitCard {
+  /** 🔥 Trend-o-meter: 1–5 stars. */
+  trend_stars: number;
+  /** 🔥 Trend-o-meter label: Outdated | Basic | Classic | Trendy | Statement. */
+  trend_label: string;
+  /** 💃 Vibe Check: "CoreVibe + Energy" — e.g. "Elegant + Confident". */
+  vibe: string;
+  /** 🎨 Color Theory palette label — e.g. "Neutral Base + Pop", "Monochrome". */
+  color_theory: string;
+  /** 👗 Fit Check — e.g. "Snatched", "Tailored", "Flowing". */
+  fit_check: string;
+  /** 🌡️ Weather Sync — e.g. "Perfect (Indoor / Mild Weather)". */
+  weather_sync: string;
+  /** Optional risk flag — only present when dress-code rules are stretched. */
+  risk_flag?: string | null;
+  /** Stylist verdict — 2-3 sentence punchy copy. */
+  verdict: string;
+}
+
 export interface OutfitSuggestion {
   id: string;
   user_id: string;
@@ -226,7 +246,10 @@ export interface OutfitSuggestion {
   item_ids: string[];
   accessory_ids: string[];
   score: number;
-  explanation: string;
+  /** Short stylist verdict (legacy text field — same as card.verdict). */
+  explanation?: string;
+  /** Structured quick-glance card. Present on all v2.0+ suggestions. */
+  card?: OutfitCard;
   user_rating?: number;
   generated_at: string;
 }
@@ -298,10 +321,14 @@ export interface UserProfile {
   body_type?: string;
   height_cm?: number;
   weight_kg?: number;
+  age_range?: string;
   complexion?: string;
   face_shape?: string;
   hairstyle?: string;
   photo_url?: string;
+  ai_profile_photo_url?: string;
+  ai_profile_analysis?: AIProfileAnalysis;
+  ai_profile_analyzed_at?: string;
   is_pro: boolean;
 }
 
@@ -309,9 +336,37 @@ export interface UpdateProfileRequest {
   body_type?: string;
   height_cm?: number;
   weight_kg?: number;
+  age_range?: string;
   complexion?: string;
   face_shape?: string;
   hairstyle?: string;
+}
+
+export type ProfileAnalysisConfidence = "high" | "medium" | "low";
+
+export interface ProfileTraitAnalysis {
+  value?: string | null;
+  confidence: ProfileAnalysisConfidence;
+  reason: string;
+}
+
+export interface AIProfileAnalysis {
+  source: string;
+  face_shape: ProfileTraitAnalysis;
+  body_type: ProfileTraitAnalysis;
+  complexion: ProfileTraitAnalysis;
+  hair_texture: ProfileTraitAnalysis;
+  hair_length: ProfileTraitAnalysis;
+}
+
+export interface ProfilePhotoUploadResponse {
+  photo_url: string;
+}
+
+export interface AIProfilePhotoUploadResponse {
+  ai_profile_photo_url: string;
+  ai_profile_analysis: AIProfileAnalysis;
+  ai_profile_analyzed_at?: string;
 }
 
 export async function getProfile(): Promise<UserProfile> {
@@ -321,5 +376,23 @@ export async function getProfile(): Promise<UserProfile> {
 
 export async function updateProfile(payload: UpdateProfileRequest): Promise<UserProfile> {
   const { data } = await api.put<UserProfile>("/profile/", payload);
+  return data;
+}
+
+export async function uploadProfilePhoto(file: Blob, filename: string = "profile.jpg"): Promise<ProfilePhotoUploadResponse> {
+  const form = new FormData();
+  form.append("photo", file, filename);
+  const { data } = await api.post<ProfilePhotoUploadResponse>("/profile/photo", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function uploadAIProfilePhoto(file: Blob, filename: string = "ai-profile.jpg"): Promise<AIProfilePhotoUploadResponse> {
+  const form = new FormData();
+  form.append("photo", file, filename);
+  const { data } = await api.post<AIProfilePhotoUploadResponse>("/profile/ai-photo", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
   return data;
 }

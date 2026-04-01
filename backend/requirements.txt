@@ -10,3 +10,4 @@ numpy>=1.26.4,<2.0        # 2.x has breaking changes; torch 2.3 needs <2.0
 Pillow==10.3.0
 torch==2.3.0              # latest wheels: cp38–cp312; requires Python <=3.12
 transformers==4.41.1      # pinned to match torch 2.3.0 tested combo
+webcolors>=24.0

@@ -12,10 +12,10 @@ This means:
 NEVER use this in production.
 """
 
-import hashlib
-import uuid
 import logging
-from typing import Optional, Dict
+import hashlib
+from typing import Dict, Optional
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -63,3 +63,11 @@ def mock_login(email: str, password: str) -> str:
 
     logger.info(f"[MockAuth] Login OK: {email}")
     return record["user_id"]
+
+
+def get_mock_user_profile(user_id: str) -> Optional[dict]:
+    """Return a minimal user profile row for the given mock user id."""
+    for email, record in _users.items():
+        if record["user_id"] == user_id:
+            return {"id": user_id, "email": email, "is_pro": False}
+    return None
