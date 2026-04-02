@@ -11,5 +11,5 @@ Pillow==10.3.0
 rembg==2.0.59
 onnxruntime>=1.19,<2
 torch==2.3.0              # latest wheels: cp38–cp312; requires Python <=3.12
-transformers==4.41.1      # pinned to match torch 2.3.0 tested combo
+transformers==4.53.0      # pinned to match torch 2.3.0 tested combo
 webcolors>=24.0
