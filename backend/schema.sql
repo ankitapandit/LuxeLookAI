@@ -42,6 +42,7 @@ create table if not exists clothing_items (
   season             text default 'all',   -- spring | summer | fall | winter | all
   formality_score    float check (formality_score between 0 and 1),
   image_url          text not null,
+  thumbnail_url      text,
   embedding_vector   vector(512),          -- CLIP visual embedding
   created_at         timestamptz default now()
 );

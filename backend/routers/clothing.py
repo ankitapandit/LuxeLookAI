@@ -14,8 +14,9 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Q
 from typing import List, Optional
 
 from services.clothing_service import (
-    upload_clothing_item, get_user_items, get_deleted_items,
+    upload_clothing_item, get_user_items, get_user_items_page, get_deleted_items,
     delete_item, restore_item, correct_item_tags, purge_old_deleted_items,
+    backfill_missing_thumbnails,
 )
 from ml.tagger import tag_clothing_item, get_taggable_options
 from utils.auth import get_current_user_id
@@ -186,6 +187,26 @@ def list_items(user_id: str = Depends(get_current_user_id)):
     return get_user_items(user_id)
 
 
+@router.get("/items/page", response_model=dict)
+def list_items_page(
+    limit: int = Query(12, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    category: Optional[str] = Query(None),
+    season: Optional[str] = Query(None),
+    formality: Optional[str] = Query(None),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Return a paginated slice of active wardrobe items with optional filters."""
+    return get_user_items_page(
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+        category=category,
+        season=season,
+        formality=formality,
+    )
+
+
 @router.get("/items/deleted", response_model=List[dict])
 def list_deleted_items(user_id: str = Depends(get_current_user_id)):
     """Return soft-deleted items (trash) for the authenticated user."""
@@ -243,3 +264,12 @@ def purge_deleted_endpoint(user_id: str = Depends(get_current_user_id)):
     count = purge_old_deleted_items(user_id, days=90)
     return {"purged": count}
 
+
+@router.post("/backfill-thumbnails", response_model=dict)
+def backfill_thumbnails_endpoint(user_id: str = Depends(get_current_user_id)):
+    """
+    Generate missing thumbnail URLs for the authenticated user's active wardrobe items.
+    Safe to call repeatedly; items that already have thumbnails are skipped.
+    """
+    count = backfill_missing_thumbnails(user_id)
+    return {"updated": count}

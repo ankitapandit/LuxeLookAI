@@ -25,8 +25,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | 1.9.3   | 2026-03-30 | Expanded descriptors for set/swimwear/loungewear — top+bottom combos, bra-type attributes, underwear-bottom attributes 	  |
 | 1.9.4   | 2026-03-31 | SECURITY DEFINER RPCs for reliable DB writes; descriptor edit support; wardrobe UI & auth cleanup                           |
 | 2.0.0   | 2026-04-01 | Structured outfit cards, smarter color/stylist scoring, richer wardrobe filters, and split AI profiling photo flow          |
+| 2.1.0   | 2026-04-01 | Event/Archive rename, mobile-first frontend polish, and major wardrobe performance upgrades                                  |
 
 ---
+
+## [2.1.0] - 2026-04-01
+
+### Added
+- **Event and Archive route migration** — user-facing Events/Outfits naming has been refactored to `Event` and `Archive`, including new frontend pages, backend `event` router wiring, and permanent redirects from legacy `/events` and `/outfits` URLs.
+- **Mobile navigation and responsive typography system** — the frontend now has a collapsible mobile navbar, shared responsive type classes, and page-level mobile layout adjustments across landing, Event, Archive, Profile, and Wardrobe.
+- **Wardrobe pagination API** — added `GET /clothing/items/page` with server-side filtering by category, season, and dress code for incremental wardrobe loading.
+- **Stored wardrobe thumbnails** — clothing uploads now generate a `thumbnail_url` alongside the original image, with schema/migration support and frontend consumption in wardrobe, Event, and Archive views.
+- **Thumbnail backfill endpoint** — added `POST /clothing/backfill-thumbnails` so existing wardrobe items can be upgraded with generated thumbnails without re-uploading.
+
+### Changed
+- **Wardrobe loading model** — wardrobe now uses infinite scroll in 12-item batches with a `Load more` fallback instead of rendering the full closet at once.
+- **Wardrobe data fetching** — trash items and tag options are now lazy-loaded only when needed, and active wardrobe list payloads no longer ship `embedding_vector` on the normal browsing path.
+- **Wardrobe edit/delete architecture** — per-card modal state has been replaced with one shared edit modal and one shared delete dialog to reduce React overhead on large wardrobes.
+- **Wardrobe edit experience** — the edit modal now includes the garment image as an in-modal reference while changing color/pattern, preserves existing descriptor values, and lets `set` inherit descriptor groups from both tops and bottoms.
+- **Wardrobe count display** — the wardrobe header now shows the total closet count instead of the currently loaded slice.
+- **Remote image delivery** — wardrobe, Event, Archive, and profile image rendering now uses `next/image` more consistently, with optimization bypassed only for local `blob:` and `data:` preview sources.
+- **Touch and empty-state UX** — wardrobe actions are more discoverable on smaller screens, and filtered-empty results are now clearly distinguished from a truly empty wardrobe.
+
+### Fixed
+- **Hook dependency warnings** — cleaned up stale React hook dependency warnings in Archive and Wardrobe.
+- **Image optimization warnings** — replaced flagged raw `<img>` usage on key pages with `next/image`.
+- **Wardrobe loading spinner alignment** — the wardrobe loading state spinner is now properly centered.
+- **Descriptor visibility regression in edit mode** — existing saved descriptors no longer disappear when editing categories whose descriptor map is composed or partially inferred.
+
+### Docs
+- **README updated for current routes and wardrobe pipeline** — documentation now reflects `Event`/`Archive`, the paginated wardrobe API, thumbnail generation/backfill, and current storage/setup expectations.
 
 ## [2.0.0] - 2026-04-01
 

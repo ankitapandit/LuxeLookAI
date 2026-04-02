@@ -71,6 +71,7 @@ export interface ClothingItem {
   season?: string;
   formality_score?: number;
   image_url: string;
+  thumbnail_url?: string;
   created_at: string;
   descriptors?: Record<string, string>;
 }
@@ -99,6 +100,20 @@ export interface TagOptions {
   colors: string[];
   seasons: { value: string; label: string }[];
   formality_levels: { label: string; score: number; description: string }[];
+}
+
+export interface WardrobePageParams {
+  limit: number;
+  offset: number;
+  category?: string;
+  season?: string;
+  formality?: string;
+}
+
+export interface WardrobePageResponse {
+  items: ClothingItem[];
+  has_more: boolean;
+  total_count: number;
 }
 
 /**
@@ -166,6 +181,12 @@ export async function getWardrobeItems(): Promise<ClothingItem[]> {
   return data;
 }
 
+/** Fetch a paginated slice of wardrobe items for infinite scroll. */
+export async function getWardrobeItemsPage(params: WardrobePageParams): Promise<WardrobePageResponse> {
+  const { data } = await api.get<WardrobePageResponse>("/clothing/items/page", { params });
+  return data;
+}
+
 /** Delete an item by ID (soft-delete — moves to trash, restorable). */
 export async function deleteClothingItem(itemId: string): Promise<void> {
   await api.delete(`/clothing/item/${itemId}`);
@@ -191,7 +212,7 @@ export async function restoreClothingItem(itemId: string): Promise<RestoreStatus
   return data.status;
 }
 
-// ── Events ────────────────────────────────────────────────────────────────
+// ── Event ─────────────────────────────────────────────────────────────────
 
 export interface Event {
   id: string;
@@ -207,13 +228,13 @@ export interface Event {
 
 /** Create a new event from a free-text description. */
 export async function createEvent(rawText: string): Promise<Event> {
-  const { data } = await api.post<Event>("/events/create-event", { raw_text: rawText });
+  const { data } = await api.post<Event>("/event/create-event", { raw_text: rawText });
   return data;
 }
 
 /** Fetch all events for the current user, newest first. */
 export async function getEvents(): Promise<Event[]> {
-  const { data } = await api.get<Event[]>("/events/list");
+  const { data } = await api.get<Event[]>("/event/list");
   return data;
 }
 

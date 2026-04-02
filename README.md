@@ -4,6 +4,9 @@
 
 Built with **Next.js · FastAPI · Supabase · CLIP · OpenAI (GPT-4o + GPT-4o-mini)**.
 
+Current user-facing sections are: **Wardrobe · Event · Archive · Profile**.
+Legacy frontend URLs `/events` and `/outfits` permanently redirect to `/event` and `/archive`.
+
 ---
 
 ## Architecture
@@ -17,8 +20,8 @@ luxelook-ai/
 │   ├── supabase_migrations.sql # All post-schema migrations — run second
 │   ├── routers/                # API route handlers
 │   │   ├── auth.py             # POST /auth/signup, /auth/login
-│   │   ├── clothing.py         # POST /clothing/tag-preview, /upload-item, GET /items, /items/deleted, POST /item/{id}/restore
-│   │   ├── events.py           # POST /events/create-event, GET /events/list
+│   │   ├── clothing.py         # Wardrobe CRUD, pagination, trash restore, thumbnail backfill
+│   │   ├── event.py            # POST /event/create-event, GET /event/list
 │   │   ├── recommendations.py  # POST /recommend/generate-outfits
 │   │   ├── feedback.py         # POST /feedback/rate-outfit
 │   │   └── profile.py          # GET/PUT /profile, POST /profile/photo, /profile/ai-photo
@@ -43,11 +46,12 @@ luxelook-ai/
     ├── pages/
     │   ├── index.tsx            # Landing + Auth (login/signup)
     │   ├── wardrobe.tsx         # Upload, tag, browse wardrobe
-    │   ├── events.tsx           # Describe occasion → AI parses → outfit suggestions
-    │   ├── outfits.tsx          # View outfit history + rate suggestions
+    │   ├── event.tsx            # Describe event → AI parses → outfit suggestions
+    │   ├── archive.tsx          # View outfit history + rate suggestions
     │   └── profile.tsx          # User profile, body type, face shape, photo
     ├── components/
     │   ├── layout/Navbar.tsx    # Top navigation
+    │   ├── OutfitCard.tsx       # Shared outfit metric card
     │   ├── FaceShapeTool.tsx    # Canvas landmark tool for face shape detection
     │   └── PhotoCropper.tsx     # Modal canvas cropper for profile photo
     ├── services/
@@ -162,6 +166,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    - AI auto-tags category, color, season, formality
    - GPT-4o Vision identifies style descriptors (neckline, silhouette, fabric etc.)
    - Duplicate detection flags items that are visually identical
+   - Wardrobe browsing uses infinite scroll and thumbnails for better large-closet performance
 3. **Set up your profile** — body type, height, weight, complexion, face shape
    - Body type calculator from bust/waist/hip measurements
    - Complexion identifier from 3 questions
@@ -214,14 +219,16 @@ Full interactive docs at [http://localhost:8000/docs](http://localhost:8000/docs
 | POST | `/clothing/tag-preview` | AI tag + descriptor preview (no save) |
 | POST | `/clothing/upload-item` | Upload, tag, embed and save item |
 | GET | `/clothing/items` | List active wardrobe items |
+| GET | `/clothing/items/page` | Paginated wardrobe slice with optional filters |
 | PATCH | `/clothing/item/{id}` | Correct tags on saved item (category, color, season, formality, descriptors) |
 | DELETE | `/clothing/item/{id}` | Soft-delete item (moves to trash, restorable) |
 | GET | `/clothing/items/deleted` | List soft-deleted items (trash view) |
 | POST | `/clothing/item/{id}/restore` | Restore a soft-deleted item (with duplicate guard) |
 | POST | `/clothing/purge-deleted` | Hard-delete trash items older than 90 days |
+| POST | `/clothing/backfill-thumbnails` | Generate thumbnails for older active wardrobe items missing them |
 | GET | `/clothing/tag-options` | Valid categories, colors for dropdowns |
-| POST | `/events/create-event` | Parse occasion text |
-| GET | `/events/list` | List all user events |
+| POST | `/event/create-event` | Parse event text |
+| GET | `/event/list` | List all user events |
 | POST | `/recommend/generate-outfits` | Generate outfit suggestions |
 | GET | `/recommend/suggestions/{event_id}` | Fetch saved suggestions |
 | POST | `/recommend/reset-feedback` | Clear combo ratings for an occasion context |
@@ -252,6 +259,10 @@ All routes except `/auth/*` require `Authorization: Bearer <token>` header.
 Each category has a dedicated descriptor vocabulary extracted at upload time by GPT-4o Vision
 and used for body-type matching and scoring. Descriptors can be edited per-item after upload
 (individual keys are merged — unrelated fields are preserved).
+
+Wardrobe cards prefer `thumbnail_url` when available and fall back to the original `image_url`.
+New uploads generate thumbnails automatically, and older items can be upgraded through
+`POST /clothing/backfill-thumbnails`.
 
 | Category | Descriptor highlights |
 |---|---|

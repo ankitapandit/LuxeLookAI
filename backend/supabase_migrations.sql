@@ -93,6 +93,10 @@ create policy "Service role can update outfit suggestions"
 alter table public.clothing_items
   add column if not exists pattern text;
 
+-- thumbnail URL for fast wardrobe/event/archive grids
+alter table public.clothing_items
+  add column if not exists thumbnail_url text;
+
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- v1.3 — User profile columns

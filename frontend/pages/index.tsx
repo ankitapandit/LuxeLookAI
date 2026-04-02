@@ -32,15 +32,10 @@ export default function Home() {
         <title>LuxeLook AI — Your Personal AI Stylist</title>
       </Head>
 
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-        }}
-      >
+      <div className="auth-shell">
         {/* ── Left: hero ─────────────────────────────────────────────── */}
         <div
+          className="auth-hero"
           style={{
             background: "#0A0908",
             display: "flex",
@@ -64,6 +59,7 @@ export default function Home() {
           </div>
 
           <h1
+            className="type-hero-title"
             style={{
               fontFamily: "Playfair Display, serif",
               fontSize: "52px",
@@ -80,6 +76,7 @@ export default function Home() {
           </h1>
 
           <p
+            className="type-page-subtitle"
             style={{
               color: "var(--muted)",
               fontSize: "17px",
@@ -93,9 +90,9 @@ export default function Home() {
           </p>
 
           {/* Feature list */}
-          <div style={{ marginTop: "48px", display: "flex", flexDirection: "column", gap: "18px" }}>
+          <div className="auth-feature-list" style={{ marginTop: "48px", display: "flex", flexDirection: "column", gap: "18px" }}>
             {[
-              { icon: "✦", text: "Describe the occasion in plain words — dinner, interview, weekend brunch" },
+              { icon: "✦", text: "Describe the event in plain words — dinner, interview, weekend brunch" },
               { icon: "✦", text: "We read your wardrobe and understand what actually works together" },
               { icon: "✦", text: "Get a curated shortlist, not a chaotic scroll" },
               { icon: "✦", text: "Rate what you like. Every choice makes the next one smarter" },
@@ -108,8 +105,8 @@ export default function Home() {
                   gap: "12px",
                 }}
               >
-                <span style={{ color: "var(--gold)", fontSize: "10px", marginTop: "5px", flexShrink: 0 }}>{icon}</span>
-                <span style={{ color: "var(--muted)", fontSize: "15px", lineHeight: 1.55 }}>{text}</span>
+                <span className="type-micro" style={{ color: "var(--gold)", fontSize: "10px", marginTop: "5px", flexShrink: 0 }}>{icon}</span>
+                <span className="type-body" style={{ color: "var(--muted)", fontSize: "15px", lineHeight: 1.55 }}>{text}</span>
               </div>
             ))}
           </div>
@@ -117,6 +114,7 @@ export default function Home() {
 
         {/* ── Right: auth form ────────────────────────────────────────── */}
         <div
+          className="auth-panel"
           style={{
             background: "var(--surface)",
             display: "flex",
@@ -126,8 +124,9 @@ export default function Home() {
             borderLeft: "1px solid var(--border)",
           }}
         >
-          <div style={{ width: "100%", maxWidth: "380px" }} className="fade-up">
+          <div style={{ width: "100%", maxWidth: "380px" }} className="fade-up auth-form-wrap">
             <h2
+              className="type-page-title"
               style={{
                 fontFamily: "Playfair Display, serif",
                 fontSize: "32px",
@@ -137,7 +136,7 @@ export default function Home() {
             >
               {mode === "login" ? "Welcome back" : "Get started"}
             </h2>
-            <p style={{ color: "var(--muted)", marginBottom: "36px", fontSize: "15px" }}>
+            <p className="type-body" style={{ color: "var(--muted)", marginBottom: "36px", fontSize: "15px" }}>
               {mode === "login"
                 ? "Sign in to your LuxeLook account"
                 : "Create your AI stylist account"}
@@ -145,7 +144,7 @@ export default function Home() {
 
             <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               <div>
-                <label style={{ display: "block", fontSize: "13px", fontWeight: 500, color: "var(--ink)", marginBottom: "6px", letterSpacing: "0.03em", textTransform: "uppercase" }}>
+                <label className="type-kicker" style={{ display: "block", fontSize: "13px", fontWeight: 500, color: "var(--ink)", marginBottom: "6px", letterSpacing: "0.03em", textTransform: "uppercase" }}>
                   Email
                 </label>
                 <input
@@ -159,7 +158,7 @@ export default function Home() {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "13px", fontWeight: 500, color: "var(--ink)", marginBottom: "6px", letterSpacing: "0.03em", textTransform: "uppercase" }}>
+                <label className="type-kicker" style={{ display: "block", fontSize: "13px", fontWeight: 500, color: "var(--ink)", marginBottom: "6px", letterSpacing: "0.03em", textTransform: "uppercase" }}>
                   Password
                 </label>
                 <input
@@ -182,10 +181,11 @@ export default function Home() {
               </button>
             </form>
 
-            <p style={{ textAlign: "center", marginTop: "24px", color: "var(--muted)", fontSize: "14px" }}>
+            <p className="type-helper" style={{ textAlign: "center", marginTop: "24px", color: "var(--muted)", fontSize: "14px" }}>
               {mode === "login" ? "New to LuxeLook? " : "Already have an account? "}
               <button
                 onClick={() => setMode(mode === "login" ? "signup" : "login")}
+                className="type-helper"
                 style={{
                   background: "none",
                   border: "none",

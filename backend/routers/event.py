@@ -1,6 +1,6 @@
 """
-routers/events.py — Event creation endpoint
-POST /events/create-event
+routers/event.py — Event creation endpoint
+POST /event/create-event
 """
 
 from fastapi import APIRouter, Depends

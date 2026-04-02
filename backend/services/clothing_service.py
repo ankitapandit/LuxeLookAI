@@ -8,6 +8,7 @@ Supports two modes (controlled by USE_MOCK_AUTH in .env):
 
 from __future__ import annotations
 import base64
+import io
 import logging
 import uuid
 from typing import List, Dict, Any, Optional, Literal
@@ -23,6 +24,31 @@ logger = logging.getLogger(__name__)
 TABLE = "clothing_items"
 STORAGE_BUCKET = "clothing-images"
 DUPLICATE_THRESHOLD = 0.95
+
+ITEM_LIST_FIELDS = (
+    "id, user_id, category, item_type, accessory_subtype, color, pattern, "
+    "season, formality_score, image_url, thumbnail_url, descriptors, created_at"
+)
+
+
+def _make_thumbnail_bytes(image_bytes: bytes, max_size: int = 360) -> bytes:
+    """Create a small WEBP thumbnail for grid/list usage."""
+    from PIL import Image, ImageOps
+
+    with Image.open(io.BytesIO(image_bytes)) as img:
+        img = ImageOps.exif_transpose(img).convert("RGB")
+        img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+        out = io.BytesIO()
+        img.save(out, format="WEBP", quality=82, method=6)
+        return out.getvalue()
+
+
+def _extract_storage_paths(image_url: str = "", thumbnail_url: str = "") -> List[str]:
+    paths: List[str] = []
+    for url in [image_url, thumbnail_url]:
+        if url and "/clothing-images/" in url:
+            paths.append(url.split("/clothing-images/")[-1].split("?")[0])
+    return paths
 
 
 # ── Mock implementation ───────────────────────────────────────────────────────
@@ -41,6 +67,8 @@ def _upload_mock(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpeg"
     mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}.get(ext, "image/jpeg")
     image_url = f"data:{mime};base64,{base64.b64encode(image_bytes).decode()}"
+    thumbnail_bytes = _make_thumbnail_bytes(image_bytes)
+    thumbnail_url = f"data:image/webp;base64,{base64.b64encode(thumbnail_bytes).decode()}"
 
     # Auto-tag + generate embedding using the data-URL as the seed
     tags = tag_clothing_item(image_url, image_bytes)
@@ -60,8 +88,9 @@ def _upload_mock(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
         "season":            tags.get("season"),
         "formality_score":   tags.get("formality_score"),
         "image_url":         image_url,
+        "thumbnail_url":     thumbnail_url,
         "embedding_vector":  embedding,
-        "descriptors": item.descriptors or {},
+        "descriptors": tags.get("descriptors") or (manual_tags or {}).get("descriptors") or {},
     }
     return insert(TABLE, row)
 
@@ -71,6 +100,59 @@ def _get_items_mock(user_id: str) -> List[Dict]:
     rows = select_all(TABLE, {"user_id": user_id})
     active = [r for r in rows if r.get("is_active", True)]
     return sorted(active, key=lambda r: r.get("created_at", ""), reverse=True)
+
+
+def _apply_item_filters_mock(
+    items: List[Dict[str, Any]],
+    category: Optional[str] = None,
+    season: Optional[str] = None,
+    formality: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    def matches(item: Dict[str, Any]) -> bool:
+        if category and item.get("category") != category:
+            return False
+        if season:
+            item_season = item.get("season")
+            if not item_season or (item_season != season and item_season != "all"):
+                return False
+        if formality:
+            score = item.get("formality_score")
+            if score is None:
+                return False
+            if formality == "Formal" and score < 0.75:
+                return False
+            if formality == "Smart casual" and (score < 0.50 or score >= 0.75):
+                return False
+            if formality == "Casual" and (score < 0.25 or score >= 0.50):
+                return False
+            if formality == "Loungewear" and score >= 0.25:
+                return False
+        return True
+
+    return [item for item in items if matches(item)]
+
+
+def _get_items_page_mock(
+    user_id: str,
+    limit: int,
+    offset: int,
+    category: Optional[str] = None,
+    season: Optional[str] = None,
+    formality: Optional[str] = None,
+) -> Dict[str, Any]:
+    active_items = _get_items_mock(user_id)
+    filtered = _apply_item_filters_mock(
+        active_items,
+        category=category,
+        season=season,
+        formality=formality,
+    )
+    page = filtered[offset: offset + limit + 1]
+    return {
+        "items": page[:limit],
+        "has_more": len(page) > limit,
+        "total_count": len(active_items),
+    }
 
 
 def _get_deleted_items_mock(user_id: str) -> List[Dict]:
@@ -122,6 +204,30 @@ def _restore_item_mock(item_id: str, user_id: str) -> RestoreResult:
     return "restored"
 
 
+def _backfill_missing_thumbnails_mock(user_id: str) -> int:
+    from utils.mock_db_store import select_all, update
+
+    rows = select_all(TABLE, {"user_id": user_id})
+    updated = 0
+    for row in rows:
+        if not row.get("is_active", True):
+            continue
+        if row.get("thumbnail_url"):
+            continue
+        image_url = row.get("image_url", "")
+        if not image_url.startswith("data:") or ";base64," not in image_url:
+            continue
+        try:
+            image_bytes = base64.b64decode(image_url.split(";base64,", 1)[1])
+            thumb_bytes = _make_thumbnail_bytes(image_bytes)
+            thumb_url = f"data:image/webp;base64,{base64.b64encode(thumb_bytes).decode()}"
+            update(TABLE, row["id"], {"thumbnail_url": thumb_url}, extra_filters={"user_id": user_id})
+            updated += 1
+        except Exception as e:
+            logger.warning("Mock thumbnail backfill failed for %s: %s", row.get("id"), e)
+    return updated
+
+
 # ── Real implementation (Supabase) ────────────────────────────────────────────
 
 def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: Optional[Dict]) -> Dict:
@@ -129,9 +235,17 @@ def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
     db = get_supabase()
     item_id      = str(uuid.uuid4())
     storage_path = f"{user_id}/{item_id}/{filename}"
+    thumb_path   = f"{user_id}/{item_id}/thumb.webp"
 
     db.storage.from_(STORAGE_BUCKET).upload(storage_path, image_bytes)
+    thumbnail_bytes = _make_thumbnail_bytes(image_bytes)
+    db.storage.from_(STORAGE_BUCKET).upload(
+        thumb_path,
+        thumbnail_bytes,
+        {"content-type": "image/webp", "upsert": "true"},
+    )
     image_url = db.storage.from_(STORAGE_BUCKET).get_public_url(storage_path).rstrip("?")
+    thumbnail_url = db.storage.from_(STORAGE_BUCKET).get_public_url(thumb_path).rstrip("?")
 
     tags = tag_clothing_item(image_url, image_bytes)
     if manual_tags:
@@ -150,6 +264,7 @@ def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
         "season":            tags.get("season"),
         "formality_score":   tags.get("formality_score"),
         "image_url":         image_url,
+        "thumbnail_url":     thumbnail_url,
         "embedding_vector": vec_str,
         "descriptors": tags.get("descriptors") or manual_tags.get("descriptors") or {},
     }
@@ -159,25 +274,68 @@ def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
 
 def _get_items_real(user_id: str) -> List[Dict]:
     from utils.db import get_supabase
-    import json
     db = get_supabase()
     items = (
         db.table(TABLE)
-        .select("*, embedding_vector")
+        .select(ITEM_LIST_FIELDS)
         .eq("user_id", user_id)
         .eq("is_active", True)
         .order("created_at", desc=True)
         .execute().data
     )
-    # Parse embedding_vector from string back to list if needed
-    for item in items:
-        ev = item.get("embedding_vector")
-        if isinstance(ev, str):
-            try:
-                item["embedding_vector"] = [float(x) for x in ev.strip("[]").split(",")]
-            except Exception:
-                item["embedding_vector"] = None
     return items
+
+
+def _get_items_page_real(
+    user_id: str,
+    limit: int,
+    offset: int,
+    category: Optional[str] = None,
+    season: Optional[str] = None,
+    formality: Optional[str] = None,
+) -> Dict[str, Any]:
+    from utils.db import get_supabase
+
+    db = get_supabase()
+    query = (
+        db.table(TABLE)
+        .select(ITEM_LIST_FIELDS)
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+    )
+    total_count_query = (
+        db.table(TABLE)
+        .select("id")
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+    )
+
+    if category:
+        query = query.eq("category", category)
+    if season:
+        query = query.or_(f"season.eq.{season},season.eq.all")
+    if formality == "Formal":
+        query = query.gte("formality_score", 0.75)
+    elif formality == "Smart casual":
+        query = query.gte("formality_score", 0.50).lt("formality_score", 0.75)
+    elif formality == "Casual":
+        query = query.gte("formality_score", 0.25).lt("formality_score", 0.50)
+    elif formality == "Loungewear":
+        query = query.lt("formality_score", 0.25)
+
+    rows = (
+        query.order("created_at", desc=True)
+        .range(offset, offset + limit)
+        .execute()
+        .data
+    )
+    total_count = len(total_count_query.execute().data or [])
+
+    return {
+        "items": rows[:limit],
+        "has_more": len(rows) > limit,
+        "total_count": total_count,
+    }
 
 
 def _get_deleted_items_real(user_id: str) -> List[Dict]:
@@ -186,7 +344,7 @@ def _get_deleted_items_real(user_id: str) -> List[Dict]:
     return (
         db.table(TABLE)
         .select("id, category, item_type, accessory_subtype, color, pattern, season, "
-                "formality_score, image_url, descriptors, created_at, deleted_at")
+                "formality_score, image_url, thumbnail_url, descriptors, created_at, deleted_at")
         .eq("user_id", user_id)
         .eq("is_active", False)
         .order("deleted_at", desc=True)
@@ -220,7 +378,7 @@ def _restore_item_real(item_id: str, user_id: str) -> RestoreResult:
     # Fetch the trashed item (need embedding + timestamp for comparison)
     trash_rows = (
         db.table(TABLE)
-        .select("id, category, color, item_type, image_url, embedding_vector, created_at")
+        .select("id, category, color, item_type, image_url, thumbnail_url, embedding_vector, created_at")
         .eq("id", item_id)
         .eq("user_id", user_id)
         .eq("is_active", False)
@@ -279,11 +437,13 @@ def _restore_item_real(item_id: str, user_id: str) -> RestoreResult:
         # Auto-purge: active item was created after the trashed item → it's a replacement
         if (duplicate.get("created_at") or "") >= (trash_item.get("created_at") or ""):
             # Remove storage file
-            image_url = trash_item.get("image_url", "")
-            if image_url and "/clothing-images/" in image_url:
+            paths = _extract_storage_paths(
+                trash_item.get("image_url", ""),
+                trash_item.get("thumbnail_url", ""),
+            )
+            if paths:
                 try:
-                    path = image_url.split("/clothing-images/")[-1].split("?")[0]
-                    db.storage.from_("clothing-images").remove([path])
+                    db.storage.from_("clothing-images").remove(paths)
                 except Exception as e:
                     logger.warning("Auto-purge storage cleanup failed for %s: %s", item_id, e)
             # Hard-delete the DB row
@@ -297,6 +457,47 @@ def _restore_item_real(item_id: str, user_id: str) -> RestoreResult:
         "p_user_id": user_id,
     }).execute()
     return "restored"
+
+
+def _backfill_missing_thumbnails_real(user_id: str) -> int:
+    from utils.db import get_supabase
+
+    db = get_supabase()
+    rows = (
+        db.table(TABLE)
+        .select("id, image_url, thumbnail_url")
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+        .execute()
+        .data
+    )
+
+    updated = 0
+    for row in rows:
+        if row.get("thumbnail_url"):
+            continue
+        image_url = row.get("image_url", "")
+        paths = _extract_storage_paths(image_url=image_url)
+        if not paths:
+            continue
+        original_path = paths[0]
+        thumb_path = f"{user_id}/{row['id']}/thumb.webp"
+        try:
+            original = db.storage.from_(STORAGE_BUCKET).download(original_path)
+            if hasattr(original, "read"):
+                original = original.read()
+            thumb_bytes = _make_thumbnail_bytes(original)
+            db.storage.from_(STORAGE_BUCKET).upload(
+                thumb_path,
+                thumb_bytes,
+                {"content-type": "image/webp", "upsert": "true"},
+            )
+            thumb_url = db.storage.from_(STORAGE_BUCKET).get_public_url(thumb_path).rstrip("?")
+            db.table(TABLE).update({"thumbnail_url": thumb_url}).eq("id", row["id"]).eq("user_id", user_id).execute()
+            updated += 1
+        except Exception as e:
+            logger.warning("Thumbnail backfill failed for %s: %s", row.get("id"), e)
+    return updated
 
 
 # ── Public interface ──────────────────────────────────────────────────────────
@@ -320,6 +521,35 @@ def get_user_items(user_id: str) -> List[Dict[str, Any]]:
     if settings.use_mock_auth:
         return _get_items_mock(user_id)
     return _get_items_real(user_id)
+
+
+def get_user_items_page(
+    user_id: str,
+    limit: int,
+    offset: int,
+    category: Optional[str] = None,
+    season: Optional[str] = None,
+    formality: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Fetch a paginated slice of active wardrobe items with optional server-side filters."""
+    settings = get_settings()
+    if settings.use_mock_auth:
+        return _get_items_page_mock(
+            user_id,
+            limit=limit,
+            offset=offset,
+            category=category,
+            season=season,
+            formality=formality,
+        )
+    return _get_items_page_real(
+        user_id,
+        limit=limit,
+        offset=offset,
+        category=category,
+        season=season,
+        formality=formality,
+    )
 
 
 def get_deleted_items(user_id: str) -> List[Dict[str, Any]]:
@@ -366,6 +596,14 @@ def purge_old_deleted_items(user_id: str, days: int = 90) -> int:
     return _purge_old_deleted_real(user_id, days)
 
 
+def backfill_missing_thumbnails(user_id: str) -> int:
+    """Generate thumbnail_url for active wardrobe items that do not have one yet."""
+    settings = get_settings()
+    if settings.use_mock_auth:
+        return _backfill_missing_thumbnails_mock(user_id)
+    return _backfill_missing_thumbnails_real(user_id)
+
+
 def _purge_old_deleted_mock(user_id: str, days: int) -> int:
     from datetime import datetime, timezone, timedelta
     from utils.mock_db_store import select_all, delete as hard_delete
@@ -397,7 +635,7 @@ def _purge_old_deleted_real(user_id: str, days: int) -> int:
     # Fetch rows to purge (need image_url for storage cleanup)
     rows = (
         db.table(TABLE)
-        .select("id, image_url")
+        .select("id, image_url, thumbnail_url")
         .eq("user_id", user_id)
         .eq("is_active", False)
         .lt("deleted_at", cutoff)
@@ -409,11 +647,13 @@ def _purge_old_deleted_real(user_id: str, days: int) -> int:
 
     # Storage cleanup — non-blocking
     for row in rows:
-        image_url = row.get("image_url", "")
-        if image_url and "/clothing-images/" in image_url:
+        paths = _extract_storage_paths(
+            row.get("image_url", ""),
+            row.get("thumbnail_url", ""),
+        )
+        if paths:
             try:
-                path = image_url.split("/clothing-images/")[-1].split("?")[0]
-                db.storage.from_("clothing-images").remove([path])
+                db.storage.from_("clothing-images").remove(paths)
             except Exception as e:
                 logger.warning("Purge storage cleanup failed for %s: %s", row["id"], e)
 

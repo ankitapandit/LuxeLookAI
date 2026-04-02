@@ -17,10 +17,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import Head from "next/head";
+import Image from "next/image";
 import Navbar from "@/components/layout/Navbar";
 import {
   tagPreview, uploadClothingItem, getTagOptions, correctItem,
-  deleteClothingItem, getWardrobeItems, getDeletedItems, restoreClothingItem,
+  deleteClothingItem, getWardrobeItemsPage, getDeletedItems, restoreClothingItem,
   TagPreview, TagOptions, ClothingItem,
 } from "@/services/api";
 import { AlertCircle, Upload, Trash2, ShirtIcon, Loader, CheckCircle, Pencil, X, Pipette, RotateCcw } from "lucide-react";
@@ -307,6 +308,57 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
 };
 
 const COMMON_DESCRIPTORS: Record<string, string[]> = {};  // all attributes are now per-category
+const PAGE_SIZE = 12;
+const CATEGORY_FILTER_OPTIONS = [
+  "tops",
+  "bottoms",
+  "dresses",
+  "outerwear",
+  "shoes",
+  "accessories",
+  "set",
+  "swimwear",
+  "loungewear",
+];
+
+function shouldBypassImageOptimization(src: string): boolean {
+  return src.startsWith("blob:") || src.startsWith("data:");
+}
+
+function mergeDescriptorGroups(...groups: Array<Record<string, string[]>>): Record<string, string[]> {
+  const merged: Record<string, string[]> = {};
+  for (const group of groups) {
+    for (const [key, values] of Object.entries(group)) {
+      merged[key] = Array.from(new Set([...(merged[key] || []), ...values]));
+    }
+  }
+  return merged;
+}
+
+function getDescriptorOptionsForCategory(
+  category: string,
+  existingDescriptors: Record<string, string> = {}
+): Record<string, string[]> {
+  const catKey = category.toLowerCase().replace(/\s+/g, "");
+  const aliasMap: Record<string, string[]> = {
+    set: ["tops", "bottoms"],
+    loungewear: ["tops", "bottoms"],
+    swimwear: ["tops", "bottoms", "dresses"],
+  };
+
+  const categoryGroups = aliasMap[catKey]?.length
+    ? aliasMap[catKey].map(key => CATEGORY_DESCRIPTORS[key] || {})
+    : [CATEGORY_DESCRIPTORS[catKey] || {}];
+
+  const merged = mergeDescriptorGroups(...categoryGroups, COMMON_DESCRIPTORS);
+
+  for (const [key, value] of Object.entries(existingDescriptors)) {
+    if (!value) continue;
+    merged[key] = Array.from(new Set([...(merged[key] || []), value]));
+  }
+
+  return merged;
+}
 
 
 
@@ -316,10 +368,18 @@ const COMMON_DESCRIPTORS: Record<string, string[]> = {};  // all attributes are 
 
 export default function WardrobePage() {
   const [items,        setItems]        = useState<ClothingItem[]>([]);
+  const [totalCount,   setTotalCount]   = useState(0);
   const [deletedItems, setDeletedItems] = useState<ClothingItem[]>([]);
   const [showTrash,    setShowTrash]    = useState(false);
-  const [loading,    setLoading]    = useState(true);
-  const [tagOptions, setTagOptions] = useState<TagOptions>({ categories: [], colors: [], seasons: [], formality_levels: [] });
+  const [loading,      setLoading]      = useState(true);
+  const [loadingMore,  setLoadingMore]  = useState(false);
+  const [hasMore,      setHasMore]      = useState(true);
+  const [loadingTrash, setLoadingTrash] = useState(false);
+  const [deletedLoaded, setDeletedLoaded] = useState(false);
+  const [loadingTagOptions, setLoadingTagOptions] = useState(false);
+  const [tagOptionsLoaded, setTagOptionsLoaded] = useState(false);
+  const [tagOptions,   setTagOptions]   = useState<TagOptions>({ categories: [], colors: [], seasons: [], formality_levels: [] });
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // Upload wizard state
   const [pendingFile,    setPendingFile]    = useState<File | null>(null);
@@ -333,13 +393,106 @@ export default function WardrobePage() {
   const [filterFormality, setFilterFormality] = useState("all");
   const [descriptors, setDescriptors] = useState<Record<string, string>>({});
   const [duplicate, setDuplicate] = useState<TagPreview["duplicate"]>(null);
+  const [editingItem, setEditingItem] = useState<ClothingItem | null>(null);
+  const [deletingItem, setDeletingItem] = useState<ClothingItem | null>(null);
+
+  const hasActiveFilters = filterCat !== "all" || filterSeason !== "all" || filterFormality !== "all";
+
+  const loadWardrobePage = useCallback(async (reset: boolean, offsetOverride?: number) => {
+    const offset = reset ? 0 : (offsetOverride ?? 0);
+    if (reset) setLoading(true);
+    else setLoadingMore(true);
+
+    try {
+      const result = await getWardrobeItemsPage({
+        limit: PAGE_SIZE,
+        offset,
+        category: filterCat !== "all" ? filterCat : undefined,
+        season: filterSeason !== "all" ? filterSeason : undefined,
+        formality: filterFormality !== "all" ? filterFormality : undefined,
+      });
+
+      setItems(prev => reset ? result.items : [...prev, ...result.items]);
+      setHasMore(result.has_more);
+      setTotalCount(result.total_count);
+    } catch {
+      toast.error("Failed to load wardrobe");
+    } finally {
+      if (reset) setLoading(false);
+      else setLoadingMore(false);
+    }
+  }, [filterCat, filterFormality, filterSeason]);
+
+  const ensureTagOptions = useCallback(async () => {
+    if (tagOptionsLoaded || loadingTagOptions) return;
+    setLoadingTagOptions(true);
+    try {
+      const opts = await getTagOptions();
+      setTagOptions(opts);
+      setTagOptionsLoaded(true);
+    } catch {
+      toast.error("Failed to load wardrobe options");
+    } finally {
+      setLoadingTagOptions(false);
+    }
+  }, [loadingTagOptions, tagOptionsLoaded]);
+
+  const loadTrashItems = useCallback(async () => {
+    if (deletedLoaded || loadingTrash) return;
+    setLoadingTrash(true);
+    try {
+      const deleted = await getDeletedItems();
+      setDeletedItems(deleted);
+      setDeletedLoaded(true);
+    } catch {
+      toast.error("Failed to load trash");
+    } finally {
+      setLoadingTrash(false);
+    }
+  }, [deletedLoaded, loadingTrash]);
 
   useEffect(() => {
-    Promise.all([getWardrobeItems(), getTagOptions(), getDeletedItems()])
-      .then(([w, opts, deleted]) => { setItems(w); setTagOptions(opts); setDeletedItems(deleted); })
-      .catch(() => toast.error("Failed to load wardrobe"))
-      .finally(() => setLoading(false));
-  }, []);
+    void loadWardrobePage(true, 0);
+  }, [loadWardrobePage]);
+
+  useEffect(() => {
+    if (step === "review") void ensureTagOptions();
+  }, [ensureTagOptions, step]);
+
+  useEffect(() => {
+    if (showTrash) void loadTrashItems();
+  }, [loadTrashItems, showTrash]);
+
+  const loadMoreItems = useCallback(() => {
+    if (loading || loadingMore || !hasMore || showTrash) return;
+    void loadWardrobePage(false, items.length);
+  }, [hasMore, items.length, loadWardrobePage, loading, loadingMore, showTrash]);
+
+  const handleTrashToggle = useCallback(() => {
+    const next = !showTrash;
+    setShowTrash(next);
+    if (next) void loadTrashItems();
+  }, [loadTrashItems, showTrash]);
+
+  useEffect(() => {
+    if (!loadMoreRef.current || loading || loadingMore || !hasMore || showTrash) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMoreItems();
+      },
+      { rootMargin: "200px 0px" }
+    );
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, loadMoreItems, loading, loadingMore, showTrash]);
+
+  const resetWizard = useCallback(() => {
+    if (pendingPreview) URL.revokeObjectURL(pendingPreview);
+    setPendingFile(null); setPendingPreview(null); setAiTags(null);
+    setCorrectedCat(""); setCorrectedColor(""); setStep("idle");
+    setDescriptors({});
+    setDuplicate(null);
+  }, [pendingPreview]);
 
   const onDrop = useCallback(async (accepted: File[]) => {
     const file = accepted[0];
@@ -349,6 +502,7 @@ export default function WardrobePage() {
     setStep("analysing");
     try {
       const tags = await tagPreview(file);
+      void ensureTagOptions();
       setAiTags(tags);
       setCorrectedCat(tags.category);
       setCorrectedColor(tags.color);
@@ -359,7 +513,7 @@ export default function WardrobePage() {
       toast.error("AI tagging failed — please try again");
       resetWizard();
     }
-  }, []);
+  }, [ensureTagOptions, resetWizard]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop, accept: { "image/*": [".jpg",".jpeg",".png",".webp"] },
@@ -375,25 +529,31 @@ export default function WardrobePage() {
         color:    correctedColor  !== aiTags.color   ? correctedColor  : undefined,
         descriptors: Object.keys(descriptors).length > 0 ? descriptors : undefined,
       });
-      setItems(prev => [newItem, ...prev]);
+      setTotalCount(prev => prev + 1);
+      const matchesFilters =
+        (filterCat === "all" || newItem.category === filterCat) &&
+        (filterSeason === "all" || newItem.season === filterSeason || newItem.season === "all") &&
+        (filterFormality === "all" || formalityBucket(newItem.formality_score) === filterFormality);
+      if (matchesFilters) {
+        setItems(prev => [newItem, ...prev]);
+      }
       toast.success("Item added to wardrobe!");
     } catch {
       toast.error("Upload failed — please try again");
     } finally { resetWizard(); }
   }
 
-  function resetWizard() {
-    if (pendingPreview) URL.revokeObjectURL(pendingPreview);
-    setPendingFile(null); setPendingPreview(null); setAiTags(null);
-    setCorrectedCat(""); setCorrectedColor(""); setStep("idle");
-    setDescriptors({});
-    setDuplicate(null);
-  }
-
   async function handleCorrect(itemId: string, category: string, color: string, pattern: string, descriptors: Record<string, string>) {
     try {
       const updated = await correctItem(itemId, { category, color, pattern: pattern || undefined, descriptors: Object.keys(descriptors).length > 0 ? descriptors : undefined });
-      setItems(prev => prev.map(i => i.id === itemId ? { ...i, ...updated } : i));
+      const matchesFilters =
+        (filterCat === "all" || updated.category === filterCat) &&
+        (filterSeason === "all" || updated.season === filterSeason || updated.season === "all") &&
+        (filterFormality === "all" || formalityBucket(updated.formality_score) === filterFormality);
+      setItems(prev => {
+        if (!matchesFilters) return prev.filter(i => i.id !== itemId);
+        return prev.map(i => i.id === itemId ? { ...i, ...updated } : i);
+      });
       toast.success("Updated!");
     } catch { toast.error("Could not update item"); }
   }
@@ -403,7 +563,8 @@ export default function WardrobePage() {
       await deleteClothingItem(itemId);
       const removed = items.find(i => i.id === itemId);
       setItems(prev => prev.filter(i => i.id !== itemId));
-      if (removed) setDeletedItems(prev => [{ ...removed, is_active: false }, ...prev]);
+      setTotalCount(prev => Math.max(0, prev - 1));
+      if (removed && deletedLoaded) setDeletedItems(prev => [{ ...removed, is_active: false }, ...prev]);
       toast.success("Moved to trash — restore any time");
     } catch { toast.error("Could not remove item"); }
   }
@@ -414,9 +575,7 @@ export default function WardrobePage() {
       // Remove from trash view in all success cases
       setDeletedItems(prev => prev.filter(i => i.id !== itemId));
       if (status === "restored") {
-        // Re-fetch the full wardrobe so the restored item has all its tags/descriptors
-        const refreshed = await getWardrobeItems();
-        setItems(refreshed);
+        await loadWardrobePage(true, 0);
         toast.success("Item restored to wardrobe");
       } else if (status === "auto_purged") {
         // Item was superseded by a newer active version — already in wardrobe
@@ -438,7 +597,7 @@ export default function WardrobePage() {
     }
   }
 
-  const uniqueCategories = Array.from(new Set(items.map(i => i.category))).sort();
+  const categoryFilters = CATEGORY_FILTER_OPTIONS;
 
   // Helper: map formality_score to the same bucket label used in the filter
   function formalityBucket(score: number | undefined): string {
@@ -449,35 +608,42 @@ export default function WardrobePage() {
     return "Loungewear";
   }
 
-  const visible = items.filter(item => {
-    if (filterCat !== "all" && item.category !== filterCat) return false;
-    if (filterSeason !== "all") {
-      // Items tagged "all" (all-season) appear in every seasonal view
-      if (item.season !== filterSeason && item.season !== "all" && item.season) return false;
-      if (!item.season) return false;
-    }
-    if (filterFormality !== "all") {
-      if (formalityBucket(item.formality_score) !== filterFormality) return false;
-    }
-    return true;
-  });
+  function clearFilters() {
+    setFilterCat("all");
+    setFilterSeason("all");
+    setFilterFormality("all");
+  }
+
+  const activeFilterSummary = [
+    filterCat !== "all" ? `Type: ${filterCat}` : null,
+    filterSeason !== "all" ? `Season: ${filterSeason}` : null,
+    filterFormality !== "all" ? `Dress code: ${filterFormality}` : null,
+  ].filter(Boolean).join(" · ");
+
+  function openEditModal(item: ClothingItem) {
+    setEditingItem(item);
+    void ensureTagOptions();
+  }
+
+  function openDeleteDialog(item: ClothingItem) {
+    setDeletingItem(item);
+  }
 
   return (
     <>
       <Head><title>Wardrobe — LuxeLook AI</title></Head>
       <Navbar />
-      <main style={{ maxWidth: "1200px", margin: "0 auto", padding: "48px 24px" }}>
+      <main className="page-main" style={{ maxWidth: "1200px", margin: "0 auto", padding: "48px 24px" }}>
 
         <div style={{ marginBottom: "36px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "16px" }}>
           <div>
-            <h1 style={{ fontSize: "36px", marginBottom: "8px" }}>My Wardrobe</h1>
-            <p style={{ color: "var(--muted)", fontSize: "15px" }}>
-              {items.length} item{items.length !== 1 ? "s" : ""} · Clothing auto detect
+            <h1 className="type-page-title" style={{ fontSize: "36px", marginBottom: "8px" }}>My Wardrobe</h1>
+            <p className="type-body" style={{ color: "var(--muted)", fontSize: "15px" }}>
+              {totalCount} item{totalCount === 1 ? "" : "s"} in your wardrobe · Clothing auto detect
             </p>
           </div>
-          {(deletedItems.length > 0 || showTrash) && (
-            <button
-              onClick={() => setShowTrash(t => !t)}
+          <button
+              onClick={handleTrashToggle}
               style={{
                 display: "flex", alignItems: "center", gap: "7px",
                 padding: "8px 16px", borderRadius: "8px", border: "1px solid var(--border)",
@@ -488,9 +654,12 @@ export default function WardrobePage() {
               }}
             >
               <Trash2 size={14} />
-              {showTrash ? "← Back to Wardrobe" : `Trash (${deletedItems.length})`}
+              {showTrash
+                ? "← Back to Wardrobe"
+                : deletedLoaded
+                  ? `Trash (${deletedItems.length})`
+                  : "Trash"}
             </button>
-          )}
         </div>
 
         {step === "idle" && (
@@ -498,9 +667,9 @@ export default function WardrobePage() {
             <input {...getInputProps()} />
             <Upload size={28} color="var(--gold)" />
             <p style={{ fontWeight: 500, color: "var(--charcoal)", marginTop: "8px" }}>
-              {isDragActive ? "Drop your image here" : "Drag & drop a clothing photo"}
-            </p>
-            <p style={{ color: "var(--muted)", fontSize: "13px", marginTop: "4px" }}>
+                    {isDragActive ? "Drop your image here" : "Drag & drop a clothing photo"}
+                  </p>
+            <p className="type-helper" style={{ color: "var(--muted)", fontSize: "13px", marginTop: "4px" }}>
               or click to browse · one at a time
             </p>
           </div>
@@ -508,13 +677,20 @@ export default function WardrobePage() {
 
         {step === "analysing" && pendingPreview && (
           <div className="card fade-up" style={{ display: "flex", gap: "20px", padding: "24px", marginBottom: "32px", alignItems: "center" }}>
-            <img src={pendingPreview} style={{ width: "90px", height: "120px", objectFit: "cover", borderRadius: "8px" }} alt="" />
+            <ManagedImage
+              src={pendingPreview}
+              alt="Pending clothing preview"
+              width={90}
+              height={120}
+              sizes="90px"
+              style={{ objectFit: "cover", borderRadius: "8px" }}
+            />
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
                 <Loader size={18} color="var(--gold)" style={{ animation: "spin 1s linear infinite" }} />
                 <p style={{ fontWeight: 600 }}>AI is analysing your item…</p>
               </div>
-              <p style={{ color: "var(--muted)", fontSize: "14px" }}>Detecting category and colour</p>
+            <p className="type-helper" style={{ color: "var(--muted)", fontSize: "14px" }}>Detecting category and colour</p>
             </div>
           </div>
         )}
@@ -524,6 +700,7 @@ export default function WardrobePage() {
             previewUrl={pendingPreview}
             aiTags={aiTags}
             tagOptions={tagOptions}
+            tagOptionsLoading={loadingTagOptions}
             correctedCat={correctedCat}
             correctedColor={correctedColor}
             descriptors={descriptors}
@@ -554,15 +731,29 @@ export default function WardrobePage() {
         {showTrash ? (
           /* ── Trash view ───────────────────────────────────────────────── */
           <div>
-            <p style={{ color: "var(--muted)", fontSize: "14px", marginBottom: "20px" }}>
+            <p className="type-body" style={{ color: "var(--muted)", fontSize: "14px", marginBottom: "20px" }}>
               Items moved to trash are hidden from outfit suggestions. Restore them to bring them back.
             </p>
+            {loadingTrash ? (
+              <div style={{ textAlign: "center", padding: "40px 0" }}>
+                <Loader size={24} color="var(--gold)" style={{ animation: "spin 1s linear infinite", display: "block", margin: "0 auto 12px" }} />
+                <p className="type-helper" style={{ color: "var(--muted)", fontSize: "13px" }}>Loading trash…</p>
+              </div>
+            ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "16px" }}>
               {deletedItems.map(item => (
                 <div key={item.id} className="card" style={{ padding: "0", overflow: "hidden", opacity: 0.75 }}>
                   {item.image_url && (
-                    <img src={item.image_url} alt={item.category}
-                      style={{ width: "100%", aspectRatio: "3/4", objectFit: "cover" }} />
+                    <div style={{ width: "100%", aspectRatio: "3/4", position: "relative" }}>
+                      <ManagedImage
+                        src={item.thumbnail_url || item.image_url}
+                        alt={item.category}
+                        fallbackSrc={`https://placehold.co/300x400/F5F0E8/8A8580?text=${encodeURIComponent(item.category)}`}
+                        fill
+                        sizes="(max-width: 768px) 50vw, 180px"
+                        style={{ objectFit: "cover" }}
+                      />
+                    </div>
                   )}
                   <div style={{ padding: "12px" }}>
                     <p style={{ fontSize: "13px", fontWeight: 600, textTransform: "capitalize", marginBottom: "2px" }}>
@@ -586,12 +777,13 @@ export default function WardrobePage() {
                 </div>
               ))}
             </div>
+            )}
           </div>
         ) : (
           /* ── Active wardrobe view ─────────────────────────────────────── */
           <>
             {items.length > 0 && (
-              <div style={{
+              <div className="wardrobe-filter-bar" style={{
                 display: "flex", alignItems: "flex-start",
                 background: "var(--surface)", border: "1px solid var(--border)",
                 borderRadius: "14px", padding: "14px 20px",
@@ -600,9 +792,9 @@ export default function WardrobePage() {
 
                 {/* Type */}
                 <div style={{ flex: "1 1 350px", minWidth: "280px", paddingRight: "20px" }}>
-                  <p style={{ fontSize: "10px", fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Type</p>
+                  <p className="type-micro" style={{ fontSize: "10px", fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Type</p>
                   <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
-                    {["all", ...uniqueCategories].map(cat => (
+                    {["all", ...categoryFilters].map(cat => (
                       <button key={cat} onClick={() => setFilterCat(cat)} style={{
                         padding: "4px 12px", borderRadius: "20px", fontSize: "12px",
                         fontWeight: filterCat === cat ? 600 : 400, cursor: "pointer",
@@ -610,17 +802,17 @@ export default function WardrobePage() {
                         background: filterCat === cat ? "var(--charcoal)" : "transparent",
                         color: filterCat === cat ? "var(--cream)" : "var(--muted)",
                         textTransform: "capitalize", transition: "all 0.15s ease",
-                      }}>{cat === "all" ? "All" : cat}</button>
+                      }} className="type-chip">{cat === "all" ? "All" : cat}</button>
                     ))}
                   </div>
                 </div>
 
                 {/* Divider */}
-                <div style={{ width: "1px", background: "var(--border)", alignSelf: "stretch", margin: "0 4px" }} />
+                <div className="wardrobe-filter-divider" style={{ width: "1px", background: "var(--border)", alignSelf: "stretch", margin: "0 4px" }} />
 
                 {/* Season */}
                 <div style={{ flex: "1 1 300px", minWidth: "240px", paddingLeft: "20px", paddingRight: "20px" }}>
-                  <p style={{ fontSize: "10px", fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Season</p>
+                  <p className="type-micro" style={{ fontSize: "10px", fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Season</p>
                   <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
                     {["all", "spring", "summer", "fall", "winter"].map(s => (
                       <button key={s} onClick={() => setFilterSeason(s)} style={{
@@ -630,17 +822,17 @@ export default function WardrobePage() {
                         background: filterSeason === s ? "var(--charcoal)" : "transparent",
                         color: filterSeason === s ? "var(--cream)" : "var(--muted)",
                         textTransform: "capitalize", transition: "all 0.15s ease",
-                      }}>{s === "all" ? "All" : s}</button>
+                      }} className="type-chip">{s === "all" ? "All" : s}</button>
                     ))}
                   </div>
                 </div>
 
                 {/* Divider */}
-                <div style={{ width: "1px", background: "var(--border)", alignSelf: "stretch", margin: "0 4px" }} />
+                <div className="wardrobe-filter-divider" style={{ width: "1px", background: "var(--border)", alignSelf: "stretch", margin: "0 4px" }} />
 
                 {/* Dress code */}
                 <div style={{ flex: "1 1 350px", minWidth: "280px", paddingLeft: "20px" }}>
-                  <p style={{ fontSize: "10px", fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Dress code</p>
+                  <p className="type-micro" style={{ fontSize: "10px", fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Dress code</p>
                   <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
                     {["all", "Loungewear", "Casual", "Smart casual", "Formal"].map(f => (
                       <button key={f} onClick={() => setFilterFormality(f)} style={{
@@ -650,7 +842,7 @@ export default function WardrobePage() {
                         background: filterFormality === f ? "var(--charcoal)" : "transparent",
                         color: filterFormality === f ? "var(--cream)" : "var(--muted)",
                         transition: "all 0.15s ease",
-                      }}>{f === "all" ? "Any" : f}</button>
+                      }} className="type-chip">{f === "all" ? "Any" : f}</button>
                     ))}
                   </div>
                 </div>
@@ -658,27 +850,141 @@ export default function WardrobePage() {
               </div>
             )}
 
+            {items.length > 0 && hasActiveFilters && (
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "12px",
+                flexWrap: "wrap",
+                marginBottom: "20px",
+              }}>
+                <p className="type-helper" style={{ fontSize: "13px", color: "var(--muted)", margin: 0 }}>
+                  Showing filtered results
+                  {activeFilterSummary ? ` · ${activeFilterSummary}` : ""}
+                </p>
+                <button
+                  className="btn-secondary"
+                  onClick={clearFilters}
+                  style={{ padding: "8px 14px", fontSize: "12px" }}
+                >
+                  Clear filters
+                </button>
+              </div>
+            )}
+
             {loading ? (
               <div style={{ textAlign: "center", padding: "60px" }}>
-                <Loader size={32} color="var(--gold)" style={{ animation: "spin 1s linear infinite" }} />
+                <Loader
+                  size={32}
+                  color="var(--gold)"
+                  style={{ animation: "spin 1s linear infinite", display: "block", margin: "0 auto" }}
+                />
               </div>
-            ) : visible.length === 0 && step === "idle" ? (
-              <EmptyState />
+            ) : items.length === 0 && step === "idle" ? (
+              hasActiveFilters
+                ? <FilteredEmptyState onClear={clearFilters} />
+                : <EmptyState />
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "20px" }}>
-                {visible.map(item => (
-                  <ItemCard key={item.id} item={item} tagOptions={tagOptions}
-                    onDelete={() => handleDelete(item.id)}
-                    onCorrect={(cat, color, pattern, descriptors) => handleCorrect(item.id, cat, color, pattern, descriptors)}
-                  />
-                ))}
-              </div>
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "20px" }}>
+                  {items.map(item => (
+                    <ItemCard key={item.id} item={item}
+                      onEdit={() => openEditModal(item)}
+                      onRequestDelete={() => openDeleteDialog(item)}
+                    />
+                  ))}
+                </div>
+                {(hasMore || loadingMore) && (
+                  <div ref={loadMoreRef} style={{ padding: "28px 0 8px", textAlign: "center" }}>
+                    {loadingMore ? (
+                      <Loader size={24} color="var(--gold)" style={{ animation: "spin 1s linear infinite", display: "block", margin: "0 auto 10px" }} />
+                    ) : null}
+                    {hasMore && !loadingMore ? (
+                      <button className="btn-secondary" onClick={loadMoreItems} style={{ fontSize: "13px" }}>
+                        Load more
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
       </main>
+      {editingItem && (
+        <ItemEditModal
+          item={editingItem}
+          tagOptions={tagOptions}
+          tagOptionsLoading={loadingTagOptions}
+          onRequestTagOptions={ensureTagOptions}
+          onClose={() => setEditingItem(null)}
+          onSave={(cat, color, pattern, nextDescriptors) => {
+            void handleCorrect(editingItem.id, cat, color, pattern, nextDescriptors);
+            setEditingItem(null);
+          }}
+        />
+      )}
+      {deletingItem && (
+        <DeleteItemDialog
+          item={deletingItem}
+          onClose={() => setDeletingItem(null)}
+          onConfirm={() => {
+            void handleDelete(deletingItem.id);
+            setDeletingItem(null);
+          }}
+        />
+      )}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </>
+  );
+}
+
+function ManagedImage({
+  src,
+  alt,
+  fallbackSrc,
+  sizes,
+  style,
+  fill = false,
+  width,
+  height,
+  onLoad,
+  crossOrigin,
+}: {
+  src: string;
+  alt: string;
+  fallbackSrc?: string;
+  sizes?: string;
+  style?: React.CSSProperties;
+  fill?: boolean;
+  width?: number;
+  height?: number;
+  onLoad?: (e: React.SyntheticEvent<HTMLImageElement>) => void;
+  crossOrigin?: "" | "anonymous" | "use-credentials";
+}) {
+  const [imageSrc, setImageSrc] = useState(src);
+
+  useEffect(() => {
+    setImageSrc(src);
+  }, [src]);
+
+  return (
+    <Image
+      src={imageSrc}
+      alt={alt}
+      unoptimized={shouldBypassImageOptimization(imageSrc)}
+      fill={fill}
+      width={fill ? undefined : width}
+      height={fill ? undefined : height}
+      sizes={sizes}
+      crossOrigin={crossOrigin}
+      onLoad={onLoad}
+      onError={() => {
+        if (fallbackSrc && imageSrc !== fallbackSrc) setImageSrc(fallbackSrc);
+      }}
+      style={style}
+    />
   );
 }
 
@@ -688,7 +994,7 @@ export default function WardrobePage() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function ReviewPanel({
-  previewUrl, aiTags, tagOptions,
+  previewUrl, aiTags, tagOptions, tagOptionsLoading,
   correctedCat, correctedColor,
   descriptors, duplicate,
   onCatChange, onColorChange,
@@ -698,6 +1004,7 @@ function ReviewPanel({
   previewUrl: string;
   aiTags: TagPreview;
   tagOptions: TagOptions;
+  tagOptionsLoading: boolean;
   correctedCat: string;
   correctedColor: string;
   onCatChange: (v: string) => void;
@@ -713,14 +1020,17 @@ function ReviewPanel({
   const catChanged = correctedCat !== aiTags.category;
   const colorChanged = correctedColor !== aiTags.color;
   const aiUnavailable = !!aiTags.needs_review;
+  const categoryOptions = tagOptions.categories.length > 0
+    ? tagOptions.categories
+    : [correctedCat].filter(Boolean);
 
   return (
     <div className="card fade-up" style={{ marginBottom: "32px", overflow: "hidden" }}>
       {/* Header */}
       <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <p style={{ fontWeight: 600, fontSize: "15px", color: "var(--charcoal)" }}>Review AI tags</p>
-          <p style={{ color: "var(--muted)", fontSize: "13px" }}>Correct category or colour if needed, then confirm</p>
+          <p className="type-body" style={{ fontWeight: 600, fontSize: "15px", color: "var(--charcoal)" }}>Review AI tags</p>
+          <p className="type-helper" style={{ color: "var(--muted)", fontSize: "13px" }}>Correct category or colour if needed, then confirm</p>
         </div>
         <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}>
           <X size={18} />
@@ -752,9 +1062,9 @@ function ReviewPanel({
               background: "rgba(212,169,106,0.10)", border: "1px solid rgba(212,169,106,0.28)",
               borderRadius: "8px", padding: "14px", marginBottom: "16px",
             }}>
-              <p style={{ fontSize: "13px", fontWeight: 600, color: "var(--gold-light)", marginBottom: "12px" }}>
-                This item looks like a duplicate ({Math.round(duplicate.score * 100)}% similar)
-              </p>
+                <p className="type-helper" style={{ fontSize: "13px", fontWeight: 600, color: "var(--gold-light)", marginBottom: "12px" }}>
+                  This item looks like a duplicate ({Math.round(duplicate.score * 100)}% similar)
+                </p>
 
               {/* Side-by-side comparison */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "12px" }}>
@@ -763,9 +1073,15 @@ function ReviewPanel({
                     textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>
                     New
                   </p>
-                  <img src={previewUrl} alt="new item"
-                    style={{ width: "100%", aspectRatio: "3/4", objectFit: "cover",
-                      borderRadius: "6px", border: "2px solid #D97706" }} />
+                  <div style={{ width: "100%", aspectRatio: "3/4", position: "relative" }}>
+                    <ManagedImage
+                      src={previewUrl}
+                      alt="new item"
+                      fill
+                      sizes="(max-width: 768px) 40vw, 240px"
+                      style={{ objectFit: "cover", borderRadius: "6px", border: "2px solid #D97706" }}
+                    />
+                  </div>
                   <p style={{ fontSize: "12px", color: "var(--ink)", marginTop: "4px",
                     textTransform: "capitalize" }}>
                     {correctedCat} · {correctedColor}
@@ -776,9 +1092,16 @@ function ReviewPanel({
                     textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>
                     Existing
                   </p>
-                  <img src={duplicate.image_url} alt="existing item"
-                    style={{ width: "100%", aspectRatio: "3/4", objectFit: "cover",
-                      borderRadius: "6px", border: "1px solid var(--border)" }} />
+                  <div style={{ width: "100%", aspectRatio: "3/4", position: "relative" }}>
+                    <ManagedImage
+                      src={duplicate.image_url}
+                      alt="existing item"
+                      fallbackSrc={`https://placehold.co/300x400/F5F0E8/8A8580?text=${encodeURIComponent(duplicate.category)}`}
+                      fill
+                      sizes="(max-width: 768px) 40vw, 240px"
+                      style={{ objectFit: "cover", borderRadius: "6px", border: "1px solid var(--border)" }}
+                    />
+                  </div>
                   <p style={{ fontSize: "12px", color: "var(--ink)", marginTop: "4px",
                     textTransform: "capitalize" }}>
                     {duplicate.category} · {duplicate.color}
@@ -808,11 +1131,15 @@ function ReviewPanel({
           <div style={{ marginBottom: "20px" }}>
             <label style={labelStyle}>Category {catChanged && <ChangedBadge />}</label>
             <select value={correctedCat} onChange={e => onCatChange(e.target.value)}
+              disabled={tagOptionsLoading && tagOptions.categories.length === 0}
               className="input" style={{ padding: "8px 12px", fontSize: "14px", textTransform: "capitalize" }}>
-              {tagOptions.categories.map(c => (
+              {categoryOptions.map(c => (
                 <option key={c} value={c} style={{ textTransform: "capitalize" }}>{c}</option>
               ))}
             </select>
+            {tagOptionsLoading && tagOptions.categories.length === 0 && (
+              <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>Loading category options…</p>
+            )}
             {catChanged && <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>AI said: <em style={{ textTransform: "capitalize" }}>{aiTags.category}</em></p>}
           </div>
 
@@ -828,9 +1155,7 @@ function ReviewPanel({
 
           {/* Style details — collapsible */}
           {(() => {
-            const catKey = correctedCat.toLowerCase();
-            const catDescriptors = CATEGORY_DESCRIPTORS[catKey] || {};
-            const allDescriptors = { ...catDescriptors, ...COMMON_DESCRIPTORS };
+            const allDescriptors = getDescriptorOptionsForCategory(correctedCat, descriptors);
             if (!Object.keys(allDescriptors).length) return null;
 
             return (
@@ -905,12 +1230,15 @@ function ImageEyedropper({ previewUrl, onColorPicked }: {
         onClick={handleImageClick}
         style={{ cursor: eyedrop ? "crosshair" : "default", position: "relative" }}
       >
-        <img
+        <ManagedImage
           src={previewUrl}
           alt="Preview"
+          width={160}
+          height={220}
+          sizes="160px"
           crossOrigin="anonymous"
           onLoad={handleImgLoad}
-          style={{ width: "160px", height: "220px", objectFit: "cover", display: "block" }}
+          style={{ objectFit: "cover", display: "block" }}
         />
         {eyedrop && (
           <div style={{
@@ -1179,26 +1507,11 @@ function StyleDetailsSection({ allDescriptors, descriptors, onDescriptorChange }
 // ItemCard — popup edit modal + delete confirmation
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
+function ItemCard({ item, onEdit, onRequestDelete }: {
   item: ClothingItem;
-  tagOptions: TagOptions;
-  onDelete: () => void;
-  onCorrect: (cat: string, color: string, pattern: string, descriptors: Record<string, string>) => void;
+  onEdit: () => void;
+  onRequestDelete: () => void;
 }) {
-  const [editing,         setEditing]         = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [editCat,         setEditCat]         = useState(item.category);
-  const [editColor,       setEditColor]       = useState(item.color || "");
-  const [editPattern,     setEditPattern]     = useState(item.pattern || "");
-  const [editDescriptors, setEditDescriptors] = useState<Record<string, string>>(item.descriptors || {});
-
-  // Map the current editColor to the nearest preset swatch key so it
-  // appears selected even when the value is a normalized name like "dark slate grey".
-  // Re-evaluated every render, so it stays in sync as editColor changes.
-  const activeColorKey = editColor === "" ? null
-    : SOLID_COLORS.some(c => c.key === editColor) ? editColor
-    : normalizeToPresetKey(editColor);
-
   const formalityLabel =
     item.formality_score !== undefined
       ? item.formality_score >= 0.75 ? "Formal"
@@ -1211,131 +1524,161 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
     ?? ((item.color || "") === "pattern" ? "linear-gradient(135deg,#e8a0a0 25%,#4a90c4 75%)" : undefined)
     ?? ((item.color || "").startsWith("#") ? item.color : "#ccc");
 
-  function openEdit() {
+  return (
+    <div className="card" style={{ overflow: "hidden", position: "relative" }}>
+      <div style={{ aspectRatio: "3/4", overflow: "hidden", background: "var(--surface)", position: "relative" }}>
+          <ManagedImage
+            src={item.thumbnail_url || item.image_url}
+            alt={`${item.category} - ${resolveColorName(item.color || "")}`}
+            fallbackSrc={`https://placehold.co/300x400/F5F0E8/8A8580?text=${encodeURIComponent(item.category)}`}
+            fill
+          sizes="(max-width: 768px) 50vw, 200px"
+          style={{ objectFit: "cover" }}
+        />
+        <div className="card-actions" style={{ position: "absolute", top: "8px", right: "8px", display: "flex", flexDirection: "column", gap: "4px", opacity: 0, transition: "opacity 0.2s ease" }}>
+          <ActionBtn onClick={onEdit} icon={<Pencil size={13} />} label="Edit item" />
+          <ActionBtn onClick={onRequestDelete} icon={<Trash2 size={13} color="#DC2626" />} label="Delete item" />
+        </div>
+      </div>
+
+      <div style={{ padding: "12px" }}>
+        <p style={{ fontWeight: 500, fontSize: "14px", textTransform: "capitalize", marginBottom: "4px" }}>
+          <span style={{ display: "inline-block", width: "10px", height: "10px", borderRadius: "50%", background: colorDisplay as string, marginRight: "6px", verticalAlign: "middle", border: "1px solid var(--border)" }} />
+          {item.category} - {resolveColorName(item.color || "")}
+        </p>
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+          {item.season && (
+            <span style={{ fontSize: "11px", color: "var(--muted)", textTransform: "capitalize" }}>
+              {item.season}
+            </span>
+          )}
+          {formalityLabel && (
+            <span className="formality-pill" style={{
+              background: (item.formality_score||0) > 0.6 ? "rgba(212,169,106,0.12)" : "rgba(122,148,104,0.15)",
+              color:      (item.formality_score||0) > 0.6 ? "var(--charcoal)" : "var(--sage)",
+            }}>{formalityLabel}</span>
+          )}
+        </div>
+
+        {item.descriptors && Object.keys(item.descriptors).length > 0 && (
+          <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
+            {Object.values(item.descriptors as Record<string, string>)
+              .filter(Boolean)
+              .map((val, i) => (
+                <span key={i} style={{
+                  fontSize: "10px", padding: "2px 8px", borderRadius: "20px",
+                  background: "var(--surface)", border: "1px solid var(--border)",
+                  color: "var(--muted)", textTransform: "capitalize",
+                }}>
+                  {val}
+                </span>
+              ))}
+          </div>
+        )}
+      </div>
+
+      <style>{`.card:hover .card-actions { opacity: 1 !important; }`}</style>
+    </div>
+  );
+}
+
+function ItemEditModal({
+  item,
+  tagOptions,
+  tagOptionsLoading,
+  onRequestTagOptions,
+  onClose,
+  onSave,
+}: {
+  item: ClothingItem;
+  tagOptions: TagOptions;
+  tagOptionsLoading: boolean;
+  onRequestTagOptions: () => Promise<void> | void;
+  onClose: () => void;
+  onSave: (cat: string, color: string, pattern: string, descriptors: Record<string, string>) => void;
+}) {
+  const [editCat, setEditCat] = useState(item.category);
+  const [editColor, setEditColor] = useState(item.color || "");
+  const [editPattern, setEditPattern] = useState(item.pattern || "");
+  const [editDescriptors, setEditDescriptors] = useState<Record<string, string>>(item.descriptors || {});
+
+  useEffect(() => {
     setEditCat(item.category);
     setEditColor(item.color || "");
     setEditPattern(item.pattern || "");
     setEditDescriptors(item.descriptors || {});
-    setEditing(true);
-  }
+  }, [item]);
+
+  useEffect(() => {
+    void onRequestTagOptions();
+  }, [onRequestTagOptions]);
+
+  const activeColorKey = editColor === "" ? null
+    : SOLID_COLORS.some(c => c.key === editColor) ? editColor
+    : normalizeToPresetKey(editColor);
+
+  const editCategoryOptions = tagOptions.categories.length > 0
+    ? tagOptions.categories
+    : [editCat].filter(Boolean);
 
   return (
     <>
-      <div className="card" style={{ overflow: "hidden", position: "relative" }}>
-        <div style={{ aspectRatio: "3/4", overflow: "hidden", background: "var(--surface)", position: "relative" }}>
-          <img src={item.image_url} alt={`${item.category} - ${resolveColorName(item.color || "")}`}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            onError={e => { (e.target as HTMLImageElement).src = `https://placehold.co/300x400/F5F0E8/8A8580?text=${encodeURIComponent(item.category)}`; }}
-          />
-          <div className="card-actions" style={{ position: "absolute", top: "8px", right: "8px", display: "flex", flexDirection: "column", gap: "4px", opacity: 0, transition: "opacity 0.2s ease" }}>
-            <ActionBtn onClick={openEdit} icon={<Pencil size={13} />} />
-            <ActionBtn onClick={() => setConfirmingDelete(true)} icon={<Trash2 size={13} color="#DC2626" />} />
-          </div>
+      <div
+        onClick={onClose}
+        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000 }}
+      />
 
-          {/* Delete confirmation overlay */}
-          {confirmingDelete && (
-            <div style={{
-              position: "absolute", inset: 0, background: "rgba(0,0,0,0.65)",
-              display: "flex", flexDirection: "column", alignItems: "center",
-              justifyContent: "center", gap: "10px", padding: "16px",
-            }}>
-              <p style={{ color: "white", fontSize: "13px", fontWeight: 600, textAlign: "center" }}>
-                Remove this item?
-              </p>
-              <div style={{ display: "flex", gap: "8px" }}>
-                <button
-                  onClick={() => { setConfirmingDelete(false); onDelete(); }}
-                  style={{ padding: "6px 16px", borderRadius: "6px", border: "none", background: "#DC2626", color: "white", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
-                  Delete
-                </button>
-                <button
-                  onClick={() => setConfirmingDelete(false)}
-                  style={{ padding: "6px 16px", borderRadius: "6px", border: "1px solid rgba(255,255,255,0.4)", background: "transparent", color: "white", fontSize: "12px", cursor: "pointer" }}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
+      <div style={{
+        position: "fixed", top: "50%", left: "50%",
+        transform: "translate(-50%, -50%)",
+        zIndex: 1001, background: "var(--surface)", borderRadius: "12px",
+        width: "min(760px, 94vw)", maxHeight: "88vh",
+        display: "flex", flexDirection: "column",
+        boxShadow: "0 24px 64px rgba(0,0,0,0.25)",
+        overflow: "hidden",
+      }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+          <div>
+            <p style={{ fontWeight: 600, fontSize: "15px", color: "var(--charcoal)" }}>Edit Tags</p>
+            <p style={{ color: "var(--muted)", fontSize: "12px", textTransform: "capitalize" }}>
+              {item.category} · {resolveColorName(item.color || "")}
+            </p>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: "4px" }}>
+            <X size={18} />
+          </button>
         </div>
 
-        <div style={{ padding: "12px" }}>
-          <p style={{ fontWeight: 500, fontSize: "14px", textTransform: "capitalize", marginBottom: "4px" }}>
-            <span style={{ display: "inline-block", width: "10px", height: "10px", borderRadius: "50%", background: colorDisplay as string, marginRight: "6px", verticalAlign: "middle", border: "1px solid var(--border)" }} />
-            {item.category} - {resolveColorName(item.color || "")}
-          </p>
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
-            {item.season && (
-              <span style={{ fontSize: "11px", color: "var(--muted)", textTransform: "capitalize" }}>
-                {item.season}
-              </span>
-            )}
-            {formalityLabel && (
-              <span className="formality-pill" style={{
-                background: (item.formality_score||0) > 0.6 ? "rgba(212,169,106,0.12)" : "rgba(122,148,104,0.15)",
-                color:      (item.formality_score||0) > 0.6 ? "var(--charcoal)" : "var(--sage)",
-              }}>{formalityLabel}</span>
-            )}
-          </div>
-
-          {item.descriptors && Object.keys(item.descriptors).length > 0 && (
-            <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
-              {Object.values(item.descriptors as Record<string, string>)
-                .filter(Boolean)
-                .map((val, i) => (
-                  <span key={i} style={{
-                    fontSize: "10px", padding: "2px 8px", borderRadius: "20px",
-                    background: "var(--surface)", border: "1px solid var(--border)",
-                    color: "var(--muted)", textTransform: "capitalize",
-                  }}>
-                    {val}
-                  </span>
-                ))}
-            </div>
-          )}
-        </div>
-
-        <style>{`.card:hover .card-actions { opacity: 1 !important; }`}</style>
-      </div>
-
-      {/* ── Edit modal popup ── */}
-      {editing && (
-        <>
-          {/* Backdrop */}
-          <div
-            onClick={() => setEditing(false)}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000 }}
-          />
-
-          {/* Modal */}
-          <div style={{
-            position: "fixed", top: "50%", left: "50%",
-            transform: "translate(-50%, -50%)",
-            zIndex: 1001, background: "var(--surface)", borderRadius: "12px",
-            width: "min(520px, 92vw)", maxHeight: "88vh",
-            display: "flex", flexDirection: "column",
-            boxShadow: "0 24px 64px rgba(0,0,0,0.25)",
-            overflow: "hidden",
-          }}>
-            {/* Header */}
-            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-              <div>
-                <p style={{ fontWeight: 600, fontSize: "15px", color: "var(--charcoal)" }}>Edit Tags</p>
-                <p style={{ color: "var(--muted)", fontSize: "12px", textTransform: "capitalize" }}>
-                  {item.category} · {resolveColorName(item.color || "")}
+        <div style={{ padding: "20px", overflowY: "auto", flex: 1 }}>
+          <div style={{ display: "flex", gap: "20px", alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div style={{ flex: "0 0 220px", width: "220px", maxWidth: "100%", margin: "0 auto" }}>
+              <div style={{ position: "sticky", top: 0 }}>
+                <div style={{ width: "100%", aspectRatio: "3 / 4", position: "relative", borderRadius: "12px", overflow: "hidden", background: "var(--input-bg)", border: "1px solid var(--border)" }}>
+                  <ManagedImage
+                    src={item.thumbnail_url || item.image_url}
+                    alt={`${item.category} reference`}
+                    fallbackSrc={`https://placehold.co/300x400/F5F0E8/8A8580?text=${encodeURIComponent(item.category)}`}
+                    fill
+                    sizes="220px"
+                    style={{ objectFit: "cover" }}
+                  />
+                </div>
+                <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "10px", lineHeight: 1.4 }}>
+                  Reference image for category, colour, and pattern edits.
                 </p>
               </div>
-              <button onClick={() => setEditing(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: "4px" }}>
-                <X size={18} />
-              </button>
             </div>
 
-            {/* Scrollable body */}
-            <div style={{ padding: "20px", overflowY: "auto", flex: 1 }}>
+            <div style={{ flex: "1 1 340px", minWidth: "280px" }}>
               <label style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "6px" }}>Category</label>
               <select value={editCat} onChange={e => setEditCat(e.target.value)}
+                disabled={tagOptionsLoading && tagOptions.categories.length === 0}
                 className="input" style={{ padding: "8px 12px", fontSize: "14px", marginBottom: "20px", textTransform: "capitalize" }}>
-                {tagOptions.categories.map(c => <option key={c} value={c} style={{ textTransform: "capitalize" }}>{c}</option>)}
+                {editCategoryOptions.map(c => <option key={c} value={c} style={{ textTransform: "capitalize" }}>{c}</option>)}
               </select>
+              {tagOptionsLoading && tagOptions.categories.length === 0 && (
+                <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "-14px", marginBottom: "16px" }}>Loading category options…</p>
+              )}
 
               <label style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "8px" }}>Colour</label>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
@@ -1350,7 +1693,7 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
                   }} />
                 ))}
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "20px", flexWrap: "wrap" }}>
                 <input type="color" value={editColor.startsWith("#") ? editColor : "#ffffff"}
                   onChange={e => setEditColor(e.target.value)}
                   style={{ width: "32px", height: "32px", border: "1px solid var(--border)", borderRadius: "6px", cursor: "pointer", padding: "2px" }} />
@@ -1371,9 +1714,7 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
               </div>
 
               {(() => {
-                const catKey = editCat.toLowerCase().replace(/\s+/g, "");
-                const catDescriptors = CATEGORY_DESCRIPTORS[catKey] || {};
-                const allDescriptors = { ...catDescriptors, ...COMMON_DESCRIPTORS };
+                const allDescriptors = getDescriptorOptionsForCategory(editCat, editDescriptors);
                 if (!Object.keys(allDescriptors).length) return null;
                 return (
                   <div>
@@ -1398,19 +1739,60 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
                 );
               })()}
             </div>
-
-            {/* Footer */}
-            <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: "8px", flexShrink: 0, background: "var(--surface)" }}>
-              <button
-                onClick={() => { onCorrect(editCat, editColor, editPattern, editDescriptors); setEditing(false); }}
-                className="btn-primary" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <CheckCircle size={14} /> Save
-              </button>
-              <button onClick={() => setEditing(false)} className="btn-secondary">Cancel</button>
-            </div>
           </div>
-        </>
-      )}
+        </div>
+
+        <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: "8px", flexShrink: 0, background: "var(--surface)" }}>
+          <button
+            onClick={() => onSave(editCat, editColor, editPattern, editDescriptors)}
+            className="btn-primary" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <CheckCircle size={14} /> Save
+          </button>
+          <button onClick={onClose} className="btn-secondary">Cancel</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function DeleteItemDialog({
+  item,
+  onClose,
+  onConfirm,
+}: {
+  item: ClothingItem;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000 }}
+      />
+      <div style={{
+        position: "fixed", top: "50%", left: "50%",
+        transform: "translate(-50%, -50%)",
+        zIndex: 1001, background: "var(--surface)", borderRadius: "12px",
+        width: "min(360px, 92vw)", padding: "22px",
+        boxShadow: "0 24px 64px rgba(0,0,0,0.25)",
+      }}>
+        <p style={{ fontWeight: 600, fontSize: "16px", color: "var(--charcoal)", marginBottom: "8px" }}>
+          Remove this item?
+        </p>
+        <p style={{ color: "var(--muted)", fontSize: "13px", marginBottom: "18px", textTransform: "capitalize" }}>
+          {item.category} · {resolveColorName(item.color || "")}
+        </p>
+        <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+          <button onClick={onClose} className="btn-secondary">Cancel</button>
+          <button
+            onClick={onConfirm}
+            style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: "#DC2626", color: "white", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
     </>
   );
 }
@@ -1418,9 +1800,14 @@ function ItemCard({ item, tagOptions, onDelete, onCorrect }: {
 
 // ── Tiny helpers ──────────────────────────────────────────────────────────────
 
-function ActionBtn({ onClick, icon }: { onClick: () => void; icon: React.ReactNode }) {
+function ActionBtn({ onClick, icon, label }: { onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
-    <button onClick={onClick} style={{ background: "rgba(24,23,20,0.82)", border: "none", borderRadius: "6px", padding: "6px", cursor: "pointer", display: "flex", alignItems: "center" }}>
+    <button
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      style={{ background: "rgba(24,23,20,0.82)", border: "none", borderRadius: "6px", padding: "6px", cursor: "pointer", display: "flex", alignItems: "center" }}
+    >
       {icon}
     </button>
   );
@@ -1440,8 +1827,25 @@ function EmptyState() {
   return (
     <div style={{ textAlign: "center", padding: "80px 24px", color: "var(--muted)" }}>
       <ShirtIcon size={48} color="var(--border)" style={{ margin: "0 auto 16px", display: "block" }} />
-      <h3 style={{ fontFamily: "Playfair Display, serif", color: "var(--charcoal)", marginBottom: "8px" }}>Your wardrobe is empty</h3>
-      <p style={{ fontSize: "15px" }}>Upload your first clothing item to get started</p>
+      <h3 className="type-section-title" style={{ fontFamily: "Playfair Display, serif", color: "var(--charcoal)", marginBottom: "8px" }}>Your wardrobe is empty</h3>
+      <p className="type-body" style={{ fontSize: "15px" }}>Upload your first clothing item to get started</p>
+    </div>
+  );
+}
+
+function FilteredEmptyState({ onClear }: { onClear: () => void }) {
+  return (
+    <div style={{ textAlign: "center", padding: "72px 24px", color: "var(--muted)" }}>
+      <ShirtIcon size={44} color="var(--border)" style={{ margin: "0 auto 16px", display: "block" }} />
+      <h3 className="type-section-title" style={{ fontFamily: "Playfair Display, serif", color: "var(--charcoal)", marginBottom: "8px" }}>
+        No items match these filters
+      </h3>
+      <p className="type-body" style={{ fontSize: "15px", marginBottom: "18px" }}>
+        Try a different combination or clear your filters to see everything again.
+      </p>
+      <button className="btn-secondary" onClick={onClear}>
+        Clear filters
+      </button>
     </div>
   );
 }

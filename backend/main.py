@@ -7,7 +7,7 @@ Registers all route groups and configures CORS for the Next.js frontend.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import auth, clothing, events, recommendations, feedback, profile
+from routers import auth, clothing, event, recommendations, feedback, profile
 
 # ── App Initialization ──────────────────────────────────────────────────────
 app = FastAPI(
@@ -29,7 +29,7 @@ app.add_middleware(
 # ── Route Registration ────────────────────────────────────────────────────────
 app.include_router(auth.router,            prefix="/auth",        tags=["Auth"])
 app.include_router(clothing.router,        prefix="/clothing",    tags=["Clothing"])
-app.include_router(events.router,          prefix="/events",      tags=["Events"])
+app.include_router(event.router,           prefix="/event",       tags=["Event"])
 app.include_router(recommendations.router, prefix="/recommend",   tags=["Recommendations"])
 app.include_router(feedback.router,        prefix="/feedback",    tags=["Feedback"])
 app.include_router(profile.router, prefix="/profile", tags=["profile"])

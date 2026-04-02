@@ -104,6 +104,7 @@ class ClothingItem(ClothingItemCreate):
     id: UUID
     user_id: UUID
     image_url: str
+    thumbnail_url: Optional[str] = None
     embedding_vector: Optional[List[float]] = None  # 512-dim CLIP vector
     created_at: datetime
     descriptors: Optional[dict] = {}
