@@ -65,12 +65,6 @@ WEIGHTS_V2 = {
 RISK_WEIGHT = 0.03            # R — dress-code / confidence penalty (subtracted from final)
 assert abs(sum(WEIGHTS_V2.values()) + RISK_WEIGHT - 1.0) < 1e-9, "WEIGHTS_V2 + RISK_WEIGHT must sum to 1.0"
 
-# ── Seen-combo penalty ─────────────────────────────────────────────────────────
-# Previously shown outfits are not hard-excluded; they receive this multiplier so
-# fresh combinations always surface first, but repeats still appear when the
-# wardrobe doesn't have enough variety to fill top_n with all-new combos.
-SEEN_PENALTY = 0.70
-
 # ── Formality tolerance band ───────────────────────────────────────────────────
 FORMALITY_TOLERANCE = 0.25
 
@@ -818,21 +812,66 @@ _INSULATING_FABRICS  = {"wool", "fleece", "velvet", "cashmere", "knit", "waffle-
 # Light vs heavy outerwear for layering
 _LIGHT_OUTERWEAR  = {"blazer", "cardigan", "denim jacket", "bomber", "vest", "cape"}
 _HEAVY_OUTERWEAR  = {"coat", "puffer", "trench", "overcoat", "leather jacket", "parka"}
+_NEUTRAL_COLORS   = {"black", "white", "grey", "gray", "beige", "brown", "cream", "tan", "camel", "khaki", "ivory", "nude", "charcoal", "silver"}
+_TITLE_COLOR_WORDS = {
+    "black": "Noir",
+    "white": "Ivory",
+    "beige": "Sand",
+    "brown": "Mocha",
+    "pink": "Rose",
+    "red": "Rouge",
+    "blue": "Azure",
+    "navy": "Midnight",
+    "green": "Sage",
+    "grey": "Slate",
+    "gray": "Slate",
+    "yellow": "Honey",
+    "orange": "Amber",
+    "purple": "Plum",
+    "cream": "Cream",
+    "tan": "Tan",
+    "gold": "Gilded",
+    "silver": "Silver",
+}
+
+
+def _item_colors(items: List[Dict[str, Any]]) -> List[str]:
+    colors: List[str] = []
+    for item in items:
+        raw = str(item.get("color") or "").strip().lower()
+        if not raw or raw.startswith("#"):
+            continue
+        colors.append(raw)
+    return colors
 
 
 # ── Trend-o-meter ─────────────────────────────────────────────────────────────
 
-def _trend_stars_and_label(novelty: float, compat: float, approp: float) -> tuple:
+def _trend_stars_and_label(novelty: float, compat: float, approp: float, items: List[Dict]) -> tuple:
     """
     Derive 1–5 star rating and label from scorer components.
 
     Weighted: novelty 40% + compat 35% + approp 25%.
     Returns (stars: int, label: str).
     """
-    score = novelty * 0.40 + compat * 0.35 + approp * 0.25
+    accessory_count = sum(1 for item in items if (item.get("category") or "").lower() == "accessories")
+    structured_bonus = 0.02 if any((item.get("category") or "").lower() in {"outerwear", "dresses", "set"} for item in items) else 0.0
+    palette_bonus = 0.01 * min(2, len(set(_item_colors(items))) - 1)
+
+    score = novelty * 0.40 + compat * 0.35 + approp * 0.25 + min(0.05, accessory_count * 0.015) + structured_bonus + max(0.0, palette_bonus)
     stars = max(1, min(5, round(score * 5)))
-    labels = {1: "Outdated", 2: "Basic", 3: "Classic", 4: "Trendy", 5: "Statement"}
-    return stars, labels[stars]
+
+    if stars == 5:
+        label = "Statement" if novelty >= 0.68 or accessory_count >= 2 else "Runway"
+    elif stars == 4:
+        label = "Trendy" if novelty >= 0.58 else "Elevated"
+    elif stars == 3:
+        label = "Classic" if compat >= 0.72 else "Current"
+    elif stars == 2:
+        label = "Basic" if approp >= 0.55 else "Safe"
+    else:
+        label = "Outdated"
+    return stars, label
 
 
 # ── Vibe Check ────────────────────────────────────────────────────────────────
@@ -863,6 +902,7 @@ def _vibe_check(
     event_tokens: List[str],
     raw_color_label: str,
     compat: float,
+    items: List[Dict],
 ) -> str:
     """
     Derive a 'CoreVibe + Energy' string unique to this outfit.
@@ -874,6 +914,26 @@ def _vibe_check(
     tokens   = set(event_tokens or []) | {occasion_type.lower()}
     has_contrast = any(k in raw_color_label.lower()
                        for k in ("complementary", "clashing", "color block"))
+    categories = {(item.get("category") or "").lower() for item in items}
+    fits = [((item.get("descriptors") or {}).get("fit") or "").lower() for item in items]
+    accessory_count = sum(1 for item in items if (item.get("category") or "").lower() == "accessories")
+    has_outerwear = "outerwear" in categories
+    has_full_look = bool({"dresses", "set", "swimwear", "loungewear"} & categories)
+    fitted_count = sum(1 for fit in fits if any(token in fit for token in ("slim", "tailored", "bodycon", "fitted")))
+    relaxed_count = sum(1 for fit in fits if any(token in fit for token in ("relaxed", "loose", "oversized", "wide")))
+
+    if has_outerwear and formality >= 0.6:
+        base = "Sharp" if "business" in tokens or "office" in tokens else "Polished"
+    elif has_full_look and formality >= 0.45:
+        base = "Refined"
+    elif accessory_count >= 2 and has_contrast:
+        base = "Statement"
+    elif fitted_count >= 2:
+        base = "Sleek"
+    elif relaxed_count >= 1 and formality < 0.5:
+        base = "Playful" if ({"friends", "brunch", "lunch"} & tokens) else "Off-Duty"
+    else:
+        base = ""
 
     # Walk the map — first match wins
     for occ_set, (f_min, f_max), color_sig, core, energy in _CORE_VIBE_MAP:
@@ -884,21 +944,26 @@ def _vibe_check(
         if color_sig == {"contrast"} and not has_contrast:
             continue
         # Modulate energy by compat score so different outfit strengths show differently
-        if compat >= 0.85 and energy == "Effortless":
+        core = base or core
+        if compat >= 0.88 and energy == "Effortless":
             energy = "Confident"
+        elif accessory_count >= 2 and energy == "Effortless":
+            energy = "Styled"
+        elif relaxed_count >= 1 and energy == "Powerful":
+            energy = "Easy"
         elif compat < 0.60 and energy == "Confident":
             energy = "Soft"
         return f"{core} + {energy}"
 
     # Fallback: derive from formality band alone
     if formality >= 0.75:
-        base, nrg = "Elegant", "Powerful" if compat >= 0.80 else "Confident"
+        base, nrg = base or "Elegant", "Powerful" if compat >= 0.80 else "Confident"
     elif formality >= 0.50:
-        base, nrg = "Chic",    "Confident" if compat >= 0.75 else "Soft"
+        base, nrg = base or "Chic", "Confident" if compat >= 0.75 else "Soft"
     elif has_contrast:
-        base, nrg = "Bold",    "Confident"
+        base, nrg = base or "Bold", "Confident"
     else:
-        base, nrg = "Casual",  "Effortless"
+        base, nrg = base or "Casual", "Effortless"
     return f"{base} + {nrg}"
 
 
@@ -911,25 +976,79 @@ def _color_theory_label(raw_color_label: str, items: List[Dict]) -> str:
     Format: "{Palette}" — e.g. "Neutral Base + Pop", "Monochrome", "Color Block".
     """
     raw = raw_color_label.lower()
+    colors = _item_colors(items)
+    unique_colors = list(dict.fromkeys(colors))
+    warm_count = sum(1 for color in unique_colors if color in _WARM_COLORS)
+    cool_count = sum(1 for color in unique_colors if color in _COOL_COLORS)
+    neutral_count = sum(1 for color in unique_colors if color in _NEUTRAL_COLORS)
 
     if "neutral base with" in raw:
-        palette = "Neutral Base + Pop"
+        if warm_count > cool_count:
+            palette = "Warm Neutral Lift"
+        elif cool_count > warm_count:
+            palette = "Cool Neutral Lift"
+        else:
+            palette = "Neutral Base + Pop"
     elif "clean neutral" in raw or "all neutral" in raw:
-        palette = "All Neutral"
+        palette = "Layered Neutral" if len(unique_colors) > 1 else "Soft Neutral"
     elif "monochromatic" in raw:
         palette = "Monochrome"
     elif "tonal analogous" in raw or "analogous" in raw:
-        palette = "Analogous"
+        palette = "Warm Analogous" if warm_count >= cool_count else "Cool Analogous"
     elif "complementary contrast" in raw:
-        palette = "Complementary"
+        palette = "High Contrast" if len(unique_colors) >= 3 else "Soft Contrast"
     elif "clashing" in raw:
         palette = "Color Block"
     elif "mixed" in raw:
-        palette = "Mixed"
+        palette = "Mixed Contrast" if warm_count and cool_count else "Mixed Tones"
     else:
-        palette = "Eclectic"
+        if warm_count and not cool_count:
+            palette = "Warm Story"
+        elif cool_count and not warm_count:
+            palette = "Cool Story"
+        elif neutral_count >= 2 and len(unique_colors) <= 2:
+            palette = "Balanced Pairing"
+        else:
+            palette = "Eclectic"
 
     return palette
+
+
+def _look_title(items: List[Dict], occasion: Dict, fit_check: str, color_theory: str) -> str:
+    colors = _item_colors(items)
+    unique_colors = list(dict.fromkeys(colors))
+    categories = {(item.get("category") or "").lower() for item in items}
+    tokens = set(occasion.get("event_tokens") or []) | {str(occasion.get("occasion_type") or "").lower()}
+
+    dominant = next((_TITLE_COLOR_WORDS[color] for color in unique_colors if color in _TITLE_COLOR_WORDS), None)
+    if not dominant:
+        if "Contrast" in color_theory:
+            dominant = "Contrast"
+        elif "Neutral" in color_theory:
+            dominant = "Neutral"
+        else:
+            dominant = "Curated"
+
+    if "outerwear" in categories and fit_check in {"Tailored", "Structured"}:
+        second = "Layering"
+    elif "dresses" in categories or "set" in categories:
+        second = "Poise"
+    elif {"party", "cocktail", "night"} & tokens:
+        second = "Afterglow"
+    elif {"business", "office", "interview"} & tokens:
+        second = "Power"
+    elif fit_check == "Snatched":
+        second = "Contour"
+    elif fit_check == "Flowing":
+        second = "Motion"
+    elif fit_check == "Relaxed":
+        second = "Ease"
+    elif fit_check == "Tailored":
+        second = "Structure"
+    else:
+        second = "Edit"
+
+    return f"{dominant} {second}"
 
 
 # ── Fit Check ─────────────────────────────────────────────────────────────────
@@ -1049,10 +1168,10 @@ def _build_outfit_card(
     event_tokens = occasion.get("event_tokens",        [])
 
     # ── 🔥 Trend-o-meter ──────────────────────────────────────────────────────
-    trend_stars, trend_label = _trend_stars_and_label(novelty, compat, approp)
+    trend_stars, trend_label = _trend_stars_and_label(novelty, compat, approp, items)
 
     # ── 💃 Vibe Check ─────────────────────────────────────────────────────────
-    vibe = _vibe_check(occ_type, formality, event_tokens, raw_color_label, compat)
+    vibe = _vibe_check(occ_type, formality, event_tokens, raw_color_label, compat, items)
 
     # ── 🎨 Color Theory ───────────────────────────────────────────────────────
     color_theory = _color_theory_label(raw_color_label, items)
@@ -1062,6 +1181,7 @@ def _build_outfit_card(
 
     # ── 🌡️ Weather Sync ──────────────────────────────────────────────────────
     weather_sync = _weather_sync_label(approp, temp, setting, items)
+    look_title = _look_title(items, occasion, fit_check, color_theory)
 
     # ── Risk flag ─────────────────────────────────────────────────────────────
     risk_flag = None
@@ -1076,6 +1196,7 @@ def _build_outfit_card(
     return {
         "trend_stars":  trend_stars,
         "trend_label":  trend_label,
+        "look_title":   look_title,
         "vibe":         vibe,
         "color_theory": color_theory,
         "fit_check":    fit_check,
@@ -1332,8 +1453,8 @@ def generate_outfit_suggestions(
                                      Keys are _combo_key strings; values are 0-1 weights.
                                      Combos absent from the map default to neutral 0.5.
         seen_item_combos:            Item-ID sets shown in previous batches (accumulated).
-                                     These combos receive SEEN_PENALTY so fresh combos
-                                     always surface first.
+                                     These combos are hard-excluded so the same look
+                                     does not reappear on refresh.
         outfit_history_embeddings:   Optional pre-computed past outfit embeddings for
                                      novelty scoring (v2). If None, computed from
                                      seen_item_combos automatically.
@@ -1427,17 +1548,21 @@ def generate_outfit_suggestions(
         for shoe in shoes_list:
             template_combos["swimwear_shoes"].append([sw, shoe])
 
-    # ── Score combos, applying feedback weights + seen penalty ────────────
-    best_per_template: List[Tuple[float, List[Dict], Dict]] = []
-    overflow:          List[Tuple[float, List[Dict], Dict]] = []
+    # ── Score combos, splitting fresh vs already-seen looks ──────────────
+    fresh_best_per_template: List[Tuple[float, List[Dict], Dict]] = []
+    fresh_overflow:          List[Tuple[float, List[Dict], Dict]] = []
+    seen_best_per_template:  List[Tuple[float, List[Dict], Dict]] = []
+    seen_overflow:           List[Tuple[float, List[Dict], Dict]] = []
+    fresh_available = False
 
     for _tname, combos in template_combos.items():
         if not combos:
             continue
 
-        scored_combos: List[Tuple[float, List[Dict], Dict]] = []
+        fresh_scored_combos: List[Tuple[float, List[Dict], Dict]] = []
+        seen_scored_combos: List[Tuple[float, List[Dict], Dict]] = []
         for c in combos:
-            # Per-outfit preference weight from occasion-scoped combo history
+            is_seen = frozenset(str(item["id"]) for item in c) in seen_sets
             fw = _outfit_feedback_weight(c, combo_weights)
             score, breakdown = score_outfit_v2(
                 c, occasion,
@@ -1445,36 +1570,41 @@ def generate_outfit_suggestions(
                 user_body_type=user_body_type,
                 outfit_history_embeddings=_history,
             )
+            entry = (score, c, breakdown)
+            if is_seen:
+                seen_scored_combos.append(entry)
+            else:
+                fresh_available = True
+                fresh_scored_combos.append(entry)
 
-            # Soft downrank: previously shown combos yield to fresh alternatives
-            if frozenset(str(item["id"]) for item in c) in seen_sets:
-                score *= SEEN_PENALTY
+        fresh_scored_combos.sort(key=lambda x: x[0], reverse=True)
+        seen_scored_combos.sort(key=lambda x: x[0], reverse=True)
+        if fresh_scored_combos:
+            fresh_best_per_template.append(fresh_scored_combos[0])
+            fresh_overflow.extend(fresh_scored_combos[1:])
+        elif seen_scored_combos:
+            seen_best_per_template.append(seen_scored_combos[0])
+            seen_overflow.extend(seen_scored_combos[1:])
 
-            scored_combos.append((score, c, breakdown))
-
-        scored_combos.sort(key=lambda x: x[0], reverse=True)
-        best_per_template.append(scored_combos[0])
-        overflow.extend(scored_combos[1:])
-
-    if not best_per_template:
+    if not fresh_available and not seen_best_per_template:
         logger.warning("Not enough items to form a complete outfit.")
         return [], False
 
-    best_per_template.sort(key=lambda x: x[0], reverse=True)
-    top_cores = list(best_per_template[:top_n])
+    selected_pool = fresh_best_per_template if fresh_available else seen_best_per_template
+    selected_overflow = fresh_overflow if fresh_available else seen_overflow
 
-    if len(top_cores) < top_n and overflow:
-        overflow.sort(key=lambda x: x[0], reverse=True)
-        for entry in overflow:
+    selected_pool.sort(key=lambda x: x[0], reverse=True)
+    top_cores = list(selected_pool[:top_n])
+
+    if len(top_cores) < top_n and selected_overflow:
+        selected_overflow.sort(key=lambda x: x[0], reverse=True)
+        for entry in selected_overflow:
             if len(top_cores) >= top_n:
                 break
             top_cores.append(entry)
 
-    # ── Detect exhaustion: all returned combos were previously shown ──────
-    all_seen = bool(seen_sets) and all(
-        frozenset(str(i["id"]) for i in core) in seen_sets
-        for _, core, _ in top_cores
-    )
+    # ── Detect exhaustion: true only when no fresh combos remain ──────────
+    all_seen = not fresh_available
 
     # ── Assemble final suggestions ────────────────────────────────────────
     suggestions = []

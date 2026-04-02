@@ -426,3 +426,35 @@ h1, h2, h3 { font-family: 'Playfair Display', serif; }
     padding: 10px 18px;
   }
 }
+
+@media (max-width: 900px) {
+  .moodboard-header {
+    grid-template-columns: 1fr !important;
+  }
+
+  .moodboard-stage {
+    min-height: 420px !important;
+  }
+
+  .moodboard-modal-panel {
+    padding: 14px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .moodboard-shell {
+    padding: 16px !important;
+  }
+
+  .moodboard-stage {
+    min-height: 360px !important;
+  }
+
+  .moodboard-modal-backdrop {
+    padding: 12px !important;
+  }
+
+  .moodboard-modal-panel {
+    border-radius: 20px !important;
+  }
+}

@@ -22,7 +22,7 @@ import Navbar from "@/components/layout/Navbar";
 import {
   tagPreview, uploadClothingItem, getTagOptions, correctItem,
   deleteClothingItem, getWardrobeItemsPage, getDeletedItems, restoreClothingItem,
-  TagPreview, TagOptions, ClothingItem,
+  getWardrobeMediaStatus, TagPreview, TagOptions, ClothingItem,
 } from "@/services/api";
 import { AlertCircle, Upload, Trash2, ShirtIcon, Loader, CheckCircle, Pencil, X, Pipette, RotateCcw } from "lucide-react";
 import toast from "react-hot-toast";
@@ -205,11 +205,40 @@ const PATTERNS: { key: string; label: string; svg: string }[] = [
   },
 ];
 
+const FABRIC_OPTIONS = [
+  "cotton",
+  "polyester",
+  "nylon",
+  "spandex",
+  "elastane",
+  "rayon",
+  "linen",
+  "denim",
+  "satin",
+  "silk",
+  "chiffon",
+  "mesh",
+  "lace",
+  "knit",
+  "wool",
+  "leather",
+  "suede",
+  "faux fur",
+  "tweed",
+  "jersey",
+  "terry",
+  "lycra",
+  "recycled nylon",
+  "fleece",
+  "modal",
+  "bamboo",
+  "waffle-knit",
+] as const;
+
 const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
   // ── Tops ────────────────────────────────────────────────────────────────────
   tops: {
-    fabric_type:   ["cotton","polyester","nylon","spandex","rayon","linen","denim",
-                    "satin","silk","chiffon","mesh","lace","knit","wool"],
+    fabric_type:   [...FABRIC_OPTIONS],
     neckline:      ["crew","round","V-neck","square","scoop","sweetheart","off-shoulder",
                     "halter","high neck","turtleneck","collar","cowl","asymmetrical"],
     sleeve_length: ["sleeveless","cap","short","3/4","long"],
@@ -229,8 +258,7 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
   },
   // ── Dresses ─────────────────────────────────────────────────────────────────
   dresses: {
-    fabric_type:   ["cotton","polyester","nylon","spandex","rayon","linen","denim",
-                    "satin","silk","chiffon","mesh","lace","knit","wool"],
+    fabric_type:   [...FABRIC_OPTIONS],
     neckline:      ["crew","round","V-neck","square","scoop","sweetheart","off-shoulder",
                     "halter","high neck","turtleneck","collar","cowl","asymmetrical"],
     sleeve_length: ["sleeveless","cap","short","3/4","long"],
@@ -250,29 +278,23 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
   },
   // ── Outerwear ───────────────────────────────────────────────────────────────
   outerwear: {
-    fabric_type:        ["cotton","polyester","nylon","spandex","rayon","linen","denim",
-                         "satin","silk","chiffon","mesh","lace","knit","wool"],
-    neckline:           ["crew","round","V-neck","square","scoop","sweetheart","off-shoulder",
-                         "halter","high neck","turtleneck","collar","cowl","asymmetrical"],
+    outerwear_type:     ["blazer","jacket","coat","trench","cardigan","bomber","puffer","shacket","cape","vest"],
+    fabric_type:        [...FABRIC_OPTIONS],
+    collar_style:       ["notched","shawl","mandarin","spread","stand","funnel","hooded","lapel-free"],
     sleeve_length:      ["sleeveless","cap","short","3/4","long"],
-    sleeve_style:       ["puff","bishop","balloon","bell","raglan","batwing","cold shoulder","flutter"],
-    fit:                ["slim","regular","relaxed","loose","oversized","bodycon",
-                         "tailored","A-line","fit & flare","wrap"],
-    length:             ["crop","regular","longline"],
-    closure:            ["pullover","button-front","zip-up","wrap","open front"],
-    hemline:            ["straight","curved","asymmetrical","high-low","peplum","ruffle hem"],
-    back_style:         ["open back","low back","keyhole","strappy","tie-back","zipper back"],
-    detailing:          ["ruffles","pleats","ruched","smocked","tiered","draped",
-                         "cut-out","slit","bow","knot","lace-up","fringe","embroidery"],
-    elasticity:         ["non-stretch","slight stretch","medium stretch","high stretch"],
-    sheer:              ["opaque","semi-sheer","sheer"],
+    sleeve_style:       ["raglan","drop shoulder","set-in","batwing","cuffed","quilted"],
+    fit:                ["tailored","slim","regular","relaxed","boxy","oversized"],
+    length:             ["cropped","waist","hip","thigh","knee","midi","longline"],
+    closure:            ["open front","single-breasted","double-breasted","zip-up","toggle","belted","snap"],
+    hemline:            ["straight","curved","asymmetrical","split hem"],
+    detailing:          ["quilted","belted","epaulettes","contrast trim","patch pockets","ribbed cuffs","shearling trim"],
     pattern:            ["solid","floral","striped","graphic","abstract","tie-dye","plaid","animal print"],
     insulation:         ["lightweight","midweight","heavyweight","insulated","down-filled"],
     weather_resistance: ["water-resistant","waterproof","windproof"],
   },
   // ── Bottoms ─────────────────────────────────────────────────────────────────
   bottoms: {
-    fabric_type:     ["denim","cotton","polyester","linen","knit","leather"],
+    fabric_type:     [...FABRIC_OPTIONS],
     waist_position:  ["high","mid","low","drop","empire"],
     waist_structure: ["elastic","drawstring","belted","paperbag","corset"],
     fit:             ["slim","straight","relaxed","loose","wide-leg","flared"],
@@ -335,13 +357,46 @@ function mergeDescriptorGroups(...groups: Array<Record<string, string[]>>): Reco
   return merged;
 }
 
+function prefixDescriptorGroups(
+  groups: Record<string, string[]>,
+  prefix: string
+): Record<string, string[]> {
+  return Object.fromEntries(
+    Object.entries(groups).map(([key, values]) => [`${prefix}_${key}`, values])
+  );
+}
+
+function formatDescriptorLabel(key: string): string {
+  return key.replace(/_/g, " ");
+}
+
+function getDescriptorGroupLabel(key: string): string {
+  if (key.startsWith("top_")) return `Top ${formatDescriptorLabel(key.slice(4))}`;
+  if (key.startsWith("bottom_")) return `Bottom ${formatDescriptorLabel(key.slice(7))}`;
+  return formatDescriptorLabel(key);
+}
+
 function getDescriptorOptionsForCategory(
   category: string,
   existingDescriptors: Record<string, string> = {}
 ): Record<string, string[]> {
   const catKey = category.toLowerCase().replace(/\s+/g, "");
+  if (catKey === "set") {
+    const merged = mergeDescriptorGroups(
+      prefixDescriptorGroups(CATEGORY_DESCRIPTORS.tops || {}, "top"),
+      prefixDescriptorGroups(CATEGORY_DESCRIPTORS.bottoms || {}, "bottom"),
+      COMMON_DESCRIPTORS
+    );
+
+    for (const [key, value] of Object.entries(existingDescriptors)) {
+      if (!value) continue;
+      merged[key] = Array.from(new Set([...(merged[key] || []), value]));
+    }
+
+    return merged;
+  }
+
   const aliasMap: Record<string, string[]> = {
-    set: ["tops", "bottoms"],
     loungewear: ["tops", "bottoms"],
     swimwear: ["tops", "bottoms", "dresses"],
   };
@@ -358,6 +413,37 @@ function getDescriptorOptionsForCategory(
   }
 
   return merged;
+}
+
+function mergeUniqueIds(current: string[], incoming: string[]): string[] {
+  return Array.from(new Set([...current, ...incoming]));
+}
+
+function isTrackableMediaStatus(status?: ClothingItem["media_status"]): boolean {
+  return status === "pending" || status === "processing";
+}
+
+function isVisibleMediaStatus(status?: ClothingItem["media_status"]): boolean {
+  return status === "pending" || status === "processing" || status === "failed";
+}
+
+function getMediaStatusLabel(item: ClothingItem): string {
+  if (item.media_status === "failed") {
+    return item.media_error ? `Processing failed: ${item.media_error}` : "Processing failed";
+  }
+  if (item.media_status === "pending") return "Queued for processing";
+  if (item.media_stage === "thumbnail") return "Generating quick preview";
+  if (item.media_stage === "cutout") return "Extracting subject";
+  return "Processing media";
+}
+
+function getMediaBadgeLabel(item: ClothingItem): string | null {
+  if (item.media_status === "failed") return "Processing failed";
+  if (item.media_status === "pending") return "Queued";
+  if (item.media_status === "processing") {
+    return item.media_stage === "cutout" ? "Extracting subject" : "Processing";
+  }
+  return null;
 }
 
 
@@ -395,8 +481,27 @@ export default function WardrobePage() {
   const [duplicate, setDuplicate] = useState<TagPreview["duplicate"]>(null);
   const [editingItem, setEditingItem] = useState<ClothingItem | null>(null);
   const [deletingItem, setDeletingItem] = useState<ClothingItem | null>(null);
+  const [trackedMediaIds, setTrackedMediaIds] = useState<string[]>([]);
+  const [mediaActivity, setMediaActivity] = useState<Record<string, ClothingItem>>({});
+  const [activityExpanded, setActivityExpanded] = useState(false);
 
   const hasActiveFilters = filterCat !== "all" || filterSeason !== "all" || filterFormality !== "all";
+
+  const registerMediaItems = useCallback((nextItems: ClothingItem[]) => {
+    const relevant = nextItems.filter((item) => isVisibleMediaStatus(item.media_status));
+    if (!relevant.length) return;
+    setMediaActivity((prev) => {
+      const merged = { ...prev };
+      for (const item of relevant) merged[item.id] = item;
+      return merged;
+    });
+    setTrackedMediaIds((prev) =>
+      mergeUniqueIds(
+        prev,
+        relevant.filter((item) => isTrackableMediaStatus(item.media_status)).map((item) => item.id)
+      )
+    );
+  }, []);
 
   const loadWardrobePage = useCallback(async (reset: boolean, offsetOverride?: number) => {
     const offset = reset ? 0 : (offsetOverride ?? 0);
@@ -415,13 +520,14 @@ export default function WardrobePage() {
       setItems(prev => reset ? result.items : [...prev, ...result.items]);
       setHasMore(result.has_more);
       setTotalCount(result.total_count);
+      registerMediaItems(result.items);
     } catch {
       toast.error("Failed to load wardrobe");
     } finally {
       if (reset) setLoading(false);
       else setLoadingMore(false);
     }
-  }, [filterCat, filterFormality, filterSeason]);
+  }, [filterCat, filterFormality, filterSeason, registerMediaItems]);
 
   const ensureTagOptions = useCallback(async () => {
     if (tagOptionsLoaded || loadingTagOptions) return;
@@ -486,6 +592,57 @@ export default function WardrobePage() {
     return () => observer.disconnect();
   }, [hasMore, loadMoreItems, loading, loadingMore, showTrash]);
 
+  useEffect(() => {
+    if (!trackedMediaIds.length) return;
+
+    let cancelled = false;
+    const trackedIds = [...trackedMediaIds];
+
+    async function pollMediaStatus() {
+      try {
+        const updates = await getWardrobeMediaStatus(trackedIds);
+        if (cancelled) return;
+
+        const byId = new Map(updates.map((item) => [item.id, item]));
+        setItems((prev) => prev.map((item) => {
+          const update = byId.get(item.id);
+          return update ? { ...item, ...update } : item;
+        }));
+        setDeletedItems((prev) => prev.map((item) => {
+          const update = byId.get(item.id);
+          return update ? { ...item, ...update } : item;
+        }));
+        setMediaActivity((prev) => {
+          const next = { ...prev };
+          for (const id of trackedIds) {
+            const update = byId.get(id);
+            if (!update) continue;
+            if (update.media_status === "ready") delete next[id];
+            else next[id] = update;
+          }
+          return next;
+        });
+
+        const terminalIds = updates
+          .filter((item) => item.media_status === "ready" || item.media_status === "failed")
+          .map((item) => item.id);
+
+        if (terminalIds.length) {
+          setTrackedMediaIds((prev) => prev.filter((id) => !terminalIds.includes(id)));
+        }
+      } catch {
+        // Keep the tray optimistic; the next poll can recover.
+      }
+    }
+
+    void pollMediaStatus();
+    const interval = window.setInterval(pollMediaStatus, 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [trackedMediaIds]);
+
   const resetWizard = useCallback(() => {
     if (pendingPreview) URL.revokeObjectURL(pendingPreview);
     setPendingFile(null); setPendingPreview(null); setAiTags(null);
@@ -537,6 +694,7 @@ export default function WardrobePage() {
       if (matchesFilters) {
         setItems(prev => [newItem, ...prev]);
       }
+      registerMediaItems([newItem]);
       toast.success("Item added to wardrobe!");
     } catch {
       toast.error("Upload failed — please try again");
@@ -563,6 +721,12 @@ export default function WardrobePage() {
       await deleteClothingItem(itemId);
       const removed = items.find(i => i.id === itemId);
       setItems(prev => prev.filter(i => i.id !== itemId));
+      setTrackedMediaIds(prev => prev.filter(id => id !== itemId));
+      setMediaActivity(prev => {
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      });
       setTotalCount(prev => Math.max(0, prev - 1));
       if (removed && deletedLoaded) setDeletedItems(prev => [{ ...removed, is_active: false }, ...prev]);
       toast.success("Moved to trash — restore any time");
@@ -628,6 +792,11 @@ export default function WardrobePage() {
   function openDeleteDialog(item: ClothingItem) {
     setDeletingItem(item);
   }
+
+  const activityItems = Object.values(mediaActivity).sort((a, b) =>
+    (b.media_updated_at || b.created_at).localeCompare(a.media_updated_at || a.created_at)
+  );
+  const activeActivityCount = activityItems.filter((item) => item.media_status !== "failed").length;
 
   return (
     <>
@@ -934,6 +1103,115 @@ export default function WardrobePage() {
             setDeletingItem(null);
           }}
         />
+      )}
+      {activityItems.length > 0 && (
+        <div style={{
+          position: "fixed",
+          right: "24px",
+          bottom: "24px",
+          zIndex: 950,
+          width: "min(360px, calc(100vw - 32px))",
+          borderRadius: "16px",
+          border: "1px solid var(--border)",
+          background: "rgba(24,23,20,0.96)",
+          boxShadow: "0 24px 60px rgba(0,0,0,0.28)",
+          overflow: "hidden",
+          backdropFilter: "blur(14px)",
+        }}>
+          <button
+            onClick={() => setActivityExpanded((prev) => !prev)}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "12px",
+              padding: "14px 16px",
+              border: "none",
+              background: "transparent",
+              color: "var(--cream)",
+              cursor: "pointer",
+            }}
+          >
+            <div style={{ textAlign: "left" }}>
+              <p style={{ fontSize: "13px", fontWeight: 600, marginBottom: "3px" }}>
+                Wardrobe activity
+              </p>
+              <p style={{ fontSize: "12px", color: "rgba(244,238,228,0.72)" }}>
+                {activeActivityCount > 0
+                  ? `${activeActivityCount} upload${activeActivityCount === 1 ? "" : "s"} still processing`
+                  : "Uploads need attention"}
+              </p>
+            </div>
+            <span style={{ fontSize: "12px", color: "rgba(244,238,228,0.72)", flexShrink: 0 }}>
+              {activityExpanded ? "Minimize" : "Show"}
+            </span>
+          </button>
+
+          {activityExpanded && (
+            <div style={{
+              padding: "0 10px 10px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              maxHeight: "min(360px, 50vh)",
+              overflowY: "auto",
+            }}>
+              {activityItems.map((item) => {
+                const isFailed = item.media_status === "failed";
+                return (
+                  <div
+                    key={item.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      padding: "10px",
+                      borderRadius: "12px",
+                      background: isFailed ? "rgba(220,38,38,0.10)" : "rgba(245,240,232,0.05)",
+                      border: `1px solid ${isFailed ? "rgba(220,38,38,0.24)" : "rgba(245,240,232,0.08)"}`,
+                    }}
+                  >
+                    <div style={{ width: "42px", height: "56px", borderRadius: "10px", overflow: "hidden", position: "relative", flexShrink: 0, background: "rgba(245,240,232,0.08)" }}>
+                      <ManagedImage
+                        src={item.thumbnail_url || item.image_url}
+                        alt={`${item.category} processing`}
+                        fallbackSrc={`https://placehold.co/84x112/F5F0E8/8A8580?text=${encodeURIComponent(item.category)}`}
+                        fill
+                        sizes="42px"
+                        style={{ objectFit: "cover" }}
+                      />
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <p style={{ fontSize: "12px", fontWeight: 600, color: "var(--cream)", textTransform: "capitalize", marginBottom: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {item.category} · {resolveColorName(item.color || "") || "Processing"}
+                      </p>
+                      <p style={{ fontSize: "12px", color: isFailed ? "#FCA5A5" : "rgba(244,238,228,0.72)", lineHeight: 1.4 }}>
+                        {getMediaStatusLabel(item)}
+                      </p>
+                    </div>
+                    {isFailed ? (
+                      <button
+                        onClick={() => setMediaActivity((prev) => {
+                          const next = { ...prev };
+                          delete next[item.id];
+                          return next;
+                        })}
+                        style={{ border: "none", background: "transparent", color: "#FCA5A5", cursor: "pointer", padding: "2px" }}
+                        aria-label="Dismiss failed upload"
+                        title="Dismiss"
+                      >
+                        <X size={16} />
+                      </button>
+                    ) : (
+                      <Loader size={16} color="var(--gold)" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </>
@@ -1416,7 +1694,7 @@ function StyleDetailsSection({ allDescriptors, descriptors, onDescriptorChange }
               }}>
                 <p style={{ fontSize: "11px", color: "var(--muted)",
                   textTransform: "capitalize", marginBottom: "8px", fontWeight: 600 }}>
-                  {key.replace(/_/g, " ")}
+                  {getDescriptorGroupLabel(key)}
                 </p>
                 <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                   {(allDescriptors[key] || []).map(opt => (
@@ -1474,7 +1752,7 @@ function StyleDetailsSection({ allDescriptors, descriptors, onDescriptorChange }
             <div key={key}>
               <p style={{ fontSize: "11px", color: "var(--muted)",
                 textTransform: "capitalize", marginBottom: "6px", fontWeight: 600 }}>
-                {key.replace(/_/g, " ")}
+                {getDescriptorGroupLabel(key)}
               </p>
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                 {(allDescriptors[key] || []).map(opt => (
@@ -1523,6 +1801,7 @@ function ItemCard({ item, onEdit, onRequestDelete }: {
   const colorDisplay = COLOR_HEX[item.color || ""]
     ?? ((item.color || "") === "pattern" ? "linear-gradient(135deg,#e8a0a0 25%,#4a90c4 75%)" : undefined)
     ?? ((item.color || "").startsWith("#") ? item.color : "#ccc");
+  const mediaBadge = getMediaBadgeLabel(item);
 
   return (
     <div className="card" style={{ overflow: "hidden", position: "relative" }}>
@@ -1535,6 +1814,24 @@ function ItemCard({ item, onEdit, onRequestDelete }: {
           sizes="(max-width: 768px) 50vw, 200px"
           style={{ objectFit: "cover" }}
         />
+        {mediaBadge && (
+          <div style={{
+            position: "absolute",
+            top: "8px",
+            left: "8px",
+            padding: "6px 8px",
+            borderRadius: "999px",
+            background: item.media_status === "failed" ? "rgba(220,38,38,0.90)" : "rgba(24,23,20,0.78)",
+            color: "white",
+            fontSize: "10px",
+            fontWeight: 600,
+            letterSpacing: "0.05em",
+            textTransform: "uppercase",
+            backdropFilter: "blur(8px)",
+          }}>
+            {mediaBadge}
+          </div>
+        )}
         <div className="card-actions" style={{ position: "absolute", top: "8px", right: "8px", display: "flex", flexDirection: "column", gap: "4px", opacity: 0, transition: "opacity 0.2s ease" }}>
           <ActionBtn onClick={onEdit} icon={<Pencil size={13} />} label="Edit item" />
           <ActionBtn onClick={onRequestDelete} icon={<Trash2 size={13} color="#DC2626" />} label="Delete item" />
@@ -1562,15 +1859,17 @@ function ItemCard({ item, onEdit, onRequestDelete }: {
 
         {item.descriptors && Object.keys(item.descriptors).length > 0 && (
           <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
-            {Object.values(item.descriptors as Record<string, string>)
-              .filter(Boolean)
-              .map((val, i) => (
+            {Object.entries(item.descriptors as Record<string, string>)
+              .filter(([, val]) => Boolean(val))
+              .map(([key, val], i) => (
                 <span key={i} style={{
                   fontSize: "10px", padding: "2px 8px", borderRadius: "20px",
                   background: "var(--surface)", border: "1px solid var(--border)",
                   color: "var(--muted)", textTransform: "capitalize",
                 }}>
-                  {val}
+                  {key.startsWith("top_") || key.startsWith("bottom_")
+                    ? `${getDescriptorGroupLabel(key)}: ${val}`
+                    : val}
                 </span>
               ))}
           </div>
@@ -1721,7 +2020,7 @@ function ItemEditModal({
                     <label style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "10px" }}>Style Details</label>
                     {Object.entries(allDescriptors).map(([key, opts]) => (
                       <div key={key} style={{ marginBottom: "12px" }}>
-                        <p style={{ fontSize: "11px", color: "var(--muted)", textTransform: "capitalize", marginBottom: "6px" }}>{key.replace(/_/g, " ")}</p>
+                        <p style={{ fontSize: "11px", color: "var(--muted)", textTransform: "capitalize", marginBottom: "6px" }}>{getDescriptorGroupLabel(key)}</p>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
                           {(opts as string[]).map(opt => (
                             <button key={opt} onClick={() => setEditDescriptors(prev => ({ ...prev, [key]: prev[key] === opt ? "" : opt }))}

@@ -43,6 +43,11 @@ create table if not exists clothing_items (
   formality_score    float check (formality_score between 0 and 1),
   image_url          text not null,
   thumbnail_url      text,
+  cutout_url         text,
+  media_status       text default 'pending',
+  media_stage        text,
+  media_error        text,
+  media_updated_at   timestamptz,
   embedding_vector   vector(512),          -- CLIP visual embedding
   created_at         timestamptz default now()
 );

@@ -21,6 +21,36 @@ logger = logging.getLogger(__name__)
 
 _CONFIDENCE_VALUES = {"high", "medium", "low"}
 
+_FABRIC_OPTIONS = [
+    "cotton",
+    "polyester",
+    "nylon",
+    "spandex",
+    "elastane",
+    "rayon",
+    "linen",
+    "denim",
+    "satin",
+    "silk",
+    "chiffon",
+    "mesh",
+    "lace",
+    "knit",
+    "wool",
+    "leather",
+    "suede",
+    "faux fur",
+    "tweed",
+    "jersey",
+    "terry",
+    "lycra",
+    "recycled nylon",
+    "fleece",
+    "modal",
+    "bamboo",
+    "waffle-knit",
+]
+
 
 def _strip_json_fence(raw: str) -> str:
     raw = raw.strip()
@@ -593,8 +623,7 @@ Rules:
 CATEGORY_DESCRIPTORS = {
     # ── Tops ──────────────────────────────────────────────────────────────────
     "tops": {
-        "fabric_type":   ["cotton", "polyester", "nylon", "spandex", "rayon", "linen", "denim",
-                          "satin", "silk", "chiffon", "mesh", "lace", "knit", "wool"],
+        "fabric_type":   list(_FABRIC_OPTIONS),
         "neckline":      ["crew", "round", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
                           "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
         "sleeve_length": ["sleeveless", "cap", "short", "3/4", "long"],
@@ -614,8 +643,7 @@ CATEGORY_DESCRIPTORS = {
     },
     # ── Dresses ───────────────────────────────────────────────────────────────
     "dresses": {
-        "fabric_type":   ["cotton", "polyester", "nylon", "spandex", "rayon", "linen", "denim",
-                          "satin", "silk", "chiffon", "mesh", "lace", "knit", "wool"],
+        "fabric_type":   list(_FABRIC_OPTIONS),
         "neckline":      ["crew", "round", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
                           "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
         "sleeve_length": ["sleeveless", "cap", "short", "3/4", "long"],
@@ -635,8 +663,7 @@ CATEGORY_DESCRIPTORS = {
     },
     # ── Outerwear ─────────────────────────────────────────────────────────────
     "outerwear": {
-        "fabric_type":        ["cotton", "polyester", "nylon", "spandex", "rayon", "linen", "denim",
-                               "satin", "silk", "chiffon", "mesh", "lace", "knit", "wool"],
+        "fabric_type":        list(_FABRIC_OPTIONS),
         "neckline":           ["crew", "round", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
                                "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
         "sleeve_length":      ["sleeveless", "cap", "short", "3/4", "long"],
@@ -657,7 +684,7 @@ CATEGORY_DESCRIPTORS = {
     },
     # ── Bottoms ───────────────────────────────────────────────────────────────
     "bottoms": {
-        "fabric_type":     ["denim", "cotton", "polyester", "linen", "knit", "leather"],
+        "fabric_type":     list(_FABRIC_OPTIONS),
         "waist_position":  ["high", "mid", "low", "drop", "empire"],
         "waist_structure": ["elastic", "drawstring", "belted", "paperbag", "corset"],
         "fit":             ["slim", "straight", "relaxed", "loose", "wide-leg", "flared"],
@@ -694,8 +721,7 @@ CATEGORY_DESCRIPTORS = {
     # Full tops + bottoms descriptor combo — both halves are described together.
     "set": {
         # Fabric
-        "fabric_type":    ["cotton", "polyester", "linen", "satin", "silk", "knit", "denim",
-                           "jersey", "terry", "tweed", "chiffon", "lace", "mesh", "rayon"],
+        "fabric_type":    list(_FABRIC_OPTIONS),
         # Top-half attributes
         "top_style":      ["crop", "halter", "bandeau", "off-shoulder", "bralette", "corset",
                            "blazer", "shirt", "camisole", "waistcoat", "longline"],
@@ -746,7 +772,7 @@ CATEGORY_DESCRIPTORS = {
                              "hipster", "cheeky", "string"],
         "bottom_visibility":["seamless", "no-show", "regular"],
         # Fabric & finish
-        "fabric_type":      ["polyester", "nylon", "spandex", "lycra", "recycled nylon"],
+        "fabric_type":      list(_FABRIC_OPTIONS),
         "pattern":          ["solid", "floral", "animal print", "striped", "tropical",
                              "geometric", "color-block"],
         "closure":          ["pull-on", "tie-side", "buckle", "underwired"],
@@ -757,8 +783,7 @@ CATEGORY_DESCRIPTORS = {
     "loungewear": {
         "loungewear_type":  ["hoodie", "sweatshirt", "sweatpants", "joggers", "pajama set",
                              "robe", "shorts set", "tank set", "matching set", "onesie"],
-        "fabric_type":      ["cotton", "fleece", "modal", "silk", "satin", "jersey", "terry",
-                             "bamboo", "waffle-knit"],
+        "fabric_type":      list(_FABRIC_OPTIONS),
         "fit":              ["oversized", "relaxed", "fitted", "slim", "regular"],
         # Top-half
         "neckline":         ["crew", "V-neck", "scoop", "square", "sweetheart", "halter",

@@ -7,10 +7,9 @@
 import { useState } from "react";
 // import { useRouter } from "next/router";
 import Head from "next/head";
-import Image from "next/image";
 import Navbar from "@/components/layout/Navbar";
 import { createEvent, generateOutfits, resetFeedback, getWardrobeItems, rateOutfit, OutfitSuggestion, ClothingItem } from "@/services/api";
-import OutfitMetricCard, { isCurrentCardSchema } from "@/components/OutfitCard";
+import OutfitSuggestionCard from "@/components/OutfitSuggestionCard";
 import { CalendarDays, Sparkles, Info, X, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -23,17 +22,12 @@ const EXAMPLES = [
   "First date at a cozy wine bar, smart casual",
 ];
 
-function shouldBypassImageOptimization(src: string): boolean {
-  return src.startsWith("blob:") || src.startsWith("data:");
-}
-
 export default function EventsPage() {
   const [text,           setText]           = useState("");
   const [loading,        setLoading]        = useState(false);
   const [eventId,        setEventId]        = useState<string | null>(null);
   const [suggestions,    setSuggestions]    = useState<OutfitSuggestion[]>([]);
   const [wardrobeMap,    setWardrobeMap]    = useState<Record<string, ClothingItem>>({});
-  const [hover,          setHover]          = useState<Record<string, number>>({});
   // Accumulated suggestion IDs shown across all regenerates this session
   const [allShownIds,    setAllShownIds]    = useState<string[]>([]);
   // True when every returned outfit was previously seen (wardrobe variety exhausted)
@@ -293,40 +287,12 @@ export default function EventsPage() {
               <div className="outfit-carousel">
                 {suggestions.map((s, idx) => (
                   <div key={s.id} className="outfit-card-wrap">
-                    <div className="card fade-up" style={{ padding: "24px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
-                        <span className="type-micro" style={{ fontSize: "11px", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Look #{idx + 1}</span>
-                        <span className="score-badge">{Math.round(s.score * 100)}% match</span>
-                      </div>
-                      <div style={{ display: "flex", gap: "12px", marginBottom: "20px", overflowX: "auto" }}>
-                        {[...s.item_ids, ...(s.accessory_ids || [])].map(id => wardrobeMap[id]).filter(Boolean).map(item => (
-                          <div key={item.id} style={{ flexShrink: 0, width: s.accessory_ids?.includes(item.id) ? "90px" : "130px" }}>
-                            <div style={{ borderRadius: "8px", overflow: "hidden", background: "var(--surface)", aspectRatio: s.accessory_ids?.includes(item.id) ? "1/1" : "3/4", border: "1px solid var(--border)", position: "relative" }}>
-                              <OutfitImage src={item.thumbnail_url || item.image_url} alt={item.category} />
-                            </div>
-                            <p className="type-micro" style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px", textAlign: "center", textTransform: "capitalize" }}>{item.category}</p>
-                          </div>
-                      ))}
-                    </div>
-                    </div>
-                    {isCurrentCardSchema(s.card)
-                      ? <div style={{ marginBottom: "16px" }}><OutfitMetricCard card={s.card} /></div>
-                      : null
-                    }
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <span className="type-helper" style={{ fontSize: "13px", color: "var(--muted)" }}>Rate this look:</span>
-                      <div style={{ display: "flex", gap: "4px" }}>
-                        {[1,2,3,4,5].map(star => (
-                          <span key={star}
-                            onMouseEnter={() => setHover(prev => ({ ...prev, [s.id]: star }))}
-                            onMouseLeave={() => setHover(prev => ({ ...prev, [s.id]: 0 }))}
-                            onClick={() => handleRate(s.id, star)}
-                            style={{ cursor: "pointer", fontSize: "20px", color: star <= (hover[s.id] || s.user_rating || 0) ? "var(--gold)" : "var(--border)" }}
-                          >★</span>
-                        ))}
-                      </div>
-                      {s.user_rating && <span className="type-helper" style={{ fontSize: "13px", color: "var(--muted)" }}>You rated {s.user_rating}/5</span>}
-                    </div>
+                    <OutfitSuggestionCard
+                      suggestion={s}
+                      rank={idx + 1}
+                      wardrobeMap={wardrobeMap}
+                      onRate={(rating) => handleRate(s.id, rating)}
+                    />
                   </div>
                 ))}
               </div>
@@ -335,21 +301,5 @@ export default function EventsPage() {
         </div>
       </main>
     </>
-  );
-}
-
-function OutfitImage({ src, alt }: { src: string; alt: string }) {
-  const [imageSrc, setImageSrc] = useState(src);
-
-  return (
-    <Image
-      src={imageSrc}
-      alt={alt}
-      fill
-      unoptimized={shouldBypassImageOptimization(imageSrc)}
-      sizes="(max-width: 768px) 90px, 130px"
-      style={{ objectFit: "cover" }}
-      onError={() => setImageSrc(`https://via.placeholder.com/200x300/F5F0E8/8A8580?text=${encodeURIComponent(alt)}`)}
-    />
   );
 }

@@ -10,13 +10,13 @@ GET    /clothing/tag-options   — return valid category + color values for drop
 """
 
 import json
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, BackgroundTasks
 from typing import List, Optional
 
 from services.clothing_service import (
-    upload_clothing_item, get_user_items, get_user_items_page, get_deleted_items,
+    upload_clothing_item, get_user_items, get_user_items_by_ids, get_user_items_page, get_deleted_items,
     delete_item, restore_item, correct_item_tags, purge_old_deleted_items,
-    backfill_missing_thumbnails,
+    backfill_missing_thumbnails, process_item_media,
 )
 from ml.tagger import tag_clothing_item, get_taggable_options
 from utils.auth import get_current_user_id
@@ -83,6 +83,7 @@ async def tag_preview(
 
 @router.post("/upload-item", status_code=201)
 async def upload_item(
+    background_tasks:  BackgroundTasks,
     file:              UploadFile = File(..., description="Clothing image (JPG/PNG)"),
     category:          Optional[str] = Form(None),
     color:             Optional[str] = Form(None),
@@ -91,6 +92,7 @@ async def upload_item(
     formality_label:   Optional[str] = Form(None, description="e.g. 'Smart casual'"),
     item_type:         Optional[str] = Form(None),
     accessory_subtype: Optional[str] = Form(None),
+    descriptors:       Optional[str] = Form(None, description="JSON-encoded descriptor overrides"),
     user_id: str = Depends(get_current_user_id),
 ):
     """
@@ -118,6 +120,11 @@ async def upload_item(
     if pattern:           manual_tags["pattern"]           = pattern
     if item_type:         manual_tags["item_type"]         = item_type
     if accessory_subtype: manual_tags["accessory_subtype"] = accessory_subtype
+    if descriptors:
+        try:
+            manual_tags["descriptors"] = json.loads(descriptors)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="descriptors must be valid JSON")
 
     if season: manual_tags["season"] = season
     if formality_label and formality_label in _FORMALITY_SCORE_MAP_LOCAL:
@@ -129,6 +136,7 @@ async def upload_item(
         filename=file.filename,
         manual_tags=manual_tags or None,
     )
+    background_tasks.add_task(process_item_media, item["id"], user_id, image_bytes)
     return item
 
 
@@ -185,6 +193,15 @@ def correct_item(
 def list_items(user_id: str = Depends(get_current_user_id)):
     """Return all active clothing items in the authenticated user's wardrobe."""
     return get_user_items(user_id)
+
+
+@router.get("/items/media-status", response_model=List[dict])
+def list_media_status_items(
+    item_ids: List[str] = Query(..., description="One or more wardrobe item IDs to track"),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Return the latest media-processing status for specific wardrobe items."""
+    return get_user_items_by_ids(user_id, item_ids)
 
 
 @router.get("/items/page", response_model=dict)
@@ -266,10 +283,13 @@ def purge_deleted_endpoint(user_id: str = Depends(get_current_user_id)):
 
 
 @router.post("/backfill-thumbnails", response_model=dict)
-def backfill_thumbnails_endpoint(user_id: str = Depends(get_current_user_id)):
+def backfill_thumbnails_endpoint(
+    force: bool = Query(False, description="Rebuild processed media even when thumbnail/cutout already exists"),
+    user_id: str = Depends(get_current_user_id),
+):
     """
-    Generate missing thumbnail URLs for the authenticated user's active wardrobe items.
-    Safe to call repeatedly; items that already have thumbnails are skipped.
+    Generate missing processed media URLs for the authenticated user's active wardrobe items.
+    Safe to call repeatedly; pass force=true to rebuild existing cutouts with the latest pipeline.
     """
-    count = backfill_missing_thumbnails(user_id)
+    count = backfill_missing_thumbnails(user_id, force=force)
     return {"updated": count}

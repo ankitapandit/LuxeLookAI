@@ -3,7 +3,7 @@
  * Shows a login and signup form. Redirects to /wardrobe on success.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/hooks/useAuth";
 import { Sparkles } from "lucide-react";
@@ -11,11 +11,17 @@ import Head from "next/head";
 
 export default function Home() {
   const router              = useRouter();
-  const { login, signup }   = useAuth();
+  const { login, signup, isAuthenticated, loading: authLoading } = useAuth();
   const [mode, setMode]     = useState<"login" | "signup">("login");
   const [email, setEmail]   = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading]   = useState(false);
+
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      router.replace("/wardrobe");
+    }
+  }, [authLoading, isAuthenticated, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -32,6 +38,25 @@ export default function Home() {
         <title>LuxeLook AI — Your Personal AI Stylist</title>
       </Head>
 
+      {authLoading ? (
+        <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--cream)" }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{
+              width: "42px",
+              height: "42px",
+              margin: "0 auto 16px",
+              border: "3px solid var(--border)",
+              borderTop: "3px solid var(--gold)",
+              borderRadius: "50%",
+              animation: "spin 0.8s linear infinite",
+            }} />
+            <p className="type-helper" style={{ color: "var(--muted)" }}>Restoring your session…</p>
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        </div>
+      ) : null}
+
+      {!authLoading && !isAuthenticated ? (
       <div className="auth-shell">
         {/* ── Left: hero ─────────────────────────────────────────────── */}
         <div
@@ -202,6 +227,7 @@ export default function Home() {
           </div>
         </div>
       </div>
+      ) : null}
     </>
   );
 }

@@ -6,19 +6,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
-import Image from "next/image";
 import Navbar from "@/components/layout/Navbar";
 import {
   generateOutfits, rateOutfit, getWardrobeItems, getEvents, getSuggestions,
   OutfitSuggestion, ClothingItem, Event,
 } from "@/services/api";
-import OutfitMetricCard, { isCurrentCardSchema } from "@/components/OutfitCard";
+import OutfitSuggestionCard from "@/components/OutfitSuggestionCard";
 import { Sparkles } from "lucide-react";
 import toast from "react-hot-toast";
-
-function shouldBypassImageOptimization(src: string): boolean {
-  return src.startsWith("blob:") || src.startsWith("data:");
-}
 
 export default function OutfitsPage() {
   const router = useRouter();
@@ -301,115 +296,4 @@ export default function OutfitsPage() {
       </main>
     </>
   );
-}
-
-// ── Outfit Card ────────────────────────────────────────────────────────────
-
-function OutfitSuggestionCard({
-  suggestion, rank, wardrobeMap, onRate,
-}: {
-  suggestion: OutfitSuggestion;
-  rank: number;
-  wardrobeMap: Record<string, ClothingItem>;
-  onRate: (rating: number) => void;
-}) {
-  const [hover, setHover] = useState(0);
-  const allItemIds = [...suggestion.item_ids, ...(suggestion.accessory_ids || [])];
-  const items = allItemIds.map((id) => wardrobeMap[id]).filter(Boolean);
-
-  return (
-    <div className="card fade-up" style={{ padding: "28px" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "24px" }}>
-        <div>
-          <span className="type-micro" style={{ fontSize: "11px", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-            Look #{rank}
-          </span>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "4px" }}>
-            <h2 className="type-section-title" style={{ fontSize: "20px", fontFamily: "Playfair Display, serif" }}>
-              {getOutfitTitle(suggestion, wardrobeMap)}
-            </h2>
-            <span className="score-badge">{Math.round(suggestion.score * 100)}% match</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Item grid */}
-      <div style={{ display: "flex", gap: "12px", marginBottom: "24px", overflowX: "auto" }}>
-        {items.map((item) => (
-          <OutfitItemTile key={item.id} item={item} isAccessory={suggestion.accessory_ids?.includes(item.id)} />
-        ))}
-        {items.length === 0 && (
-          <p className="type-body" style={{ color: "var(--muted)", fontSize: "14px" }}>Item images unavailable</p>
-        )}
-      </div>
-
-      {/* Outfit card metrics — only render if card has the current v2.0 schema */}
-      {isCurrentCardSchema(suggestion.card) && (
-        <div style={{ marginBottom: "20px" }}>
-          <OutfitMetricCard card={suggestion.card} />
-        </div>
-      )}
-
-      {/* Star rating */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-        <span className="type-helper" style={{ fontSize: "13px", color: "var(--muted)" }}>Rate this look:</span>
-        <div style={{ display: "flex", gap: "4px" }}>
-          {[1, 2, 3, 4, 5].map((star) => (
-            <span
-              key={star}
-              className="star"
-              onMouseEnter={() => setHover(star)}
-              onMouseLeave={() => setHover(0)}
-              onClick={() => onRate(star)}
-              style={{ color: star <= (hover || suggestion.user_rating || 0) ? "var(--gold)" : "var(--border)" }}
-            >
-              ★
-            </span>
-          ))}
-        </div>
-        {suggestion.user_rating && (
-          <span className="type-helper" style={{ fontSize: "13px", color: "var(--muted)" }}>You rated {suggestion.user_rating}/5</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function OutfitItemTile({ item, isAccessory }: { item: ClothingItem; isAccessory?: boolean }) {
-  const [imageSrc, setImageSrc] = useState(item.thumbnail_url || item.image_url);
-
-  return (
-    <div style={{ flexShrink: 0, width: isAccessory ? "100px" : "140px" }}>
-      <div style={{
-        borderRadius: "8px", overflow: "hidden", background: "var(--surface)",
-        aspectRatio: isAccessory ? "1/1" : "3/4",
-        border: isAccessory ? "1px dashed var(--border)" : "1px solid var(--border)",
-        position: "relative",
-      }}>
-        <Image
-          src={imageSrc}
-          alt={item.category}
-          fill
-          unoptimized={shouldBypassImageOptimization(imageSrc)}
-          sizes="(max-width: 768px) 100px, 140px"
-          style={{ objectFit: "cover" }}
-          onError={() => setImageSrc(`https://via.placeholder.com/200x300/F5F0E8/8A8580?text=${encodeURIComponent(item.category)}`)}
-        />
-      </div>
-      <p className="type-micro" style={{ fontSize: "11px", color: "var(--muted)", marginTop: "6px", textAlign: "center", textTransform: "capitalize" }}>
-        {isAccessory ? `✦ ${item.accessory_subtype || "accessory"}` : item.category}
-      </p>
-    </div>
-  );
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function getOutfitTitle(s: OutfitSuggestion, map: Record<string, ClothingItem>): string {
-  const items = s.item_ids.map((id) => map[id]).filter(Boolean);
-  if (!items.length) return "Complete Look";
-  const colors = Array.from(new Set(items.map((i) => i.color).filter(Boolean)));
-  const color  = colors.slice(0, 2).join(" & ");
-  return color ? `The ${color} look` : "Complete Look";
 }

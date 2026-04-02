@@ -26,8 +26,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | 1.9.4   | 2026-03-31 | SECURITY DEFINER RPCs for reliable DB writes; descriptor edit support; wardrobe UI & auth cleanup                           |
 | 2.0.0   | 2026-04-01 | Structured outfit cards, smarter color/stylist scoring, richer wardrobe filters, and split AI profiling photo flow          |
 | 2.1.0   | 2026-04-01 | Event/Archive rename, mobile-first frontend polish, and major wardrobe performance upgrades                                  |
+| 2.2.0   | 2026-04-02 | Session restore, wardrobe media activity/status, cutout extraction, and duplicate-safe outfit refreshes                    |
 
 ---
+
+## [2.2.0] - 2026-04-02
+
+### Added
+- **Refresh-safe auth session restore** — the app now restores the cached login session on page refresh through a shared auth provider, so returning users stay signed in instead of being bounced back to the landing page.
+- **Wardrobe media activity tray** — wardrobe uploads now surface live processing states in a compact, minimizable tray, with per-item status updates for queued, preview generation, subject extraction, ready, and failed states.
+- **Deferred media processing pipeline** — uploaded clothing items now save immediately and generate thumbnails / subject cutouts in the background (`thumbnail_url`, `cutout_url`), with `rembg` + Pillow handling extraction and cleanup.
+- **Duplicate-safe outfit refreshes** — regenerated Event/Archive suggestions are de-duplicated by outfit combo, so the same exact look does not reappear multiple times in a refreshed batch.
+- **Rating carry-forward by combo** — if a previously rated outfit combo appears again for the same event, its stars are preserved instead of resetting to unrated.
+- **Editorial moodboard refinements** — outfit suggestions now use a moodboard-style presentation with hoverable item titles and a larger full-board view for the selected look.
+
+### Changed
+- **Wardrobe save flow** — uploads now complete faster because heavy image work no longer blocks the initial save response.
+- **Wardrobe descriptor consistency** — shared fabric vocabulary is now uniform across code and taxonomy, including expanded fabric values such as `leather`, `elastane`, and `spandex`, and `set` descriptors now prefix top/bottom fields so they remain identifiable in edit mode.
+- **Outfit title hierarchy** — outfit cards prefer editorial `look_title` labels where available instead of reusing the same vibe text as the board title.
+- **Event / Archive refresh behavior** — refreshed suggestions now keep previously rated stars visible, and the UI makes saved ratings explicit even when an outfit reappears.
+- **Outfit generation freshness** — the generator now prefers fresh combos first and only falls back when the wardrobe is truly exhausted.
+
+### Fixed
+- **Login state lost on refresh** — full page reloads now preserve the authenticated session instead of forcing the user to log in again.
+- **Repeated looks after regenerate** — exact duplicate outfit combos are filtered out so refreshes no longer show repeated suggestions when fresh alternatives still exist.
+- **Star ratings resetting on reappearance** — previously rated looks now keep their rating when the same combo is regenerated for the same event.
+- **Wardrobe upload latency** — the wardrobe save path is no longer slowed down by synchronous thumbnail/cutout generation.
+- **Archive suggestion duplication** — fetched suggestion batches are de-duped by combo key so repeated stored rows do not echo in the UI.
+
+### Docs
+- **README updated for refresh-safe sessions and media processing** — docs now describe session restore, the wardrobe activity tray, background media generation, thumbnail/cutout extraction, and duplicate-safe outfit refresh behavior.
 
 ## [2.1.0] - 2026-04-01
 

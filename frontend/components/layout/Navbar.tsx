@@ -6,12 +6,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { logout, isLoggedIn } from "@/services/api";
+import { useAuth } from "@/hooks/useAuth";
 import { Sparkles, ShirtIcon, CalendarDays, LogOut, User, Menu, X } from "lucide-react";
 
 export default function Navbar() {
   const router = useRouter();
-  const authenticated = typeof window !== "undefined" ? isLoggedIn() : false;
+  const { isAuthenticated, loading, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
@@ -46,7 +46,7 @@ export default function Navbar() {
       }}
     >
       {/* ── Brand ─────────────────────────────────────────────────────── */}
-      <Link href={authenticated ? "/wardrobe" : "/"} style={{ textDecoration: "none" }}>
+      <Link href={isAuthenticated ? "/wardrobe" : "/"} style={{ textDecoration: "none" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <Sparkles size={20} color="var(--gold)" />
           <span
@@ -65,7 +65,7 @@ export default function Navbar() {
       </Link>
 
       {/* ── Nav links (only shown when authenticated) ─────────────────── */}
-      {authenticated && (
+      {!loading && isAuthenticated && (
         <>
           <div className="nav-desktop" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <NavLink href="/wardrobe" icon={<ShirtIcon size={16} />} label="Wardrobe" active={router.pathname === "/wardrobe"} />

@@ -200,6 +200,7 @@ cmd_setup() {
     rm -rf node_modules
     npm install --no-audit --no-fund
   fi
+  npm audit fix
   ok "Node dependencies installed"
 
   if [ ! -f ".env.local" ]; then
