@@ -3,11 +3,23 @@
  *
  * Renders the 5-row at-a-glance card (Trend-o-meter, Vibe Check, Color Theory,
  * Fit Check, Weather Sync) and the Stylist Verdict. Used on both the Events
- * page (inline) and the Outfits page (history feed).
+ * page (inline) and the Archive page (history feed).
  */
 
 import React from "react";
 import { OutfitCard as OutfitCardType } from "@/services/api";
+
+function splitVerdict(text?: string | null) {
+  const clean = (text || "")
+    .replace(/[“”„‟"]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const firstBreak = clean.search(/(?<=[.!?])\s+/);
+  return {
+    headline: firstBreak > -1 ? clean.slice(0, firstBreak).trim() : clean,
+    body: firstBreak > -1 ? clean.slice(firstBreak).trim() : "",
+  };
+}
 
 /**
  * Returns true when the card has the current v2.0 schema (trend_stars present).
@@ -59,13 +71,7 @@ export default function OutfitMetricCard({ card }: { card: OutfitCardType }) {
     },
   ];
 
-  // Strip surrounding quotes the LLM may add, then split into individual sentences.
-  // Strip all quote characters from the raw verdict, then split on the FIRST
-  // sentence boundary only — everything after becomes one flowing paragraph.
-  const verdictClean    = card.verdict.replace(/["'"'"]/g, "").trim();
-  const firstBreak      = verdictClean.search(/(?<=[.!?])\s+/);
-  const verdictHeadline = firstBreak > -1 ? verdictClean.slice(0, firstBreak).trim() : verdictClean;
-  const verdictBody     = firstBreak > -1 ? verdictClean.slice(firstBreak).trim() : "";
+  const { body: verdictBody } = splitVerdict(card.verdict);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
@@ -93,13 +99,13 @@ export default function OutfitMetricCard({ card }: { card: OutfitCardType }) {
             <span style={{
               fontSize: "11px", fontWeight: 600, color: "var(--muted)",
               textTransform: "uppercase", letterSpacing: "0.07em",
-            }}>
+            }} className="type-micro">
               {row.label}
             </span>
             <span style={{
               fontSize: "13px", fontWeight: 600, color: "var(--ink)",
               textAlign: "right",
-            }}>
+            }} className="type-helper">
               {row.value}
             </span>
           </div>
@@ -124,30 +130,20 @@ export default function OutfitMetricCard({ card }: { card: OutfitCardType }) {
       )}
 
       {/* ── Stylist Verdict ──────────────────────────────────────────── */}
-      {verdictHeadline && (
+      {verdictBody && (
         <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "5px" }}>
-          <span style={{
+          <span className="type-micro" style={{
             fontSize: "9px", fontWeight: 700, color: "var(--muted)",
             textTransform: "uppercase", letterSpacing: "0.1em",
           }}>
             ✦ Stylist Verdict
           </span>
-          {/* Punchy one-liner — bold + quoted, its own line */}
-          <p style={{
-            fontSize: "14px", fontWeight: 600, color: "var(--ink)",
-            fontStyle: "italic", margin: 0,
+          <p className="type-helper" style={{
+            fontSize: "13px", color: "var(--muted)",
+            lineHeight: 1.65, fontStyle: "italic", margin: 0,
           }}>
-            &ldquo;{verdictHeadline}&rdquo;
+            {verdictBody}
           </p>
-          {/* Everything else — single flowing paragraph */}
-          {verdictBody && (
-            <p style={{
-              fontSize: "13px", color: "var(--muted)",
-              lineHeight: 1.65, fontStyle: "italic", margin: "4px 0 0 0",
-            }}>
-              {verdictBody}
-            </p>
-          )}
         </div>
       )}
 

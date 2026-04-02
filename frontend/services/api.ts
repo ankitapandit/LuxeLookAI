@@ -8,21 +8,74 @@
 import axios, { AxiosInstance } from "axios";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const AUTH_TOKEN_KEY = "luxelook_token";
+export const AUTH_USER_ID_KEY = "luxelook_user_id";
+export const AUTH_CHANGED_EVENT = "luxelook-auth-changed";
 
 // ── Axios instance ────────────────────────────────────────────────────────
 const api: AxiosInstance = axios.create({ baseURL: BASE_URL });
+
+export interface StoredAuth {
+  token: string | null;
+  userId: string | null;
+}
+
+function isBrowser(): boolean {
+  return typeof window !== "undefined";
+}
+
+export function getStoredAuth(): StoredAuth {
+  if (!isBrowser()) {
+    return { token: null, userId: null };
+  }
+
+  return {
+    token: localStorage.getItem(AUTH_TOKEN_KEY),
+    userId: localStorage.getItem(AUTH_USER_ID_KEY),
+  };
+}
+
+function notifyAuthChanged() {
+  if (!isBrowser()) return;
+  window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));
+}
+
+export function persistAuthSession(token: string, userId: string) {
+  if (!isBrowser()) return;
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+  localStorage.setItem(AUTH_USER_ID_KEY, userId);
+  notifyAuthChanged();
+}
+
+export function clearStoredAuth() {
+  if (!isBrowser()) return;
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_USER_ID_KEY);
+  notifyAuthChanged();
+}
 
 /**
  * Request interceptor — inject the stored JWT as a Bearer token.
  * Called before every outgoing request.
  */
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("luxelook_token");
+  if (!isBrowser()) return config;
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      clearStoredAuth();
+    }
+    return Promise.reject(error);
+  }
+);
 
 // ── Auth ──────────────────────────────────────────────────────────────────
 
@@ -35,27 +88,24 @@ export interface AuthResponse {
 /** Register a new account. Stores the token on success. */
 export async function signup(email: string, password: string): Promise<AuthResponse> {
   const { data } = await api.post<AuthResponse>("/auth/signup", { email, password });
-  localStorage.setItem("luxelook_token", data.access_token);
-  localStorage.setItem("luxelook_user_id", data.user_id);
+  persistAuthSession(data.access_token, data.user_id);
   return data;
 }
 
 /** Log in with existing credentials. Stores the token on success. */
 export async function login(email: string, password: string): Promise<AuthResponse> {
   const { data } = await api.post<AuthResponse>("/auth/login", { email, password });
-  localStorage.setItem("luxelook_token", data.access_token);
-  localStorage.setItem("luxelook_user_id", data.user_id);
+  persistAuthSession(data.access_token, data.user_id);
   return data;
 }
 
 /** Clear auth state. */
 export function logout() {
-  localStorage.removeItem("luxelook_token");
-  localStorage.removeItem("luxelook_user_id");
+  clearStoredAuth();
 }
 
 export function isLoggedIn(): boolean {
-  return !!localStorage.getItem("luxelook_token");
+  return !!getStoredAuth().token;
 }
 
 // ── Clothing ──────────────────────────────────────────────────────────────
@@ -71,6 +121,12 @@ export interface ClothingItem {
   season?: string;
   formality_score?: number;
   image_url: string;
+  thumbnail_url?: string;
+  cutout_url?: string;
+  media_status?: "pending" | "processing" | "ready" | "failed";
+  media_stage?: "queued" | "thumbnail" | "cutout" | "complete";
+  media_error?: string | null;
+  media_updated_at?: string | null;
   created_at: string;
   descriptors?: Record<string, string>;
 }
@@ -99,6 +155,28 @@ export interface TagOptions {
   colors: string[];
   seasons: { value: string; label: string }[];
   formality_levels: { label: string; score: number; description: string }[];
+}
+
+export interface WardrobePageParams {
+  limit: number;
+  offset: number;
+  category?: string;
+  season?: string;
+  formality?: string;
+}
+
+export interface WardrobePageResponse {
+  items: ClothingItem[];
+  has_more: boolean;
+  total_count: number;
+}
+
+export async function getWardrobeMediaStatus(itemIds: string[]): Promise<ClothingItem[]> {
+  if (!itemIds.length) return [];
+  const params = new URLSearchParams();
+  itemIds.forEach((id) => params.append("item_ids", id));
+  const { data } = await api.get<ClothingItem[]>(`/clothing/items/media-status?${params.toString()}`);
+  return data;
 }
 
 /**
@@ -130,6 +208,9 @@ export async function uploadClothingItem(
   if (overrides?.pattern)         form.append("pattern",         overrides.pattern);
   if (overrides?.season)          form.append("season",          overrides.season);
   if (overrides?.formality_label) form.append("formality_label", overrides.formality_label);
+  if (overrides?.descriptors && Object.keys(overrides.descriptors).length > 0) {
+    form.append("descriptors", JSON.stringify(overrides.descriptors));
+  }
 
   const { data } = await api.post<ClothingItem>("/clothing/upload-item", form, {
     headers: { "Content-Type": "multipart/form-data" },
@@ -166,6 +247,12 @@ export async function getWardrobeItems(): Promise<ClothingItem[]> {
   return data;
 }
 
+/** Fetch a paginated slice of wardrobe items for infinite scroll. */
+export async function getWardrobeItemsPage(params: WardrobePageParams): Promise<WardrobePageResponse> {
+  const { data } = await api.get<WardrobePageResponse>("/clothing/items/page", { params });
+  return data;
+}
+
 /** Delete an item by ID (soft-delete — moves to trash, restorable). */
 export async function deleteClothingItem(itemId: string): Promise<void> {
   await api.delete(`/clothing/item/${itemId}`);
@@ -191,7 +278,7 @@ export async function restoreClothingItem(itemId: string): Promise<RestoreStatus
   return data.status;
 }
 
-// ── Events ────────────────────────────────────────────────────────────────
+// ── Event ─────────────────────────────────────────────────────────────────
 
 export interface Event {
   id: string;
@@ -207,13 +294,13 @@ export interface Event {
 
 /** Create a new event from a free-text description. */
 export async function createEvent(rawText: string): Promise<Event> {
-  const { data } = await api.post<Event>("/events/create-event", { raw_text: rawText });
+  const { data } = await api.post<Event>("/event/create-event", { raw_text: rawText });
   return data;
 }
 
 /** Fetch all events for the current user, newest first. */
 export async function getEvents(): Promise<Event[]> {
-  const { data } = await api.get<Event[]>("/events/list");
+  const { data } = await api.get<Event[]>("/event/list");
   return data;
 }
 
@@ -225,6 +312,8 @@ export interface OutfitCard {
   trend_stars: number;
   /** 🔥 Trend-o-meter label: Outdated | Basic | Classic | Trendy | Statement. */
   trend_label: string;
+  /** Editorial moodboard heading shown above the board. */
+  look_title?: string;
   /** 💃 Vibe Check: "CoreVibe + Energy" — e.g. "Elegant + Confident". */
   vibe: string;
   /** 🎨 Color Theory palette label — e.g. "Neutral Base + Pop", "Monochrome". */

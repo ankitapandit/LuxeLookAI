@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Head from "next/head";
+import Image from "next/image";
 import Navbar from "@/components/layout/Navbar";
 import { FaceShapeTool } from "@/components/FaceShapeTool";
 import { PhotoCropper } from "@/components/PhotoCropper";
@@ -34,6 +35,10 @@ const HAIR_TEXTURE = ["straight", "wavy", "curly", "coily"];
 const HAIR_LENGTH  = ["short", "medium", "long"];
 const AGE_RANGES  = ["under 18", "18–24", "25–34", "35–44", "45–54", "55+"];
 const ALLOWED_UPLOAD_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+function shouldBypassImageOptimization(src: string): boolean {
+  return src.startsWith("blob:") || src.startsWith("data:");
+}
 
 const BODY_TYPE_GUIDE: Record<string, { desc: string; hint: string }> = {
   hourglass:           { desc: "Bust and hips roughly equal width, waist noticeably narrower", hint: "Bust ≈ Hip, Waist 25%+ smaller than Bust" },
@@ -363,16 +368,16 @@ function TraitCard({
       alignItems: "flex-start",
     }}>
       <div style={{ flex: 1 }}>
-        <p style={{ fontSize: "12px", color: "var(--muted)", fontWeight: 600, margin: 0 }}>{label}</p>
-        <p style={{ fontSize: "14px", color: "var(--charcoal)", fontWeight: 600, margin: "4px 0 0", textTransform: "capitalize" }}>
+        <p className="type-helper" style={{ fontSize: "12px", color: "var(--muted)", fontWeight: 600, margin: 0 }}>{label}</p>
+        <p className="type-body" style={{ fontSize: "14px", color: "var(--charcoal)", fontWeight: 600, margin: "4px 0 0", textTransform: "capitalize" }}>
           {hasValue ? trait.value : "No suggestion yet"}
         </p>
-        <p style={{ fontSize: "12px", color: "var(--muted)", margin: "4px 0 0" }}>
+        <p className="type-helper" style={{ fontSize: "12px", color: "var(--muted)", margin: "4px 0 0" }}>
           {trait.reason || "Upload a clearer AI profiling photo to improve this signal."}
         </p>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "8px", alignItems: "flex-end", flexShrink: 0 }}>
-        <span style={{
+        <span className="type-micro" style={{
           fontSize: "11px",
           fontWeight: 600,
           textTransform: "uppercase",
@@ -417,7 +422,7 @@ export default function ProfilePage() {
   const [aiPhotoPreview,   setAiPhotoPreview]   = useState<string | null>(null);
   const [profileAnalysis,  setProfileAnalysis]  = useState<AIProfileAnalysis | null>(null);
   const [showFaceTool,     setShowFaceTool]     = useState(false);
-  const [showAIProfiling,  setShowAIProfiling]  = useState(true);
+  const [showAIProfiling,  setShowAIProfiling]  = useState(false);
   const profilePhotoInputRef = useRef<HTMLInputElement>(null);
   const aiPhotoInputRef = useRef<HTMLInputElement>(null);
 
@@ -715,19 +720,19 @@ export default function ProfilePage() {
     <>
       <Head><title>My Profile — LuxeLook AI</title></Head>
       <Navbar />
-      <main style={{ maxWidth: "680px", margin: "0 auto", padding: "48px 24px" }}>
+      <main className="page-main" style={{ maxWidth: "680px", margin: "0 auto", padding: "48px 24px" }}>
 
         {/* ── Header ── */}
         <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
           <User size={22} color="var(--gold)" />
-          <h1 style={{ fontSize: "34px", color: "var(--charcoal)" }}>My Profile</h1>
+          <h1 className="type-page-title" style={{ fontSize: "34px", color: "var(--charcoal)" }}>My Profile</h1>
         </div>
-        <p style={{ color: "var(--muted)", fontSize: "15px", marginBottom: "40px" }}>
+        <p className="type-body" style={{ color: "var(--muted)", fontSize: "15px", marginBottom: "40px" }}>
           {profile?.email}
         </p>
 
         {/* ── Profile photo ── */}
-        <section style={{ marginBottom: "40px", display: "flex", alignItems: "flex-start", gap: "24px" }}>
+        <section className="profile-photo-section" style={{ marginBottom: "40px", display: "flex", alignItems: "flex-start", gap: "24px" }}>
           <div style={{ position: "relative", flexShrink: 0 }}>
             <div style={{
               width: "96px", height: "96px", borderRadius: "50%",
@@ -735,7 +740,7 @@ export default function ProfilePage() {
               overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
             }}>
               {photoPreview
-                ? <img src={photoPreview} alt="Profile" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ? <Image src={photoPreview} alt="Profile" fill unoptimized={shouldBypassImageOptimization(photoPreview)} sizes="96px" style={{ objectFit: "cover" }} />
                 : <User size={40} color="var(--border)" />
               }
               {photoUploading && (
@@ -765,13 +770,13 @@ export default function ProfilePage() {
           </div>
 
           <div style={{ flex: 1 }}>
-            <p style={{ fontSize: "14px", color: "var(--ink)", fontWeight: 500, marginBottom: "4px" }}>
+            <p className="type-body" style={{ fontSize: "14px", color: "var(--ink)", fontWeight: 500, marginBottom: "4px" }}>
               Profile photo
             </p>
-            <p style={{ fontSize: "13px", color: "var(--muted)", lineHeight: 1.6, marginBottom: "8px" }}>
+            <p className="type-helper" style={{ fontSize: "13px", color: "var(--muted)", lineHeight: 1.6, marginBottom: "8px" }}>
               This is your visible avatar. We crop it to a square and use it for your profile display only.
             </p>
-            <p style={{ fontSize: "11px", color: "var(--muted)" }}>
+            <p className="type-micro" style={{ fontSize: "11px", color: "var(--muted)" }}>
               JPG, PNG or WEBP · Max 10MB
             </p>
           </div>
@@ -799,10 +804,10 @@ export default function ProfilePage() {
             }}
           >
             <div style={{ textAlign: "left" }}>
-              <p style={{ fontSize: "14px", color: "var(--ink)", fontWeight: 600, margin: 0 }}>
+              <p className="type-body" style={{ fontSize: "14px", color: "var(--ink)", fontWeight: 600, margin: 0 }}>
                 AI profiling photo
               </p>
-              <p style={{ fontSize: "12px", color: "var(--muted)", margin: "4px 0 0" }}>
+              <p className="type-helper" style={{ fontSize: "12px", color: "var(--muted)", margin: "4px 0 0" }}>
                 {aiPhotoPreview
                   ? "Separate analysis image for face, body, complexion, and hair suggestions"
                   : "Add a dedicated analysis photo without changing your visible avatar"}
@@ -820,10 +825,10 @@ export default function ProfilePage() {
                   <div style={{
                     width: "104px", minHeight: "132px", borderRadius: "18px",
                     background: "var(--surface)", border: "2px solid var(--border)",
-                    overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
+                  overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
                   }}>
                     {aiPhotoPreview
-                      ? <img src={aiPhotoPreview} alt="AI profiling" style={{ width: "100%", height: "132px", objectFit: "cover" }} />
+                      ? <Image src={aiPhotoPreview} alt="AI profiling" fill unoptimized={shouldBypassImageOptimization(aiPhotoPreview)} sizes="104px" style={{ objectFit: "cover" }} />
                       : <User size={40} color="var(--border)" />
                     }
                     {aiPhotoUploading && (
@@ -853,11 +858,11 @@ export default function ProfilePage() {
                 </div>
 
                 <div style={{ flex: 1, minWidth: "280px" }}>
-                  <p style={{ fontSize: "13px", color: "var(--muted)", lineHeight: 1.6, marginBottom: "8px" }}>
+                  <p className="type-helper" style={{ fontSize: "13px", color: "var(--muted)", lineHeight: 1.6, marginBottom: "8px" }}>
                     Upload a clear front-facing photo for AI analysis. We use this separately from your avatar
                     to suggest face shape, body type, complexion, and hair traits.
                   </p>
-                  <p style={{ fontSize: "12px", color: "var(--muted)", margin: "0 0 10px" }}>
+                  <p className="type-helper" style={{ fontSize: "12px", color: "var(--muted)", margin: "0 0 10px" }}>
                     The AI photo and analysis are saved immediately. Your chosen profile fields update only when you click Save Profile.
                   </p>
                   <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "8px" }}>
@@ -894,7 +899,7 @@ export default function ProfilePage() {
                       Use profile photo
                     </button>
                   </div>
-                  <p style={{ fontSize: "11px", color: "var(--muted)", margin: 0 }}>
+                  <p className="type-micro" style={{ fontSize: "11px", color: "var(--muted)", margin: 0 }}>
                     JPG, PNG or WEBP · Max 10MB
                   </p>
 
@@ -940,7 +945,7 @@ export default function ProfilePage() {
 
         {/* ── Basic info ── */}
         <section style={{ marginBottom: "40px" }}>
-          <p style={{ ...labelStyle, fontSize: "13px", marginBottom: "20px" }}>Basic info</p>
+          <p className="type-kicker" style={{ ...labelStyle, fontSize: "13px", marginBottom: "20px" }}>Basic info</p>
 
           {/* Age range */}
           <div style={{ marginBottom: "24px" }}>
@@ -955,7 +960,7 @@ export default function ProfilePage() {
                     color: ageRange === opt ? "#0A0908" : "var(--muted)",
                     fontWeight: ageRange === opt ? 600 : 400,
                     transition: "all 0.15s",
-                  }}>
+                  }} className="type-chip">
                   {opt}
                 </button>
               ))}
@@ -974,7 +979,7 @@ export default function ProfilePage() {
 
             {showBodyCalc && (
               <InlinePanel>
-                <p style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "14px" }}>
+                <p className="type-helper" style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "14px" }}>
                   Enter your measurements in {heightUnit === "in" ? "inches" : "cm"} at the fullest point
                 </p>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
@@ -1050,7 +1055,7 @@ export default function ProfilePage() {
 
         {/* ── Personalised styling ── */}
         <section style={{ marginBottom: "40px" }}>
-          <p style={{ ...labelStyle, fontSize: "13px", marginBottom: "20px" }}>Personalised styling</p>
+          <p className="type-kicker" style={{ ...labelStyle, fontSize: "13px", marginBottom: "20px" }}>Personalised styling</p>
 
           {/* Complexion */}
           <div style={{ marginBottom: "24px" }}>
@@ -1133,7 +1138,7 @@ export default function ProfilePage() {
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "8px", flexWrap: "wrap" }}>
-              <p style={{ fontSize: "12px", color: "var(--muted)", margin: 0 }}>
+              <p className="type-helper" style={{ fontSize: "12px", color: "var(--muted)", margin: 0 }}>
                 {profileAnalysis?.face_shape.value ? "AI suggested a result above — or" : "Use the AI profiling photo above, or"}
               </p>
               <button onClick={() => setShowFaceTool(p => !p)}
@@ -1172,7 +1177,7 @@ export default function ProfilePage() {
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
 
               <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
-                <p style={{ fontSize: "12px", color: "var(--muted)", margin: 0, minWidth: "56px" }}>Texture</p>
+                <p className="type-helper" style={{ fontSize: "12px", color: "var(--muted)", margin: 0, minWidth: "56px" }}>Texture</p>
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                   {HAIR_TEXTURE.map(opt => (
                     <button key={opt} onClick={() => setHairTexture(prev => prev === opt ? "" : opt)}
@@ -1182,7 +1187,7 @@ export default function ProfilePage() {
                         background: hairTexture === opt ? "var(--gold)" : "var(--surface)",
                         color: hairTexture === opt ? "#0A0908" : "var(--muted)",
                         textTransform: "capitalize", transition: "all 0.15s",
-                      }}>
+                      }} className="type-chip">
                       {opt}
                     </button>
                   ))}
@@ -1190,7 +1195,7 @@ export default function ProfilePage() {
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
-                <p style={{ fontSize: "12px", color: "var(--muted)", margin: 0, minWidth: "56px" }}>Length</p>
+                <p className="type-helper" style={{ fontSize: "12px", color: "var(--muted)", margin: 0, minWidth: "56px" }}>Length</p>
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                   {HAIR_LENGTH.map(opt => (
                     <button key={opt} onClick={() => setHairLength(prev => prev === opt ? "" : opt)}
@@ -1200,7 +1205,7 @@ export default function ProfilePage() {
                         background: hairLength === opt ? "var(--gold)" : "var(--surface)",
                         color: hairLength === opt ? "#0A0908" : "var(--muted)",
                         textTransform: "capitalize", transition: "all 0.15s",
-                      }}>
+                      }} className="type-chip">
                       {opt}
                     </button>
                   ))}

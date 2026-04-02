@@ -222,6 +222,69 @@ def _load_seen_combos(suggestion_ids: List[str], user_id: str) -> List[List[str]
     return seen
 
 
+def _load_existing_combo_ratings(event_id: str, user_id: str) -> Dict[str, int]:
+    """
+    Return exact-combo ratings already recorded for this event.
+
+    Keys are stable combo keys built from item_ids + accessory_ids, so if the
+    same look reappears in a regenerated batch it can inherit its prior rating.
+    """
+    settings = get_settings()
+    combo_ratings: Dict[str, int] = {}
+
+    if settings.use_mock_auth:
+        from utils.mock_db_store import select_all
+
+        rows = select_all(TABLE, {"user_id": user_id, "event_id": event_id})
+        for row in rows:
+            rating = row.get("user_rating")
+            if rating is None:
+                continue
+            all_ids = list(row.get("item_ids") or []) + list(row.get("accessory_ids") or [])
+            combo_key = "|".join(sorted(str(i) for i in all_ids))
+            if combo_key:
+                combo_ratings[combo_key] = rating
+        return combo_ratings
+
+    from utils.db import get_supabase
+
+    result = (
+        get_supabase().table(TABLE)
+        .select("item_ids, accessory_ids, user_rating")
+        .eq("user_id", user_id)
+        .eq("event_id", event_id)
+        .not_.is_("user_rating", "null")
+        .execute()
+    )
+    for row in (result.data or []):
+        rating = row.get("user_rating")
+        if rating is None:
+            continue
+        all_ids = list(row.get("item_ids") or []) + list(row.get("accessory_ids") or [])
+        combo_key = "|".join(sorted(str(i) for i in all_ids))
+        if combo_key:
+            combo_ratings[combo_key] = rating
+    return combo_ratings
+
+
+def _combo_key_for_suggestion(suggestion: Dict) -> str:
+    all_ids = list(suggestion.get("item_ids") or []) + list(suggestion.get("accessory_ids") or [])
+    return "|".join(sorted(str(i) for i in all_ids))
+
+
+def _dedupe_suggestions_by_combo(suggestions: List[Dict]) -> List[Dict]:
+    """Keep the first suggestion for each exact item/accessory combo key."""
+    deduped: List[Dict] = []
+    seen: Set[str] = set()
+    for suggestion in suggestions:
+        combo_key = _combo_key_for_suggestion(suggestion)
+        if not combo_key or combo_key in seen:
+            continue
+        seen.add(combo_key)
+        deduped.append(suggestion)
+    return deduped
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Profile loader
 # ─────────────────────────────────────────────────────────────────────────────
@@ -326,6 +389,16 @@ def generate_outfits(
             detail="Could not generate outfits. You may need more items (try uploading a top, bottom, and shoes)."
         )
 
+    existing_combo_ratings = _load_existing_combo_ratings(str(payload.event_id), user_id)
+    for suggestion in suggestions:
+        combo_key = _combo_key_for_suggestion(suggestion)
+        if combo_key and suggestion.get("user_rating") is None:
+            existing_rating = existing_combo_ratings.get(combo_key)
+            if existing_rating is not None:
+                suggestion["user_rating"] = existing_rating
+
+    suggestions = _dedupe_suggestions_by_combo(suggestions)
+
     # ── Step 7-8: persist + return ─────────────────────────────────────────
     # Strip score_breakdown (not a DB column) before persisting.
     # card is persisted as a jsonb column; explanation holds the short verdict.
@@ -413,10 +486,10 @@ def get_suggestions(event_id: str, user_id: str = Depends(get_current_user_id)):
     settings = get_settings()
     if settings.use_mock_auth:
         from utils.mock_db_store import select_all
-        return select_all(TABLE, {"event_id": event_id, "user_id": user_id})
+        return _dedupe_suggestions_by_combo(select_all(TABLE, {"event_id": event_id, "user_id": user_id}))
     else:
         from utils.db import get_supabase
-        return (
+        rows = (
             get_supabase().table(TABLE)
             .select("*")
             .eq("event_id", event_id)
@@ -424,3 +497,4 @@ def get_suggestions(event_id: str, user_id: str = Depends(get_current_user_id)):
             .execute()
             .data
         )
+        return _dedupe_suggestions_by_combo(rows or [])

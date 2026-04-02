@@ -104,6 +104,12 @@ class ClothingItem(ClothingItemCreate):
     id: UUID
     user_id: UUID
     image_url: str
+    thumbnail_url: Optional[str] = None
+    cutout_url: Optional[str] = None
+    media_status: Optional[str] = None
+    media_stage: Optional[str] = None
+    media_error: Optional[str] = None
+    media_updated_at: Optional[datetime] = None
     embedding_vector: Optional[List[float]] = None  # 512-dim CLIP vector
     created_at: datetime
     descriptors: Optional[dict] = {}
@@ -147,6 +153,7 @@ class OutfitCard(BaseModel):
     # 🔥 Trend-o-meter — 1-5 stars + label (Outdated / Basic / Classic / Trendy / Statement)
     trend_stars: int   # 1–5
     trend_label: str   # e.g. "Trendy"
+    look_title: Optional[str] = None
 
     # 💃 Vibe Check — "CoreVibe + Energy" e.g. "Elegant + Confident"
     vibe: str

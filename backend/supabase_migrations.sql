@@ -93,6 +93,20 @@ create policy "Service role can update outfit suggestions"
 alter table public.clothing_items
   add column if not exists pattern text;
 
+-- thumbnail URL for fast wardrobe/event/archive grids
+alter table public.clothing_items
+  add column if not exists thumbnail_url text;
+
+-- transparent-ish processed cutout for editorial moodboards
+alter table public.clothing_items
+  add column if not exists cutout_url text;
+
+alter table public.clothing_items
+  add column if not exists media_status text default 'pending',
+  add column if not exists media_stage text,
+  add column if not exists media_error text,
+  add column if not exists media_updated_at timestamptz;
+
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- v1.3 — User profile columns
@@ -1574,6 +1588,63 @@ BEGIN
   RETURN v_result;
 END;
 $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v2.1.1 — unify shared fabric taxonomy across garment categories
+-- Keeps style_taxonomy in sync with the shared fabric vocabulary used in code.
+-- Safe to re-run.
+-- ─────────────────────────────────────────────────────────────────────────────
+WITH garment_categories(category) AS (
+  VALUES
+    ('tops'),
+    ('bottoms'),
+    ('dresses'),
+    ('outerwear'),
+    ('set'),
+    ('swimwear'),
+    ('loungewear')
+),
+shared_fabrics(value, sort_order) AS (
+  VALUES
+    ('cotton', 1),
+    ('polyester', 2),
+    ('nylon', 3),
+    ('spandex', 4),
+    ('elastane', 5),
+    ('rayon', 6),
+    ('linen', 7),
+    ('denim', 8),
+    ('satin', 9),
+    ('silk', 10),
+    ('chiffon', 11),
+    ('mesh', 12),
+    ('lace', 13),
+    ('knit', 14),
+    ('wool', 15),
+    ('leather', 16),
+    ('suede', 17),
+    ('faux fur', 18),
+    ('tweed', 19),
+    ('jersey', 20),
+    ('terry', 21),
+    ('lycra', 22),
+    ('recycled nylon', 23),
+    ('fleece', 24),
+    ('modal', 25),
+    ('bamboo', 26),
+    ('waffle-knit', 27)
+)
+INSERT INTO public.style_taxonomy (domain, category, attribute, value, meta, sort_order)
+SELECT
+  'descriptor',
+  garment_categories.category,
+  'fabric_type',
+  shared_fabrics.value,
+  '{}'::jsonb,
+  shared_fabrics.sort_order
+FROM garment_categories
+CROSS JOIN shared_fabrics
+ON CONFLICT DO NOTHING;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────

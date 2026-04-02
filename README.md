@@ -4,6 +4,10 @@
 
 Built with **Next.js · FastAPI · Supabase · CLIP · OpenAI (GPT-4o + GPT-4o-mini)**.
 
+Current user-facing sections are: **Wardrobe · Event · Archive · Profile**.
+Legacy frontend URLs `/events` and `/outfits` permanently redirect to `/event` and `/archive`.
+Sessions now restore on refresh, wardrobe uploads show live media-processing status, and refreshed outfit batches preserve saved ratings while avoiding exact duplicate looks.
+
 ---
 
 ## Architecture
@@ -17,8 +21,8 @@ luxelook-ai/
 │   ├── supabase_migrations.sql # All post-schema migrations — run second
 │   ├── routers/                # API route handlers
 │   │   ├── auth.py             # POST /auth/signup, /auth/login
-│   │   ├── clothing.py         # POST /clothing/tag-preview, /upload-item, GET /items, /items/deleted, POST /item/{id}/restore
-│   │   ├── events.py           # POST /events/create-event, GET /events/list
+│   │   ├── clothing.py         # Wardrobe CRUD, pagination, trash restore, thumbnail backfill
+│   │   ├── event.py            # POST /event/create-event, GET /event/list
 │   │   ├── recommendations.py  # POST /recommend/generate-outfits
 │   │   ├── feedback.py         # POST /feedback/rate-outfit
 │   │   └── profile.py          # GET/PUT /profile, POST /profile/photo, /profile/ai-photo
@@ -43,13 +47,18 @@ luxelook-ai/
     ├── pages/
     │   ├── index.tsx            # Landing + Auth (login/signup)
     │   ├── wardrobe.tsx         # Upload, tag, browse wardrobe
-    │   ├── events.tsx           # Describe occasion → AI parses → outfit suggestions
-    │   ├── outfits.tsx          # View outfit history + rate suggestions
+    │   ├── event.tsx            # Describe event → AI parses → outfit suggestions
+    │   ├── archive.tsx          # View outfit history + rate suggestions
     │   └── profile.tsx          # User profile, body type, face shape, photo
     ├── components/
     │   ├── layout/Navbar.tsx    # Top navigation
+    │   ├── OutfitCard.tsx       # Shared outfit metric card
+    │   ├── OutfitMoodboard.tsx  # Editorial outfit presentation board
+    │   ├── OutfitSuggestionCard.tsx # Shared suggestion wrapper + modal
     │   ├── FaceShapeTool.tsx    # Canvas landmark tool for face shape detection
     │   └── PhotoCropper.tsx     # Modal canvas cropper for profile photo
+    ├── hooks/
+    │   └── useAuth.tsx          # Shared auth/session provider
     ├── services/
     │   └── api.ts               # All API calls (Axios + fetch)
     └── styles/
@@ -162,6 +171,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    - AI auto-tags category, color, season, formality
    - GPT-4o Vision identifies style descriptors (neckline, silhouette, fabric etc.)
    - Duplicate detection flags items that are visually identical
+   - Wardrobe uploads save immediately, then generate thumbnails / subject cutouts in the background
+   - A compact activity tray shows per-item processing status while media is being generated
+   - Wardrobe browsing uses infinite scroll and processed previews for better large-closet performance
 3. **Set up your profile** — body type, height, weight, complexion, face shape
    - Body type calculator from bust/waist/hip measurements
    - Complexion identifier from 3 questions
@@ -173,11 +185,14 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    (top+bottom+shoes, top+bottom+outerwear+shoes, dress+shoes, dress+outerwear+shoes,
    set+shoes, set+outerwear+shoes, swimwear+shoes).
    If the wardrobe is missing item types needed to unlock some templates, an
-   **"Unlock more looks"** banner shows actionable hints below the suggestions.
+   **"Unlock more looks"** banner shows actionable hints below the suggestions. If
+   a look reappears after refresh, its saved stars are preserved and shown again
+   instead of resetting to unrated.
 6. **Rate outfits** — 1–5 stars to improve future suggestions
 7. **Regenerate** — "Show me more" for a neutral refresh; "None of these work" to
    signal the current batch was wrong; ratings are tracked per combo + occasion context
-   so future events of the same type benefit from accumulated feedback
+   so future events of the same type benefit from accumulated feedback. Exact
+   duplicate outfit combos are filtered out on refresh so fresh options surface first.
 8. **Reset** — if you've exhausted all combinations for an event a banner appears;
    "Reset & start fresh" clears combo ratings for that occasion context and starts fresh
 
@@ -212,18 +227,21 @@ Full interactive docs at [http://localhost:8000/docs](http://localhost:8000/docs
 | POST | `/auth/signup` | Create account |
 | POST | `/auth/login` | Get JWT token |
 | POST | `/clothing/tag-preview` | AI tag + descriptor preview (no save) |
-| POST | `/clothing/upload-item` | Upload, tag, embed and save item |
+| POST | `/clothing/upload-item` | Upload, tag, embed, save item, and queue media processing |
 | GET | `/clothing/items` | List active wardrobe items |
+| GET | `/clothing/items/page` | Paginated wardrobe slice with optional filters |
+| GET | `/clothing/items/media-status` | Poll live media-processing status for active wardrobe items |
 | PATCH | `/clothing/item/{id}` | Correct tags on saved item (category, color, season, formality, descriptors) |
 | DELETE | `/clothing/item/{id}` | Soft-delete item (moves to trash, restorable) |
 | GET | `/clothing/items/deleted` | List soft-deleted items (trash view) |
 | POST | `/clothing/item/{id}/restore` | Restore a soft-deleted item (with duplicate guard) |
 | POST | `/clothing/purge-deleted` | Hard-delete trash items older than 90 days |
+| POST | `/clothing/backfill-thumbnails` | Generate thumbnails / cutouts for older active wardrobe items missing them |
 | GET | `/clothing/tag-options` | Valid categories, colors for dropdowns |
-| POST | `/events/create-event` | Parse occasion text |
-| GET | `/events/list` | List all user events |
-| POST | `/recommend/generate-outfits` | Generate outfit suggestions |
-| GET | `/recommend/suggestions/{event_id}` | Fetch saved suggestions |
+| POST | `/event/create-event` | Parse event text |
+| GET | `/event/list` | List all user events |
+| POST | `/recommend/generate-outfits` | Generate outfit suggestions, preserving existing ratings for repeated combos |
+| GET | `/recommend/suggestions/{event_id}` | Fetch saved suggestions (de-duped by outfit combo) |
 | POST | `/recommend/reset-feedback` | Clear combo ratings for an occasion context |
 | POST | `/feedback/rate-outfit` | Submit 1–5 star rating |
 | GET | `/profile` | Get user profile |
@@ -252,6 +270,10 @@ All routes except `/auth/*` require `Authorization: Bearer <token>` header.
 Each category has a dedicated descriptor vocabulary extracted at upload time by GPT-4o Vision
 and used for body-type matching and scoring. Descriptors can be edited per-item after upload
 (individual keys are merged — unrelated fields are preserved).
+
+Wardrobe cards prefer `thumbnail_url` when available and fall back to the original `image_url`.
+New uploads generate thumbnails automatically, and older items can be upgraded through
+`POST /clothing/backfill-thumbnails`.
 
 | Category | Descriptor highlights |
 |---|---|
@@ -284,8 +306,12 @@ Score(u, e, o) = 0.28·C + 0.24·A + 0.22·P + 0.10·T + 0.08·N + 0.05·D − 0
 
 Constants live in `backend/services/recommender.py` → `WEIGHTS_V2` and `RISK_WEIGHT`.
 
-Previously shown combos receive `SEEN_PENALTY = 0.70` (30 % downrank) rather than
-being excluded — they remain available as fallbacks when the wardrobe is small.
+Previously shown combos are filtered out first on regenerate so refreshes stay
+fresh. If the wardrobe is truly exhausted, the engine can still fall back to the
+best remaining seen looks instead of returning nothing.
+
+When a previously rated combo reappears in the Archive or a refreshed event batch,
+its saved `user_rating` is carried forward so stars do not reset on repeat looks.
 
 ---
 

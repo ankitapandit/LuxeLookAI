@@ -10,6 +10,20 @@ const nextConfig = {
       { protocol: "https", hostname: "placehold.co" },
     ],
   },
+  async redirects() {
+    return [
+      {
+        source: "/events",
+        destination: "/event",
+        permanent: true,
+      },
+      {
+        source: "/outfits",
+        destination: "/archive",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;

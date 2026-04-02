@@ -8,8 +8,11 @@ Supports two modes (controlled by USE_MOCK_AUTH in .env):
 
 from __future__ import annotations
 import base64
+import io
 import logging
 import uuid
+from collections import deque
+from functools import lru_cache
 from typing import List, Dict, Any, Optional, Literal
 from config import get_settings
 from ml.tagger import tag_clothing_item
@@ -23,6 +26,198 @@ logger = logging.getLogger(__name__)
 TABLE = "clothing_items"
 STORAGE_BUCKET = "clothing-images"
 DUPLICATE_THRESHOLD = 0.95
+
+ITEM_LIST_FIELDS = (
+    "id, user_id, category, item_type, accessory_subtype, color, pattern, "
+    "season, formality_score, image_url, thumbnail_url, cutout_url, "
+    "media_status, media_stage, media_error, media_updated_at, descriptors, created_at"
+)
+
+
+def _make_thumbnail_bytes(image_bytes: bytes, max_size: int = 360) -> bytes:
+    """Create a small WEBP thumbnail for grid/list usage."""
+    from PIL import Image, ImageOps
+
+    with Image.open(io.BytesIO(image_bytes)) as img:
+        img = ImageOps.exif_transpose(img).convert("RGB")
+        img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+        out = io.BytesIO()
+        img.save(out, format="WEBP", quality=82, method=6)
+        return out.getvalue()
+
+
+@lru_cache(maxsize=1)
+def _get_rembg_session():
+    from rembg import new_session
+    return new_session("u2net")
+
+
+def _color_distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> int:
+    return abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2])
+
+
+def _make_cutout_bytes_fallback(image_bytes: bytes, max_size: int = 900) -> bytes:
+    """Fallback cutout generator when rembg is unavailable or fails."""
+    from PIL import Image, ImageFilter, ImageOps
+
+    with Image.open(io.BytesIO(image_bytes)) as img:
+        img = ImageOps.exif_transpose(img).convert("RGBA")
+        width, height = img.size
+        pixels = img.load()
+
+        def sample_point(x: int, y: int) -> tuple[int, int, int]:
+            px = pixels[max(0, min(width - 1, x)), max(0, min(height - 1, y))]
+            return (int(px[0]), int(px[1]), int(px[2]))
+
+        edge_stride_x = max(1, width // 12)
+        edge_stride_y = max(1, height // 12)
+        samples = []
+        for x in range(0, width, edge_stride_x):
+            samples.append(sample_point(x, 0))
+            samples.append(sample_point(x, height - 1))
+        for y in range(0, height, edge_stride_y):
+            samples.append(sample_point(0, y))
+            samples.append(sample_point(width - 1, y))
+        samples.extend([
+            sample_point(0, 0),
+            sample_point(width - 1, 0),
+            sample_point(0, height - 1),
+            sample_point(width - 1, height - 1),
+        ])
+        background = tuple(
+            sorted(channel_values)[len(channel_values) // 2]
+            for channel_values in zip(*samples)
+        )
+
+        threshold = 132
+        local_threshold = 84
+        visited = bytearray(width * height)
+        mask = Image.new("L", (width, height), 255)
+        mask_pixels = mask.load()
+        queue = deque()
+
+        def add_seed(x: int, y: int):
+            idx = y * width + x
+            if visited[idx]:
+                return
+            rgb = sample_point(x, y)
+            if _color_distance(rgb, background) <= threshold:
+                visited[idx] = 1
+                queue.append((x, y, rgb))
+
+        for x in range(width):
+            add_seed(x, 0)
+            add_seed(x, height - 1)
+        for y in range(height):
+            add_seed(0, y)
+            add_seed(width - 1, y)
+
+        while queue:
+            x, y, parent_rgb = queue.popleft()
+            mask_pixels[x, y] = 0
+            for nx, ny in (
+                (x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1),
+                (x - 1, y - 1), (x + 1, y - 1), (x - 1, y + 1), (x + 1, y + 1),
+            ):
+                if nx < 0 or ny < 0 or nx >= width or ny >= height:
+                    continue
+                idx = ny * width + nx
+                if visited[idx]:
+                    continue
+                rgb = sample_point(nx, ny)
+                if _color_distance(rgb, background) <= threshold and _color_distance(rgb, parent_rgb) <= local_threshold:
+                    visited[idx] = 1
+                    queue.append((nx, ny, rgb))
+
+        # Second pass: make near-background edge-connected pixels translucent rather than binary.
+        soft_threshold = 170
+        for y in range(height):
+            for x in range(width):
+                if mask_pixels[x, y] == 0:
+                    continue
+                rgb = sample_point(x, y)
+                distance = _color_distance(rgb, background)
+                if distance <= soft_threshold:
+                    alpha = int(max(0, min(255, (distance - threshold) / max(1, soft_threshold - threshold) * 255)))
+                    mask_pixels[x, y] = min(mask_pixels[x, y], alpha)
+
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=max(1, min(width, height) / 260)))
+        cutout = img.copy()
+        cutout.putalpha(mask)
+        bbox = cutout.getbbox()
+        if bbox:
+            pad_x = max(10, int((bbox[2] - bbox[0]) * 0.08))
+            pad_y = max(10, int((bbox[3] - bbox[1]) * 0.08))
+            bbox = (
+                max(0, bbox[0] - pad_x),
+                max(0, bbox[1] - pad_y),
+                min(width, bbox[2] + pad_x),
+                min(height, bbox[3] + pad_y),
+            )
+            cutout = cutout.crop(bbox)
+
+        cutout.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+        out = io.BytesIO()
+        cutout.save(out, format="PNG")
+        return out.getvalue()
+
+
+def _finalize_cutout_bytes(cutout_bytes: bytes, max_size: int = 900) -> bytes:
+    """Trim, pad, and export a transparent wardrobe cutout."""
+    from PIL import Image, ImageOps
+
+    with Image.open(io.BytesIO(cutout_bytes)) as img:
+        img = ImageOps.exif_transpose(img).convert("RGBA")
+
+        alpha = img.getchannel("A")
+        bbox = alpha.getbbox()
+        if bbox:
+            pad_x = max(10, int((bbox[2] - bbox[0]) * 0.08))
+            pad_y = max(10, int((bbox[3] - bbox[1]) * 0.08))
+            bbox = (
+                max(0, bbox[0] - pad_x),
+                max(0, bbox[1] - pad_y),
+                min(img.width, bbox[2] + pad_x),
+                min(img.height, bbox[3] + pad_y),
+            )
+            img = img.crop(bbox)
+
+        img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+        out = io.BytesIO()
+        img.save(out, format="PNG")
+        return out.getvalue()
+
+
+def _make_cutout_bytes(image_bytes: bytes, max_size: int = 900) -> bytes:
+    """Generate a transparent-background cutout best suited for moodboard compositions."""
+    try:
+        from rembg import remove
+
+        removed = remove(
+            image_bytes,
+            session=_get_rembg_session(),
+            alpha_matting=True,
+            alpha_matting_foreground_threshold=240,
+            alpha_matting_background_threshold=10,
+            alpha_matting_erode_size=8,
+        )
+        return _finalize_cutout_bytes(removed, max_size=max_size)
+    except Exception as e:
+        logger.warning("rembg cutout generation failed; falling back to heuristic removal: %s", e)
+        return _make_cutout_bytes_fallback(image_bytes, max_size=max_size)
+
+
+def _extract_storage_paths(image_url: str = "", thumbnail_url: str = "", cutout_url: str = "") -> List[str]:
+    paths: List[str] = []
+    for url in [image_url, thumbnail_url, cutout_url]:
+        if url and "/clothing-images/" in url:
+            paths.append(url.split("/clothing-images/")[-1].split("?")[0])
+    return paths
+
+
+def _media_timestamp() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
 
 
 # ── Mock implementation ───────────────────────────────────────────────────────
@@ -60,8 +255,14 @@ def _upload_mock(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
         "season":            tags.get("season"),
         "formality_score":   tags.get("formality_score"),
         "image_url":         image_url,
+        "thumbnail_url":     None,
+        "cutout_url":        None,
+        "media_status":      "pending",
+        "media_stage":       "queued",
+        "media_error":       None,
+        "media_updated_at":  _media_timestamp(),
         "embedding_vector":  embedding,
-        "descriptors": item.descriptors or {},
+        "descriptors": tags.get("descriptors") or (manual_tags or {}).get("descriptors") or {},
     }
     return insert(TABLE, row)
 
@@ -71,6 +272,68 @@ def _get_items_mock(user_id: str) -> List[Dict]:
     rows = select_all(TABLE, {"user_id": user_id})
     active = [r for r in rows if r.get("is_active", True)]
     return sorted(active, key=lambda r: r.get("created_at", ""), reverse=True)
+
+
+def _get_items_by_ids_mock(user_id: str, item_ids: List[str]) -> List[Dict[str, Any]]:
+    from utils.mock_db_store import select_all
+
+    wanted = set(item_ids)
+    rows = select_all(TABLE, {"user_id": user_id})
+    matched = [r for r in rows if r.get("is_active", True) and r.get("id") in wanted]
+    return sorted(matched, key=lambda r: r.get("media_updated_at") or r.get("created_at", ""), reverse=True)
+
+
+def _apply_item_filters_mock(
+    items: List[Dict[str, Any]],
+    category: Optional[str] = None,
+    season: Optional[str] = None,
+    formality: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    def matches(item: Dict[str, Any]) -> bool:
+        if category and item.get("category") != category:
+            return False
+        if season:
+            item_season = item.get("season")
+            if not item_season or (item_season != season and item_season != "all"):
+                return False
+        if formality:
+            score = item.get("formality_score")
+            if score is None:
+                return False
+            if formality == "Formal" and score < 0.75:
+                return False
+            if formality == "Smart casual" and (score < 0.50 or score >= 0.75):
+                return False
+            if formality == "Casual" and (score < 0.25 or score >= 0.50):
+                return False
+            if formality == "Loungewear" and score >= 0.25:
+                return False
+        return True
+
+    return [item for item in items if matches(item)]
+
+
+def _get_items_page_mock(
+    user_id: str,
+    limit: int,
+    offset: int,
+    category: Optional[str] = None,
+    season: Optional[str] = None,
+    formality: Optional[str] = None,
+) -> Dict[str, Any]:
+    active_items = _get_items_mock(user_id)
+    filtered = _apply_item_filters_mock(
+        active_items,
+        category=category,
+        season=season,
+        formality=formality,
+    )
+    page = filtered[offset: offset + limit + 1]
+    return {
+        "items": page[:limit],
+        "has_more": len(page) > limit,
+        "total_count": len(active_items),
+    }
 
 
 def _get_deleted_items_mock(user_id: str) -> List[Dict]:
@@ -122,6 +385,36 @@ def _restore_item_mock(item_id: str, user_id: str) -> RestoreResult:
     return "restored"
 
 
+def _backfill_missing_thumbnails_mock(user_id: str, force: bool = False) -> int:
+    from utils.mock_db_store import select_all, update
+
+    rows = select_all(TABLE, {"user_id": user_id})
+    updated = 0
+    for row in rows:
+        if not row.get("is_active", True):
+            continue
+        if not force and row.get("thumbnail_url") and row.get("cutout_url"):
+            continue
+        image_url = row.get("image_url", "")
+        if not image_url.startswith("data:") or ";base64," not in image_url:
+            continue
+        try:
+            image_bytes = base64.b64decode(image_url.split(";base64,", 1)[1])
+            updates: Dict[str, str] = {}
+            if force or not row.get("thumbnail_url"):
+                thumb_bytes = _make_thumbnail_bytes(image_bytes)
+                updates["thumbnail_url"] = f"data:image/webp;base64,{base64.b64encode(thumb_bytes).decode()}"
+            if force or not row.get("cutout_url"):
+                cutout_bytes = _make_cutout_bytes(image_bytes)
+                updates["cutout_url"] = f"data:image/png;base64,{base64.b64encode(cutout_bytes).decode()}"
+            if updates:
+                update(TABLE, row["id"], updates, extra_filters={"user_id": user_id})
+                updated += 1
+        except Exception as e:
+            logger.warning("Mock media backfill failed for %s: %s", row.get("id"), e)
+    return updated
+
+
 # ── Real implementation (Supabase) ────────────────────────────────────────────
 
 def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: Optional[Dict]) -> Dict:
@@ -150,8 +443,14 @@ def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
         "season":            tags.get("season"),
         "formality_score":   tags.get("formality_score"),
         "image_url":         image_url,
+        "thumbnail_url":     None,
+        "cutout_url":        None,
+        "media_status":      "pending",
+        "media_stage":       "queued",
+        "media_error":       None,
+        "media_updated_at":  _media_timestamp(),
         "embedding_vector": vec_str,
-        "descriptors": tags.get("descriptors") or manual_tags.get("descriptors") or {},
+        "descriptors": tags.get("descriptors") or (manual_tags or {}).get("descriptors") or {},
     }
     result = db.table(TABLE).insert(row).execute()
     return result.data[0]
@@ -159,25 +458,87 @@ def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
 
 def _get_items_real(user_id: str) -> List[Dict]:
     from utils.db import get_supabase
-    import json
     db = get_supabase()
     items = (
         db.table(TABLE)
-        .select("*, embedding_vector")
+        .select(ITEM_LIST_FIELDS)
         .eq("user_id", user_id)
         .eq("is_active", True)
         .order("created_at", desc=True)
         .execute().data
     )
-    # Parse embedding_vector from string back to list if needed
-    for item in items:
-        ev = item.get("embedding_vector")
-        if isinstance(ev, str):
-            try:
-                item["embedding_vector"] = [float(x) for x in ev.strip("[]").split(",")]
-            except Exception:
-                item["embedding_vector"] = None
     return items
+
+
+def _get_items_by_ids_real(user_id: str, item_ids: List[str]) -> List[Dict[str, Any]]:
+    from utils.db import get_supabase
+
+    if not item_ids:
+        return []
+
+    db = get_supabase()
+    items = (
+        db.table(TABLE)
+        .select(ITEM_LIST_FIELDS)
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+        .in_("id", item_ids)
+        .execute()
+        .data
+    )
+    return sorted(items or [], key=lambda r: r.get("media_updated_at") or r.get("created_at", ""), reverse=True)
+
+
+def _get_items_page_real(
+    user_id: str,
+    limit: int,
+    offset: int,
+    category: Optional[str] = None,
+    season: Optional[str] = None,
+    formality: Optional[str] = None,
+) -> Dict[str, Any]:
+    from utils.db import get_supabase
+
+    db = get_supabase()
+    query = (
+        db.table(TABLE)
+        .select(ITEM_LIST_FIELDS)
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+    )
+    total_count_query = (
+        db.table(TABLE)
+        .select("id")
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+    )
+
+    if category:
+        query = query.eq("category", category)
+    if season:
+        query = query.or_(f"season.eq.{season},season.eq.all")
+    if formality == "Formal":
+        query = query.gte("formality_score", 0.75)
+    elif formality == "Smart casual":
+        query = query.gte("formality_score", 0.50).lt("formality_score", 0.75)
+    elif formality == "Casual":
+        query = query.gte("formality_score", 0.25).lt("formality_score", 0.50)
+    elif formality == "Loungewear":
+        query = query.lt("formality_score", 0.25)
+
+    rows = (
+        query.order("created_at", desc=True)
+        .range(offset, offset + limit)
+        .execute()
+        .data
+    )
+    total_count = len(total_count_query.execute().data or [])
+
+    return {
+        "items": rows[:limit],
+        "has_more": len(rows) > limit,
+        "total_count": total_count,
+    }
 
 
 def _get_deleted_items_real(user_id: str) -> List[Dict]:
@@ -186,7 +547,7 @@ def _get_deleted_items_real(user_id: str) -> List[Dict]:
     return (
         db.table(TABLE)
         .select("id, category, item_type, accessory_subtype, color, pattern, season, "
-                "formality_score, image_url, descriptors, created_at, deleted_at")
+                "formality_score, image_url, thumbnail_url, cutout_url, descriptors, created_at, deleted_at")
         .eq("user_id", user_id)
         .eq("is_active", False)
         .order("deleted_at", desc=True)
@@ -220,7 +581,7 @@ def _restore_item_real(item_id: str, user_id: str) -> RestoreResult:
     # Fetch the trashed item (need embedding + timestamp for comparison)
     trash_rows = (
         db.table(TABLE)
-        .select("id, category, color, item_type, image_url, embedding_vector, created_at")
+        .select("id, category, color, item_type, image_url, thumbnail_url, cutout_url, embedding_vector, created_at")
         .eq("id", item_id)
         .eq("user_id", user_id)
         .eq("is_active", False)
@@ -279,11 +640,14 @@ def _restore_item_real(item_id: str, user_id: str) -> RestoreResult:
         # Auto-purge: active item was created after the trashed item → it's a replacement
         if (duplicate.get("created_at") or "") >= (trash_item.get("created_at") or ""):
             # Remove storage file
-            image_url = trash_item.get("image_url", "")
-            if image_url and "/clothing-images/" in image_url:
+            paths = _extract_storage_paths(
+                trash_item.get("image_url", ""),
+                trash_item.get("thumbnail_url", ""),
+                trash_item.get("cutout_url", ""),
+            )
+            if paths:
                 try:
-                    path = image_url.split("/clothing-images/")[-1].split("?")[0]
-                    db.storage.from_("clothing-images").remove([path])
+                    db.storage.from_("clothing-images").remove(paths)
                 except Exception as e:
                     logger.warning("Auto-purge storage cleanup failed for %s: %s", item_id, e)
             # Hard-delete the DB row
@@ -297,6 +661,170 @@ def _restore_item_real(item_id: str, user_id: str) -> RestoreResult:
         "p_user_id": user_id,
     }).execute()
     return "restored"
+
+
+def _backfill_missing_thumbnails_real(user_id: str, force: bool = False) -> int:
+    from utils.db import get_supabase
+
+    db = get_supabase()
+    rows = (
+        db.table(TABLE)
+        .select("id, image_url, thumbnail_url, cutout_url")
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+        .execute()
+        .data
+    )
+
+    updated = 0
+    for row in rows:
+        if not force and row.get("thumbnail_url") and row.get("cutout_url"):
+            continue
+        image_url = row.get("image_url", "")
+        paths = _extract_storage_paths(image_url=image_url)
+        if not paths:
+            continue
+        original_path = paths[0]
+        thumb_path = f"{user_id}/{row['id']}/thumb.webp"
+        cutout_path = f"{user_id}/{row['id']}/cutout.png"
+        try:
+            original = db.storage.from_(STORAGE_BUCKET).download(original_path)
+            if hasattr(original, "read"):
+                original = original.read()
+            updates: Dict[str, str] = {}
+            if force or not row.get("thumbnail_url"):
+                thumb_bytes = _make_thumbnail_bytes(original)
+                db.storage.from_(STORAGE_BUCKET).upload(
+                    thumb_path,
+                    thumb_bytes,
+                    {"content-type": "image/webp", "upsert": "true"},
+                )
+                updates["thumbnail_url"] = db.storage.from_(STORAGE_BUCKET).get_public_url(thumb_path).rstrip("?")
+            if force or not row.get("cutout_url"):
+                cutout_bytes = _make_cutout_bytes(original)
+                db.storage.from_(STORAGE_BUCKET).upload(
+                    cutout_path,
+                    cutout_bytes,
+                    {"content-type": "image/png", "upsert": "true"},
+                )
+                updates["cutout_url"] = db.storage.from_(STORAGE_BUCKET).get_public_url(cutout_path).rstrip("?")
+            if updates:
+                db.table(TABLE).update(updates).eq("id", row["id"]).eq("user_id", user_id).execute()
+                updated += 1
+        except Exception as e:
+            logger.warning("Media backfill failed for %s: %s", row.get("id"), e)
+    return updated
+
+
+def _update_media_status_mock(
+    item_id: str,
+    user_id: str,
+    status: str,
+    stage: Optional[str] = None,
+    error: Optional[str] = None,
+    extra_updates: Optional[Dict[str, Any]] = None,
+) -> None:
+    from utils.mock_db_store import update
+
+    updates: Dict[str, Any] = {
+        "media_status": status,
+        "media_stage": stage,
+        "media_error": error,
+        "media_updated_at": _media_timestamp(),
+    }
+    if extra_updates:
+        updates.update(extra_updates)
+    update(TABLE, item_id, updates, extra_filters={"user_id": user_id})
+
+
+def _update_media_status_real(
+    item_id: str,
+    user_id: str,
+    status: str,
+    stage: Optional[str] = None,
+    error: Optional[str] = None,
+    extra_updates: Optional[Dict[str, Any]] = None,
+) -> None:
+    from utils.db import get_supabase
+
+    db = get_supabase()
+    updates: Dict[str, Any] = {
+        "media_status": status,
+        "media_stage": stage,
+        "media_error": error,
+        "media_updated_at": _media_timestamp(),
+    }
+    if extra_updates:
+        updates.update(extra_updates)
+    db.table(TABLE).update(updates).eq("id", item_id).eq("user_id", user_id).execute()
+
+
+def update_media_status(
+    item_id: str,
+    user_id: str,
+    status: str,
+    stage: Optional[str] = None,
+    error: Optional[str] = None,
+    extra_updates: Optional[Dict[str, Any]] = None,
+) -> None:
+    settings = get_settings()
+    if settings.use_mock_auth:
+        _update_media_status_mock(item_id, user_id, status, stage=stage, error=error, extra_updates=extra_updates)
+    else:
+        _update_media_status_real(item_id, user_id, status, stage=stage, error=error, extra_updates=extra_updates)
+
+
+def _process_item_media_mock(item_id: str, user_id: str, image_bytes: bytes) -> None:
+    update_media_status(item_id, user_id, "processing", stage="thumbnail", error=None)
+    thumbnail_url = f"data:image/webp;base64,{base64.b64encode(_make_thumbnail_bytes(image_bytes)).decode()}"
+    update_media_status(item_id, user_id, "processing", stage="cutout", error=None, extra_updates={"thumbnail_url": thumbnail_url})
+    cutout_url = f"data:image/png;base64,{base64.b64encode(_make_cutout_bytes(image_bytes)).decode()}"
+    update_media_status(
+        item_id,
+        user_id,
+        "ready",
+        stage="complete",
+        error=None,
+        extra_updates={"thumbnail_url": thumbnail_url, "cutout_url": cutout_url},
+    )
+
+
+def _process_item_media_real(item_id: str, user_id: str, image_bytes: bytes) -> None:
+    from utils.db import get_supabase
+
+    db = get_supabase()
+    thumb_path = f"{user_id}/{item_id}/thumb.webp"
+    cutout_path = f"{user_id}/{item_id}/cutout.png"
+
+    update_media_status(item_id, user_id, "processing", stage="thumbnail", error=None)
+    thumbnail_bytes = _make_thumbnail_bytes(image_bytes)
+
+    db.storage.from_(STORAGE_BUCKET).upload(
+        thumb_path,
+        thumbnail_bytes,
+        {"content-type": "image/webp", "upsert": "true"},
+    )
+    thumbnail_url = db.storage.from_(STORAGE_BUCKET).get_public_url(thumb_path).rstrip("?")
+    update_media_status(item_id, user_id, "processing", stage="cutout", error=None, extra_updates={"thumbnail_url": thumbnail_url})
+
+    cutout_bytes = _make_cutout_bytes(image_bytes)
+    db.storage.from_(STORAGE_BUCKET).upload(
+        cutout_path,
+        cutout_bytes,
+        {"content-type": "image/png", "upsert": "true"},
+    )
+
+    update_media_status(
+        item_id,
+        user_id,
+        "ready",
+        stage="complete",
+        error=None,
+        extra_updates={
+            "thumbnail_url": thumbnail_url,
+            "cutout_url": db.storage.from_(STORAGE_BUCKET).get_public_url(cutout_path).rstrip("?"),
+        },
+    )
 
 
 # ── Public interface ──────────────────────────────────────────────────────────
@@ -314,12 +842,70 @@ def upload_clothing_item(
     return _upload_real(user_id, image_bytes, filename, manual_tags)
 
 
+def process_item_media(item_id: str, user_id: str, image_bytes: bytes) -> None:
+    """Generate thumbnail/cutout media for an already-saved wardrobe item."""
+    settings = get_settings()
+    try:
+        if settings.use_mock_auth:
+            _process_item_media_mock(item_id, user_id, image_bytes)
+        else:
+            _process_item_media_real(item_id, user_id, image_bytes)
+    except Exception as e:
+        update_media_status(
+            item_id,
+            user_id,
+            "failed",
+            stage="complete",
+            error=str(e)[:240],
+        )
+        logger.warning("Deferred media generation failed for item %s: %s", item_id, e)
+
+
 def get_user_items(user_id: str) -> List[Dict[str, Any]]:
     """Fetch all active clothing items belonging to a user."""
     settings = get_settings()
     if settings.use_mock_auth:
         return _get_items_mock(user_id)
     return _get_items_real(user_id)
+
+
+def get_user_items_by_ids(user_id: str, item_ids: List[str]) -> List[Dict[str, Any]]:
+    """Fetch specific active wardrobe items, including media-processing status fields."""
+    if not item_ids:
+        return []
+    settings = get_settings()
+    if settings.use_mock_auth:
+        return _get_items_by_ids_mock(user_id, item_ids)
+    return _get_items_by_ids_real(user_id, item_ids)
+
+
+def get_user_items_page(
+    user_id: str,
+    limit: int,
+    offset: int,
+    category: Optional[str] = None,
+    season: Optional[str] = None,
+    formality: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Fetch a paginated slice of active wardrobe items with optional server-side filters."""
+    settings = get_settings()
+    if settings.use_mock_auth:
+        return _get_items_page_mock(
+            user_id,
+            limit=limit,
+            offset=offset,
+            category=category,
+            season=season,
+            formality=formality,
+        )
+    return _get_items_page_real(
+        user_id,
+        limit=limit,
+        offset=offset,
+        category=category,
+        season=season,
+        formality=formality,
+    )
 
 
 def get_deleted_items(user_id: str) -> List[Dict[str, Any]]:
@@ -366,6 +952,14 @@ def purge_old_deleted_items(user_id: str, days: int = 90) -> int:
     return _purge_old_deleted_real(user_id, days)
 
 
+def backfill_missing_thumbnails(user_id: str, force: bool = False) -> int:
+    """Generate processed media for active wardrobe items missing thumbnails or cutouts."""
+    settings = get_settings()
+    if settings.use_mock_auth:
+        return _backfill_missing_thumbnails_mock(user_id, force=force)
+    return _backfill_missing_thumbnails_real(user_id, force=force)
+
+
 def _purge_old_deleted_mock(user_id: str, days: int) -> int:
     from datetime import datetime, timezone, timedelta
     from utils.mock_db_store import select_all, delete as hard_delete
@@ -397,7 +991,7 @@ def _purge_old_deleted_real(user_id: str, days: int) -> int:
     # Fetch rows to purge (need image_url for storage cleanup)
     rows = (
         db.table(TABLE)
-        .select("id, image_url")
+        .select("id, image_url, thumbnail_url, cutout_url")
         .eq("user_id", user_id)
         .eq("is_active", False)
         .lt("deleted_at", cutoff)
@@ -409,11 +1003,14 @@ def _purge_old_deleted_real(user_id: str, days: int) -> int:
 
     # Storage cleanup — non-blocking
     for row in rows:
-        image_url = row.get("image_url", "")
-        if image_url and "/clothing-images/" in image_url:
+        paths = _extract_storage_paths(
+            row.get("image_url", ""),
+            row.get("thumbnail_url", ""),
+            row.get("cutout_url", ""),
+        )
+        if paths:
             try:
-                path = image_url.split("/clothing-images/")[-1].split("?")[0]
-                db.storage.from_("clothing-images").remove([path])
+                db.storage.from_("clothing-images").remove(paths)
             except Exception as e:
                 logger.warning("Purge storage cleanup failed for %s: %s", row["id"], e)
 

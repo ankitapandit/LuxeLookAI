@@ -1,9 +1,9 @@
 /**
- * pages/outfits.tsx — Outfit suggestions page
- * Shows all events as a history feed with collapsible outfit suggestions.
+ * pages/archive.tsx — Archive page
+ * Shows all events as a history feed with collapsible saved looks.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
 import Navbar from "@/components/layout/Navbar";
@@ -11,7 +11,7 @@ import {
   generateOutfits, rateOutfit, getWardrobeItems, getEvents, getSuggestions,
   OutfitSuggestion, ClothingItem, Event,
 } from "@/services/api";
-import OutfitMetricCard, { isCurrentCardSchema } from "@/components/OutfitCard";
+import OutfitSuggestionCard from "@/components/OutfitSuggestionCard";
 import { Sparkles } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -30,27 +30,7 @@ export default function OutfitsPage() {
   const toggleCollapsed = (evId: string) =>
     setCollapsedMap(prev => ({ ...prev, [evId]: !prev[evId] }));
 
-  useEffect(() => { loadPage(); }, []);
-
-  useEffect(() => {
-    const isAnyGenerating = Object.values(generatingMap).some(Boolean);
-    if (!isAnyGenerating) return;
-    const msgs = [
-      "Analysing your wardrobe…",
-      "Scoring colour combinations…",
-      "Checking formality alignment…",
-      "Matching styles to your occasion…",
-      "Almost there…",
-    ];
-    let i = 0;
-    const interval = setInterval(() => {
-      i = (i + 1) % msgs.length;
-      setLoadingMsg(msgs[i]);
-    }, 2500);
-    return () => clearInterval(interval);
-  }, [generatingMap]);
-
-  async function loadPage() {
+  const loadPage = useCallback(async () => {
     setPageLoading(true);
     try {
       const [eventsData, items] = await Promise.all([getEvents(), getWardrobeItems()]);
@@ -96,11 +76,32 @@ export default function OutfitsPage() {
         }, 300);
       }
     } catch {
-      toast.error("Failed to load outfits history");
+      toast.error("Failed to load archive");
     } finally {
       setPageLoading(false);
     }
-  }
+  }, [eventId]);
+
+  useEffect(() => {
+    void loadPage();
+  }, [loadPage]);
+  useEffect(() => {
+    const isAnyGenerating = Object.values(generatingMap).some(Boolean);
+    if (!isAnyGenerating) return;
+    const msgs = [
+      "Analysing your wardrobe…",
+      "Scoring colour combinations…",
+      "Checking formality alignment…",
+      "Matching styles to your event…",
+      "Almost there…",
+    ];
+    let i = 0;
+    const interval = setInterval(() => {
+      i = (i + 1) % msgs.length;
+      setLoadingMsg(msgs[i]);
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [generatingMap]);
 
   async function handleGenerate(evId: string) {
     setGeneratingMap(prev => ({ ...prev, [evId]: true }));
@@ -113,7 +114,7 @@ export default function OutfitsPage() {
       setSuggestionsMap(prev => ({ ...prev, [evId]: outfitData.suggestions }));
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string } } };
-      toast.error(e?.response?.data?.detail || "Failed to generate outfits");
+      toast.error(e?.response?.data?.detail || "Failed to generate looks");
     } finally {
       setGeneratingMap(prev => ({ ...prev, [evId]: false }));
     }
@@ -142,7 +143,7 @@ export default function OutfitsPage() {
             border: "4px solid var(--border)", borderTop: "4px solid var(--gold)",
             borderRadius: "50%", animation: "spin 0.8s linear infinite",
           }} />
-          <p style={{ color: "var(--muted)", fontSize: "15px" }}>Loading your outfit history…</p>
+          <p style={{ color: "var(--muted)", fontSize: "15px" }}>Loading your archive…</p>
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       </>
@@ -151,20 +152,20 @@ export default function OutfitsPage() {
 
   return (
     <>
-      <Head><title>Your Outfits — LuxeLook AI</title></Head>
+      <Head><title>Archive — LuxeLook AI</title></Head>
       <Navbar />
-      <main style={{ maxWidth: "1100px", margin: "0 auto", padding: "48px 24px" }}>
+      <main className="page-main" style={{ maxWidth: "1100px", margin: "0 auto", padding: "48px 24px" }}>
 
         <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "40px" }}>
           <Sparkles size={22} color="var(--gold)" />
-          <h1 style={{ fontSize: "34px", color: "var(--charcoal)" }}>Your Outfits</h1>
+          <h1 className="type-page-title" style={{ fontSize: "34px", color: "var(--charcoal)" }}>Archive</h1>
         </div>
 
         {events.length === 0 ? (
           <div style={{ textAlign: "center", padding: "80px", color: "var(--muted)" }}>
-            <p style={{ fontSize: "16px" }}>No occasions yet.</p>
-            <p style={{ fontSize: "14px", marginTop: "8px" }}>
-              Go to <strong>Events</strong> to describe an occasion first.
+            <p className="type-body" style={{ fontSize: "16px" }}>No saved looks yet.</p>
+            <p className="type-helper" style={{ fontSize: "14px", marginTop: "8px" }}>
+              Go to <strong>Event</strong> to describe an event first.
             </p>
           </div>
         ) : (
@@ -185,7 +186,7 @@ export default function OutfitsPage() {
                   }}>
                     {/* Date row + collapse button */}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                      <p style={{ fontSize: "11px", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>
+                      <p className="type-micro" style={{ fontSize: "11px", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>
                         {new Date(ev.created_at).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
                         {" · "}
                         {new Date(ev.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
@@ -206,17 +207,17 @@ export default function OutfitsPage() {
                       </button>
                     </div>
                     {/* Title */}
-                    <h2 style={{ fontSize: "20px", fontFamily: "Playfair Display, serif", marginBottom: "8px" }}>
+                    <h2 className="type-section-title" style={{ fontSize: "20px", fontFamily: "Playfair Display, serif", marginBottom: "8px" }}>
                       {ev.raw_text}
                     </h2>
                     {/* Tags */}
                     <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                       {[ev.occasion_type, ev.setting, ev.temperature_context].filter(Boolean).map((tag, i) => (
-                        <span key={i} style={{ fontSize: "12px", background: "var(--surface)", padding: "3px 10px", borderRadius: "20px", textTransform: "capitalize", color: "var(--ink)" }}>
+                        <span key={i} className="type-chip" style={{ fontSize: "12px", background: "var(--surface)", padding: "3px 10px", borderRadius: "20px", textTransform: "capitalize", color: "var(--ink)" }}>
                           {tag}
                         </span>
                       ))}
-                      <span style={{ fontSize: "12px", background: "var(--surface)", padding: "3px 10px", borderRadius: "20px", color: "var(--ink)" }}>
+                      <span className="type-chip" style={{ fontSize: "12px", background: "var(--surface)", padding: "3px 10px", borderRadius: "20px", color: "var(--ink)" }}>
                         {Math.round((ev.formality_level || 0) * 100)}% formality
                       </span>
                     </div>
@@ -234,7 +235,7 @@ export default function OutfitsPage() {
                             borderRadius: "50%", animation: "spin 0.8s linear infinite",
                           }} />
                           <p style={{ fontWeight: 600, fontSize: "15px", color: "var(--charcoal)", marginBottom: "12px" }}>
-                            Building your perfect outfits…
+                            Building your looks…
                           </p>
                           <div style={{ width: "200px", height: "3px", background: "var(--border)", borderRadius: "2px", margin: "0 auto" }}>
                             <div style={{ height: "100%", borderRadius: "2px", background: "var(--gold)", animation: "progress 3s ease-in-out infinite" }} />
@@ -249,9 +250,9 @@ export default function OutfitsPage() {
 
                       {/* Suggestions carousel */}
                       {!isGenerating && suggestions.length > 0 && (
-                        <div style={{ display: "flex", gap: "20px", overflowX: "auto", paddingBottom: "12px" }}>
+                        <div className="outfit-carousel">
                           {suggestions.map((s, idx) => (
-                            <div key={s.id} style={{ minWidth: "340px", maxWidth: "380px", flexShrink: 0 }}>
+                            <div key={s.id} className="outfit-card-wrap">
                               <OutfitSuggestionCard
                                 suggestion={s}
                                 rank={idx + 1}
@@ -266,10 +267,10 @@ export default function OutfitsPage() {
                       {/* Empty state + generate button */}
                       {!isGenerating && suggestions.length === 0 && (
                         <div style={{ textAlign: "center", padding: "32px", border: "1px dashed var(--border)", borderRadius: "12px", color: "var(--muted)" }}>
-                          <p style={{ marginBottom: "16px", fontSize: "14px" }}>No outfits generated for this occasion yet.</p>
+                          <p className="type-body" style={{ marginBottom: "16px", fontSize: "14px" }}>No looks saved for this event yet.</p>
                           <button className="btn-primary" onClick={() => handleGenerate(ev.id)}
                             style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                            <Sparkles size={15} /> Generate Outfits
+                            <Sparkles size={15} /> Generate Looks
                           </button>
                         </div>
                       )}
@@ -279,7 +280,7 @@ export default function OutfitsPage() {
                         <div style={{ marginTop: "16px", textAlign: "right" }}>
                           <button className="btn-secondary" onClick={() => handleGenerate(ev.id)}
                             style={{ fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                            <Sparkles size={13} /> Regenerate
+                            <Sparkles size={13} /> Refresh Looks
                           </button>
                         </div>
                       )}
@@ -295,111 +296,4 @@ export default function OutfitsPage() {
       </main>
     </>
   );
-}
-
-// ── Outfit Card ────────────────────────────────────────────────────────────
-
-function OutfitSuggestionCard({
-  suggestion, rank, wardrobeMap, onRate,
-}: {
-  suggestion: OutfitSuggestion;
-  rank: number;
-  wardrobeMap: Record<string, ClothingItem>;
-  onRate: (rating: number) => void;
-}) {
-  const [hover, setHover] = useState(0);
-  const allItemIds = [...suggestion.item_ids, ...(suggestion.accessory_ids || [])];
-  const items = allItemIds.map((id) => wardrobeMap[id]).filter(Boolean);
-
-  return (
-    <div className="card fade-up" style={{ padding: "28px" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "24px" }}>
-        <div>
-          <span style={{ fontSize: "11px", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-            Look #{rank}
-          </span>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "4px" }}>
-            <h2 style={{ fontSize: "20px", fontFamily: "Playfair Display, serif" }}>
-              {getOutfitTitle(suggestion, wardrobeMap)}
-            </h2>
-            <span className="score-badge">{Math.round(suggestion.score * 100)}% match</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Item grid */}
-      <div style={{ display: "flex", gap: "12px", marginBottom: "24px", overflowX: "auto" }}>
-        {items.map((item) => (
-          <OutfitItemTile key={item.id} item={item} isAccessory={suggestion.accessory_ids?.includes(item.id)} />
-        ))}
-        {items.length === 0 && (
-          <p style={{ color: "var(--muted)", fontSize: "14px" }}>Item images unavailable</p>
-        )}
-      </div>
-
-      {/* Outfit card metrics — only render if card has the current v2.0 schema */}
-      {isCurrentCardSchema(suggestion.card) && (
-        <div style={{ marginBottom: "20px" }}>
-          <OutfitMetricCard card={suggestion.card} />
-        </div>
-      )}
-
-      {/* Star rating */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-        <span style={{ fontSize: "13px", color: "var(--muted)" }}>Rate this look:</span>
-        <div style={{ display: "flex", gap: "4px" }}>
-          {[1, 2, 3, 4, 5].map((star) => (
-            <span
-              key={star}
-              className="star"
-              onMouseEnter={() => setHover(star)}
-              onMouseLeave={() => setHover(0)}
-              onClick={() => onRate(star)}
-              style={{ color: star <= (hover || suggestion.user_rating || 0) ? "var(--gold)" : "var(--border)" }}
-            >
-              ★
-            </span>
-          ))}
-        </div>
-        {suggestion.user_rating && (
-          <span style={{ fontSize: "13px", color: "var(--muted)" }}>You rated {suggestion.user_rating}/5</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function OutfitItemTile({ item, isAccessory }: { item: ClothingItem; isAccessory?: boolean }) {
-  return (
-    <div style={{ flexShrink: 0, width: isAccessory ? "100px" : "140px" }}>
-      <div style={{
-        borderRadius: "8px", overflow: "hidden", background: "var(--surface)",
-        aspectRatio: isAccessory ? "1/1" : "3/4",
-        border: isAccessory ? "1px dashed var(--border)" : "1px solid var(--border)",
-      }}>
-        <img
-          src={item.image_url}
-          alt={item.category}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          onError={(e) => {
-            (e.target as HTMLImageElement).src = `https://via.placeholder.com/200x300/F5F0E8/8A8580?text=${encodeURIComponent(item.category)}`;
-          }}
-        />
-      </div>
-      <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "6px", textAlign: "center", textTransform: "capitalize" }}>
-        {isAccessory ? `✦ ${item.accessory_subtype || "accessory"}` : item.category}
-      </p>
-    </div>
-  );
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function getOutfitTitle(s: OutfitSuggestion, map: Record<string, ClothingItem>): string {
-  const items = s.item_ids.map((id) => map[id]).filter(Boolean);
-  if (!items.length) return "Complete Look";
-  const colors = Array.from(new Set(items.map((i) => i.color).filter(Boolean)));
-  const color  = colors.slice(0, 2).join(" & ");
-  return color ? `The ${color} look` : "Complete Look";
 }
