@@ -285,6 +285,8 @@ h1, h2, h3 { font-family: 'Playfair Display', serif; }
   max-width: 380px;
   flex-shrink: 0;
   scroll-snap-align: start;
+  display: flex;        /* lets the inner card stretch to fill */
+  flex-direction: column;
 }
 
 .card-actions {

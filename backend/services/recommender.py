@@ -121,6 +121,9 @@ BODY_TYPE_PREFERENCES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
                       "leg_opening": ["straight", "skinny", "flare"]},
         "dresses":   {"fit": ["fitted", "bodycon", "wrap"],
                       "length": ["midi", "knee", "mini"]},
+        "jumpsuits": {"fit": ["fitted", "tailored", "wrap"],
+                      "length": ["ankle", "full-length", "cropped"],
+                      "leg_shape": ["straight", "tapered", "flared"]},
         "outerwear": {"fit": ["fitted", "tailored"]},
         "set":       {"fit": ["fitted", "wrap", "tailored"],
                       "bottom_style": ["midi skirt", "mini skirt", "trousers"]},
@@ -136,6 +139,9 @@ BODY_TYPE_PREFERENCES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
                       "leg_opening": ["wide", "flare", "bootcut"]},
         "dresses":   {"fit": ["a-line", "shift", "wrap", "peplum"],
                       "length": ["midi", "maxi"]},
+        "jumpsuits": {"fit": ["tailored", "relaxed", "wrap"],
+                      "length": ["ankle", "full-length", "cropped"],
+                      "leg_shape": ["wide-leg", "straight", "culotte"]},
         "outerwear": {"fit": ["oversized", "relaxed", "belted"]},
         "set":       {"fit": ["relaxed", "oversized", "wrap"],
                       "top_style": ["crop", "off-shoulder", "bralette"]},
@@ -151,6 +157,9 @@ BODY_TYPE_PREFERENCES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
                       "leg_opening": ["flare", "wide", "bootcut"]},
         "dresses":   {"fit": ["a-line", "wrap", "empire"],
                       "length": ["midi", "knee"]},
+        "jumpsuits": {"fit": ["tailored", "relaxed", "wrap"],
+                      "length": ["ankle", "full-length", "cropped"],
+                      "leg_shape": ["wide-leg", "straight", "flared"]},
         "outerwear": {"fit": ["structured", "tailored"]},
         "set":       {"fit": ["relaxed", "a-line"],
                       "bottom_style": ["midi skirt", "wide-leg trousers"]},
@@ -166,6 +175,9 @@ BODY_TYPE_PREFERENCES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
                       "leg_opening": ["straight", "wide", "bootcut"]},
         "dresses":   {"fit": ["empire", "wrap", "shift"],
                       "length": ["midi", "maxi"]},
+        "jumpsuits": {"fit": ["relaxed", "regular", "wrap"],
+                      "length": ["ankle", "full-length", "cropped"],
+                      "leg_shape": ["straight", "wide-leg", "culotte"]},
         "outerwear": {"fit": ["open-front", "relaxed"]},
         "set":       {"fit": ["relaxed", "regular"],
                       "top_style": ["camisole", "shirt", "waistcoat"]},
@@ -181,6 +193,9 @@ BODY_TYPE_PREFERENCES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
                       "leg_opening": ["wide", "flare", "bootcut", "barrel"]},
         "dresses":   {"fit": ["a-line", "wrap", "fit and flare"],
                       "length": ["midi", "maxi"]},
+        "jumpsuits": {"fit": ["relaxed", "tailored", "wrap"],
+                      "length": ["ankle", "full-length", "cropped"],
+                      "leg_shape": ["wide-leg", "straight", "flared"]},
         "outerwear": {"fit": ["relaxed", "oversized"]},
         "set":       {"fit": ["relaxed", "regular"],
                       "bottom_style": ["wide-leg trousers", "midi skirt", "skirt"]},
@@ -196,6 +211,9 @@ BODY_TYPE_PREFERENCES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
                       "leg_opening": ["skinny", "straight", "tapered"]},
         "dresses":   {"fit": ["shift", "fitted"],
                       "length": ["mini", "knee"]},
+        "jumpsuits": {"fit": ["fitted", "tailored", "slim"],
+                      "length": ["short", "cropped", "ankle"],
+                      "leg_shape": ["straight", "tapered", "shorts"]},
         "outerwear": {"fit": ["fitted", "cropped"]},
         "set":       {"fit": ["fitted", "slim"],
                       "bottom_style": ["mini skirt", "shorts", "straight trousers"]},
@@ -492,6 +510,83 @@ def classify_color_story(items: List[Dict]) -> Tuple[float, str]:
     return 0.70, "mixed palette"
 
 
+def score_attribute_match(
+    items: List[Dict],
+    occasion: Dict,
+    compat_score: float,
+    approp_score: float,
+    novelty_score: float,
+    attribute_prefs: Dict[str, Dict[str, float]],
+) -> float:
+    """
+    Score how well this outfit's predicted card attributes align with the user's
+    learned preference vector.
+
+    Predicts vibe, color_theory, fit_check, and trend_label using the same
+    lightweight helpers used in _build_outfit_card(), then looks up each
+    predicted value in the per-user attribute_prefs map.
+
+    Returns 0.0–1.0.  Defaults to neutral 0.5 when prefs are absent or prediction fails.
+    """
+    if not attribute_prefs:
+        return 0.5
+    try:
+        occasion_type  = (occasion.get("occasion_type") or "casual").lower()
+        formality      = float(occasion.get("formality_level") or 0.5)
+        event_tokens   = list(occasion.get("event_tokens") or [])
+        temperature    = (occasion.get("temperature_context") or "mild").lower()
+
+        _, raw_color_label     = classify_color_story(items)
+        _, silhouette_tag      = score_silhouette_balance(items)
+        _, trend_label         = _trend_stars_and_label(novelty_score, compat_score, approp_score, items)
+        vibe                   = _vibe_check(occasion_type, formality, event_tokens, raw_color_label, compat_score, items)
+        color_theory           = _color_theory_label(raw_color_label, items)
+        fit_check              = _fit_check_label(compat_score, silhouette_tag, items)
+
+        predicted = {
+            "vibe":         vibe,
+            "color_theory": color_theory,
+            "fit_check":    fit_check,
+            "trend_label":  trend_label,
+        }
+
+        scores = []
+        for attr, val in predicted.items():
+            pref_map = attribute_prefs.get(attr)
+            if pref_map and val:
+                # 0.40 = slight below-neutral default for unseen attribute values
+                scores.append(pref_map.get(val, 0.40))
+
+        return round(sum(scores) / len(scores), 4) if scores else 0.5
+    except Exception:
+        logger.debug("score_attribute_match failed; returning neutral 0.5", exc_info=True)
+        return 0.5
+
+
+def score_user_style_centroid(
+    items: List[Dict],
+    user_style_centroid: Optional[List[float]],
+) -> float:
+    """
+    Score how visually close this outfit is to the user's CLIP style centroid —
+    the mean embedding of items from their highest-rated outfits.
+
+    Uses cosine similarity between the outfit's mean embedding and the centroid.
+    Normalises cosine similarity from [–1, 1] → [0, 1].
+
+    Returns neutral 0.5 when the centroid or item embeddings are unavailable.
+    """
+    if not user_style_centroid:
+        return 0.5
+    vecs = [item.get("embedding_vector") for item in items if item.get("embedding_vector")]
+    if not vecs:
+        return 0.5
+    dim        = len(vecs[0])
+    outfit_emb = [sum(v[d] for v in vecs) / len(vecs) for d in range(dim)]
+    raw_sim    = cosine_similarity(outfit_emb, user_style_centroid)   # in [–1, 1]
+    return round((raw_sim + 1.0) / 2.0, 4)                            # → [0, 1]
+
+
 def score_silhouette_balance(items: List[Dict]) -> Tuple[float, str]:
     """
     Score proportion balance using classic styling rules.
@@ -506,9 +601,9 @@ def score_silhouette_balance(items: List[Dict]) -> Tuple[float, str]:
     """
     cat_fits: Dict[str, str] = {}
     for item in items:
-        cat = (item.get("category") or "").lower()
+        cat = _normalize_category_name(item.get("category"))
         fit = ((item.get("descriptors") or {}).get("fit") or "").lower()
-        if fit and cat in ("tops", "bottoms", "dresses", "outerwear", "set", "loungewear"):
+        if fit and cat in ("tops", "bottoms", "dresses", "jumpsuits", "outerwear", "set", "loungewear"):
             cat_fits[cat] = fit
 
     if len(cat_fits) < 2:
@@ -662,12 +757,12 @@ def score_diversity_completeness(items: List[Dict], occasion: Dict) -> Tuple[flo
     Returns (score, label).
     """
     event_formality = occasion.get("formality_level", 0.5)
-    categories  = {(i.get("category") or "").lower() for i in items}
-    item_types  = {(i.get("item_type")  or "").lower() for i in items}
+    categories  = {_normalize_category_name(i.get("category")) for i in items}
+    item_types  = {_normalize_category_name(i.get("item_type"))  for i in items}
 
     has_top     = "tops"      in categories
     has_bottom  = "bottoms"   in categories
-    has_dress   = "dresses"   in categories
+    has_dress   = bool({"dresses", "jumpsuits"} & categories)
     has_set     = "set"       in categories   # co-ord set covers top + bottom slot
     has_swim    = "swimwear"  in categories
     has_shoes   = "shoes"     in categories or "footwear" in item_types
@@ -733,12 +828,21 @@ def score_outfit_v2(
     user_feedback_weight:      float = 0.5,
     user_body_type:            Optional[str] = None,
     outfit_history_embeddings: Optional[List[List[float]]] = None,
+    attribute_prefs:           Optional[Dict[str, Dict[str, float]]] = None,
+    user_style_centroid:       Optional[List[float]] = None,
 ) -> Tuple[float, Dict]:
     """
     V2 composite scorer — outfit-level intelligence.
 
     Returns (composite_score, score_breakdown) where score_breakdown contains
     per-component scores and human-readable tags used to seed the LLM explanation.
+
+    Preference score is a four-signal composite:
+      25% combo-level feedback weight   (exact item combo reputation)
+      25% body-type fit priors          (silhouette + descriptor match)
+      25% attribute-level preferences   (vibe / color_theory / fit_check / trend_label)
+      25% CLIP style centroid proximity (mean embedding of highly-rated items)
+    Each signal defaults to neutral 0.5 when data is unavailable.
     """
     # C — Compatibility
     compat_score, compat_tags = score_compatibility(outfit_items)
@@ -746,9 +850,18 @@ def score_outfit_v2(
     # A — Appropriateness (v2 extended)
     approp_score, approp_label = score_appropriateness_v2(outfit_items, occasion)
 
-    # P — Preference (feedback history + body-type priors)
-    body_score   = score_body_type_fit(outfit_items, user_body_type)
-    pref_score   = round(0.5 * user_feedback_weight + 0.5 * body_score, 4)
+    # P — Preference (four-signal composite)
+    body_score     = score_body_type_fit(outfit_items, user_body_type)
+    attr_score     = score_attribute_match(outfit_items, occasion, compat_score, approp_score,
+                                           0.5, attribute_prefs or {})
+    centroid_score = score_user_style_centroid(outfit_items, user_style_centroid)
+    pref_score     = round(
+        0.25 * user_feedback_weight
+        + 0.25 * body_score
+        + 0.25 * attr_score
+        + 0.25 * centroid_score,
+        4,
+    )
 
     # T — Trend (neutral placeholder until trend pipeline is built in v2.1)
     trend_score  = 0.50
@@ -845,6 +958,15 @@ def _item_colors(items: List[Dict[str, Any]]) -> List[str]:
     return colors
 
 
+def _normalize_category_name(category: Any) -> str:
+    raw = str(category or "").strip().lower()
+    return {
+        "jumpsuit": "jumpsuits",
+        "romper": "jumpsuits",
+        "playsuit": "jumpsuits",
+    }.get(raw, raw)
+
+
 # ── Trend-o-meter ─────────────────────────────────────────────────────────────
 
 def _trend_stars_and_label(novelty: float, compat: float, approp: float, items: List[Dict]) -> tuple:
@@ -854,8 +976,8 @@ def _trend_stars_and_label(novelty: float, compat: float, approp: float, items: 
     Weighted: novelty 40% + compat 35% + approp 25%.
     Returns (stars: int, label: str).
     """
-    accessory_count = sum(1 for item in items if (item.get("category") or "").lower() == "accessories")
-    structured_bonus = 0.02 if any((item.get("category") or "").lower() in {"outerwear", "dresses", "set"} for item in items) else 0.0
+    accessory_count = sum(1 for item in items if _normalize_category_name(item.get("category")) == "accessories")
+    structured_bonus = 0.02 if any(_normalize_category_name(item.get("category")) in {"outerwear", "dresses", "jumpsuits", "set"} for item in items) else 0.0
     palette_bonus = 0.01 * min(2, len(set(_item_colors(items))) - 1)
 
     score = novelty * 0.40 + compat * 0.35 + approp * 0.25 + min(0.05, accessory_count * 0.015) + structured_bonus + max(0.0, palette_bonus)
@@ -914,11 +1036,11 @@ def _vibe_check(
     tokens   = set(event_tokens or []) | {occasion_type.lower()}
     has_contrast = any(k in raw_color_label.lower()
                        for k in ("complementary", "clashing", "color block"))
-    categories = {(item.get("category") or "").lower() for item in items}
+    categories = {_normalize_category_name(item.get("category")) for item in items}
     fits = [((item.get("descriptors") or {}).get("fit") or "").lower() for item in items]
-    accessory_count = sum(1 for item in items if (item.get("category") or "").lower() == "accessories")
+    accessory_count = sum(1 for item in items if _normalize_category_name(item.get("category")) == "accessories")
     has_outerwear = "outerwear" in categories
-    has_full_look = bool({"dresses", "set", "swimwear", "loungewear"} & categories)
+    has_full_look = bool({"dresses", "jumpsuits", "set", "swimwear", "loungewear"} & categories)
     fitted_count = sum(1 for fit in fits if any(token in fit for token in ("slim", "tailored", "bodycon", "fitted")))
     relaxed_count = sum(1 for fit in fits if any(token in fit for token in ("relaxed", "loose", "oversized", "wide")))
 
@@ -1017,7 +1139,7 @@ def _color_theory_label(raw_color_label: str, items: List[Dict]) -> str:
 def _look_title(items: List[Dict], occasion: Dict, fit_check: str, color_theory: str) -> str:
     colors = _item_colors(items)
     unique_colors = list(dict.fromkeys(colors))
-    categories = {(item.get("category") or "").lower() for item in items}
+    categories = {_normalize_category_name(item.get("category")) for item in items}
     tokens = set(occasion.get("event_tokens") or []) | {str(occasion.get("occasion_type") or "").lower()}
 
     dominant = next((_TITLE_COLOR_WORDS[color] for color in unique_colors if color in _TITLE_COLOR_WORDS), None)
@@ -1031,7 +1153,7 @@ def _look_title(items: List[Dict], occasion: Dict, fit_check: str, color_theory:
 
     if "outerwear" in categories and fit_check in {"Tailored", "Structured"}:
         second = "Layering"
-    elif "dresses" in categories or "set" in categories:
+    elif "dresses" in categories or "jumpsuits" in categories or "set" in categories:
         second = "Poise"
     elif {"party", "cocktail", "night"} & tokens:
         second = "Afterglow"
@@ -1049,6 +1171,15 @@ def _look_title(items: List[Dict], occasion: Dict, fit_check: str, color_theory:
         second = "Edit"
 
     return f"{dominant} {second}"
+
+
+def compute_look_title(items: List[Dict], occasion: Dict, fit_check: str, color_theory: str) -> str:
+    """
+    Public wrapper around _look_title for use by the router when back-filling
+    stored suggestions that predate the look_title field.
+    Identical output to freshly generated cards.
+    """
+    return _look_title(items, occasion, fit_check, color_theory)
 
 
 # ── Fit Check ─────────────────────────────────────────────────────────────────
@@ -1296,6 +1427,7 @@ def filter_candidates(items: List[Dict], occasion: Dict) -> Dict[str, List[Dict]
         "tops":        [],
         "bottoms":     [],
         "dresses":     [],
+        "jumpsuits":   [],
         "shoes":       [],
         "outerwear":   [],
         "accessories": [],
@@ -1309,7 +1441,7 @@ def filter_candidates(items: List[Dict], occasion: Dict) -> Dict[str, List[Dict]
         if formality_diff > FORMALITY_TOLERANCE * 2:
             continue  # too casual/formal for this event
 
-        category = (item.get("category") or "").lower()
+        category = _normalize_category_name(item.get("category"))
         if category in buckets:
             buckets[category].append(item)
 
@@ -1326,22 +1458,36 @@ def attach_accessories(
     occasion: Dict,
     user_body_type: Optional[str] = None,
     max_accessories: int = 2,
+    forced_accessories: Optional[List[Dict]] = None,
 ) -> List[Dict]:
     """
     Rule-based accessory selection.
     Max 2 accessories, no two of the same subtype (e.g. two bags).
     """
-    if not accessories:
+    forced_accessories = forced_accessories or []
+    if not accessories and not forced_accessories:
         return []
+
+    forced_ids = {str(acc.get("id")) for acc in forced_accessories if acc.get("id")}
+
+    selected: List[Dict] = []
+    used_subtypes: Dict[str, int] = {}
+
+    for acc in forced_accessories:
+        if len(selected) >= max_accessories:
+            break
+        subtype = acc.get("accessory_subtype", "other")
+        if used_subtypes.get(subtype, 0) >= 1:
+            continue
+        selected.append(acc)
+        used_subtypes[subtype] = used_subtypes.get(subtype, 0) + 1
 
     scored = [
         (score_outfit(core_outfit + [acc], occasion, user_body_type=user_body_type), acc)
         for acc in accessories
+        if str(acc.get("id")) not in forced_ids
     ]
     scored.sort(key=lambda x: x[0], reverse=True)
-
-    selected: List[Dict]        = []
-    used_subtypes: Dict[str, int] = {}
 
     for _, acc in scored:
         if len(selected) >= max_accessories:
@@ -1378,13 +1524,13 @@ def wardrobe_coverage_gaps(user_items: List[Dict]) -> List[str]:
     The function never returns an error if the minimum set (top+bottom+shoes OR dress+shoes)
     is present — it only flags what's missing relative to the four templates.
     """
-    categories  = {(i.get("item_type") or "").lower() for i in user_items}
-    categories |= {(i.get("category") or "").lower() for i in user_items}
+    categories  = {_normalize_category_name(i.get("item_type")) for i in user_items}
+    categories |= {_normalize_category_name(i.get("category")) for i in user_items}
 
     has_tops      = bool({"tops", "top"} & categories)
     has_bottoms   = bool({"bottoms", "bottom", "skirts", "trousers"} & categories)
     has_shoes     = bool({"shoes", "footwear"} & categories)
-    has_dresses   = bool({"dresses", "dress"} & categories)
+    has_one_piece = bool({"dresses", "dress", "jumpsuits", "jumpsuit", "rompers", "romper", "playsuit"} & categories)
     has_outerwear = bool({"outerwear", "jackets", "jacket", "coat"} & categories)
     has_set       = bool({"set"} & categories)
     has_swimwear  = bool({"swimwear"} & categories)
@@ -1392,7 +1538,7 @@ def wardrobe_coverage_gaps(user_items: List[Dict]) -> List[str]:
     gaps: List[str] = []
 
     can_do_ab = has_tops and has_bottoms and has_shoes
-    can_do_cd = has_dresses and has_shoes
+    can_do_cd = has_one_piece and has_shoes
     can_do_ef = has_set and has_shoes
     can_do_g  = has_swimwear and has_shoes
 
@@ -1400,18 +1546,18 @@ def wardrobe_coverage_gaps(user_items: List[Dict]) -> List[str]:
         # No template family possible — give targeted hints
         if not has_shoes:
             gaps.append("Add at least one pair of shoes — every outfit template requires footwear")
-        if not has_tops and not has_dresses and not has_set:
-            gaps.append("Add a top, dress, or co-ord set to start building outfits")
+        if not has_tops and not has_one_piece and not has_set:
+            gaps.append("Add a top, dress, jumpsuit, or co-ord set to start building outfits")
         elif not has_tops:
             gaps.append("Add at least one top to unlock outfit templates A and B")
-        if not has_bottoms and not has_dresses and not has_set:
-            gaps.append("Add a bottom (trousers or skirt), dress, or co-ord set to complete a look")
+        if not has_bottoms and not has_one_piece and not has_set:
+            gaps.append("Add a bottom (trousers or skirt), dress, jumpsuit, or co-ord set to complete a look")
         elif not has_bottoms:
             gaps.append("Add at least one bottom (trousers or skirt) to complete templates A and B")
     else:
         # At least one template family works — give aspirational nudges
         if can_do_ab and not can_do_cd:
-            gaps.append("Add a dress + shoes to unlock two additional outfit templates")
+            gaps.append("Add a dress or jumpsuit + shoes to unlock two additional outfit templates")
         if not has_outerwear and (can_do_ab or can_do_ef):
             gaps.append("Add a jacket or coat to unlock layered outfits (templates B, D, and F)")
         if not can_do_ef and not has_set:
@@ -1438,6 +1584,9 @@ def generate_outfit_suggestions(
     combo_feedback_weights: Optional[Dict[str, float]] = None,
     seen_item_combos: Optional[List[List[str]]] = None,
     outfit_history_embeddings: Optional[List[List[float]]] = None,
+    attribute_prefs: Optional[Dict[str, Dict[str, float]]] = None,
+    user_style_centroid: Optional[List[float]] = None,
+    anchor_item_id: Optional[str] = None,
 ) -> Tuple[List[Dict], bool]:
     """
     Main entry point for outfit generation. Uses V2 outfit-level scoring.
@@ -1475,6 +1624,7 @@ def generate_outfit_suggestions(
     # Build past outfit embeddings for novelty scoring
     # Each seen combo is a list of item-ID strings; we reconstruct embeddings from loaded items
     _item_by_id: Dict[str, Dict] = {str(item.get("id")): item for item in user_items}
+    anchor_item = _item_by_id.get(str(anchor_item_id)) if anchor_item_id else None
     outfit_history_embeddings_computed: List[List[float]] = []
     for id_set in (seen_item_combos or []):
         past_items = [_item_by_id[iid] for iid in id_set if iid in _item_by_id]
@@ -1489,13 +1639,20 @@ def generate_outfit_suggestions(
     buckets      = filter_candidates(user_items, occasion)
     accessories  = buckets.pop("accessories", [])
 
-    tops_list     = buckets.get("tops",      [])
-    bottoms_list  = buckets.get("bottoms",   [])
-    shoes_list    = buckets.get("shoes",     [])
-    dresses_list  = buckets.get("dresses",   [])
-    outer_list    = buckets.get("outerwear", [])
-    sets_list     = buckets.get("set",       [])
-    swimwear_list = buckets.get("swimwear",  [])
+    if anchor_item:
+        anchor_category = _normalize_category_name(anchor_item.get("category"))
+        if anchor_category in buckets and anchor_category != "accessories":
+            buckets[anchor_category] = [anchor_item]
+
+    tops_list      = buckets.get("tops",      [])
+    bottoms_list   = buckets.get("bottoms",   [])
+    shoes_list     = buckets.get("shoes",     [])
+    dresses_list   = buckets.get("dresses",   [])
+    jumpsuits_list = buckets.get("jumpsuits", [])
+    one_piece_list = dresses_list + jumpsuits_list
+    outer_list     = buckets.get("outerwear", [])
+    sets_list      = buckets.get("set",       [])
+    swimwear_list  = buckets.get("swimwear",  [])
 
     # ── Build all candidate cores per template ────────────────────────────
     # Template A: top + bottom + shoes
@@ -1526,11 +1683,11 @@ def generate_outfit_suggestions(
                 for shoe in shoes_list:
                     template_combos["top_bottom_outerwear_shoes"].append([top, bottom, outer, shoe])
 
-    for dress in dresses_list:
+    for dress in one_piece_list:
         for shoe in shoes_list:
             template_combos["dress_shoes"].append([dress, shoe])
 
-    for dress in dresses_list:
+    for dress in one_piece_list:
         for outer in outer_list:
             for shoe in shoes_list:
                 template_combos["dress_outerwear_shoes"].append([dress, outer, shoe])
@@ -1554,6 +1711,7 @@ def generate_outfit_suggestions(
     seen_best_per_template:  List[Tuple[float, List[Dict], Dict]] = []
     seen_overflow:           List[Tuple[float, List[Dict], Dict]] = []
     fresh_available = False
+    forced_accessories = [anchor_item] if anchor_item and _normalize_category_name(anchor_item.get("category")) == "accessories" else []
 
     for _tname, combos in template_combos.items():
         if not combos:
@@ -1562,6 +1720,10 @@ def generate_outfit_suggestions(
         fresh_scored_combos: List[Tuple[float, List[Dict], Dict]] = []
         seen_scored_combos: List[Tuple[float, List[Dict], Dict]] = []
         for c in combos:
+            if anchor_item and (anchor_item.get("category") or "").lower() != "accessories":
+                anchor_id = str(anchor_item.get("id"))
+                if all(str(item.get("id")) != anchor_id for item in c):
+                    continue
             is_seen = frozenset(str(item["id"]) for item in c) in seen_sets
             fw = _outfit_feedback_weight(c, combo_weights)
             score, breakdown = score_outfit_v2(
@@ -1569,6 +1731,8 @@ def generate_outfit_suggestions(
                 user_feedback_weight=fw,
                 user_body_type=user_body_type,
                 outfit_history_embeddings=_history,
+                attribute_prefs=attribute_prefs,
+                user_style_centroid=user_style_centroid,
             )
             entry = (score, c, breakdown)
             if is_seen:
@@ -1610,7 +1774,11 @@ def generate_outfit_suggestions(
     suggestions = []
     for outfit_score, core_items, score_breakdown in top_cores:
         selected_accessories = attach_accessories(
-            core_items, accessories, occasion, user_body_type=user_body_type
+            core_items,
+            accessories,
+            occasion,
+            user_body_type=user_body_type,
+            forced_accessories=forced_accessories,
         )
 
         all_items = core_items + selected_accessories

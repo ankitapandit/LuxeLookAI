@@ -69,6 +69,7 @@ export default function Navbar() {
         <>
           <div className="nav-desktop" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <NavLink href="/wardrobe" icon={<ShirtIcon size={16} />} label="Wardrobe" active={router.pathname === "/wardrobe"} />
+            <NavLink href="/discover" icon={<Sparkles size={16} />} label="Discover" active={router.pathname === "/discover" || router.pathname === "/style-item"} />
             <NavLink href="/archive"  icon={<Sparkles size={16} />}   label="Archive"  active={router.pathname === "/archive"} />
             <NavLink href="/event"   icon={<CalendarDays size={16} />} label="Event" active={router.pathname === "/event"} />
             <NavLink href="/profile"   icon={<User size={16} />} label="Profile" active={router.pathname === "/profile"} />
@@ -106,6 +107,7 @@ export default function Navbar() {
           {mobileOpen && (
             <div className="nav-mobile-menu">
               <MobileNavLink href="/wardrobe" icon={<ShirtIcon size={16} />} label="Wardrobe" active={router.pathname === "/wardrobe"} />
+              <MobileNavLink href="/discover" icon={<Sparkles size={16} />} label="Discover" active={router.pathname === "/discover" || router.pathname === "/style-item"} />
               <MobileNavLink href="/archive" icon={<Sparkles size={16} />} label="Archive" active={router.pathname === "/archive"} />
               <MobileNavLink href="/event" icon={<CalendarDays size={16} />} label="Event" active={router.pathname === "/event"} />
               <MobileNavLink href="/profile" icon={<User size={16} />} label="Profile" active={router.pathname === "/profile"} />

@@ -169,10 +169,12 @@ export default function Home() {
 
             <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               <div>
-                <label className="type-kicker" style={{ display: "block", fontSize: "13px", fontWeight: 500, color: "var(--ink)", marginBottom: "6px", letterSpacing: "0.03em", textTransform: "uppercase" }}>
+                <label htmlFor="auth-email" className="type-kicker" style={{ display: "block", fontSize: "13px", fontWeight: 500, color: "var(--ink)", marginBottom: "6px", letterSpacing: "0.03em", textTransform: "uppercase" }}>
                   Email
                 </label>
                 <input
+                  id="auth-email"
+                  name="email"
                   className="input"
                   type="email"
                   value={email}
@@ -183,10 +185,12 @@ export default function Home() {
               </div>
 
               <div>
-                <label className="type-kicker" style={{ display: "block", fontSize: "13px", fontWeight: 500, color: "var(--ink)", marginBottom: "6px", letterSpacing: "0.03em", textTransform: "uppercase" }}>
+                <label htmlFor="auth-password" className="type-kicker" style={{ display: "block", fontSize: "13px", fontWeight: 500, color: "var(--ink)", marginBottom: "6px", letterSpacing: "0.03em", textTransform: "uppercase" }}>
                   Password
                 </label>
                 <input
+                  id="auth-password"
+                  name="password"
                   className="input"
                   type="password"
                   value={password}

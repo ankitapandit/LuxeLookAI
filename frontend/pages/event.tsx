@@ -4,13 +4,12 @@
  * On success, generates looks for the current event.
  */
 
-import { useState } from "react";
-// import { useRouter } from "next/router";
+import { useEffect, useState } from "react";
 import Head from "next/head";
 import Navbar from "@/components/layout/Navbar";
 import { createEvent, generateOutfits, resetFeedback, getWardrobeItems, rateOutfit, OutfitSuggestion, ClothingItem } from "@/services/api";
 import OutfitSuggestionCard from "@/components/OutfitSuggestionCard";
-import { CalendarDays, Sparkles, Info, X, RefreshCw } from "lucide-react";
+import { CalendarDays, ChevronDown, Sparkles, Info, X, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 
 // Example prompts to inspire the user
@@ -22,11 +21,109 @@ const EXAMPLES = [
   "First date at a cozy wine bar, smart casual",
 ];
 
+function titleCase(value: string): string {
+  return value
+    .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getColorFamily(color?: string): string {
+  const value = (color || "").toLowerCase();
+  if (!value) return "neutral";
+  if (/(pink|blush|rose|mauve|fuchsia|magenta)/.test(value)) return "pink";
+  if (/(white|ivory|cream|beige|tan|camel|khaki|sand|nude|stone)/.test(value)) return "light neutral";
+  if (/(black|charcoal|ebony|onyx)/.test(value)) return "dark neutral";
+  if (/(brown|chocolate|espresso|cocoa|taupe)/.test(value)) return "earth";
+  if (/(blue|navy|indigo|cobalt|denim|teal)/.test(value)) return "blue";
+  if (/(green|sage|olive|mint|forest)/.test(value)) return "green";
+  if (/(red|burgundy|wine|maroon|rust|coral|orange|peach|yellow|gold)/.test(value)) return "warm";
+  if (/(grey|gray|silver)/.test(value)) return "cool neutral";
+  return "neutral";
+}
+
+function findMatchingItem(items: ClothingItem[], categories: string[], accessorySubtypes: string[] = []): ClothingItem | undefined {
+  const categorySet = new Set(categories.map((value) => value.toLowerCase()));
+  const subtypeSet = new Set(accessorySubtypes.map((value) => value.toLowerCase()));
+
+  return items.find((candidate) => {
+    const category = (candidate.category || "").toLowerCase();
+    if (categorySet.has(category)) return true;
+    const subtype = (candidate.accessory_subtype || "").toLowerCase();
+    return category === "accessories" && subtypeSet.size > 0 && Array.from(subtypeSet).some((needle) => subtype.includes(needle));
+  });
+}
+
+function describeSuggestedItem(item: ClothingItem | undefined, fallback: string): string {
+  if (!item) return fallback;
+  const title = item.accessory_subtype ? titleCase(item.accessory_subtype) : titleCase(item.category);
+  const details = [item.color, item.season].filter(Boolean).map((value) => titleCase(String(value)));
+  return details.length > 0 ? `${title} · ${details.join(" · ")}` : title;
+}
+
+type StyleDirectionBand = {
+  items: { label: string; value: string }[];
+};
+
+function buildStyleDirection(
+  suggestion: OutfitSuggestion | null,
+  wardrobeMap: Record<string, ClothingItem>,
+): { title: string; intro: string; bands: StyleDirectionBand[]; final: string; avoid: string } | null {
+  if (!suggestion) return null;
+
+  const items = [...suggestion.item_ids, ...(suggestion.accessory_ids || [])]
+    .map((id) => wardrobeMap[id])
+    .filter(Boolean);
+  if (!items.length) return null;
+
+  const anchor = items[0];
+  const colorFamily = getColorFamily(anchor?.color);
+  const vibeText = (suggestion.card?.vibe || "").toLowerCase();
+  const weatherSyncText = (suggestion.card?.weather_sync || "").toLowerCase();
+
+  const topItem = findMatchingItem(items, ["tops"]);
+  const bottomItem = findMatchingItem(items, ["bottoms"]);
+  const dressItem = findMatchingItem(items, ["dresses"]);
+  const shoeItem = findMatchingItem(items, ["shoes"]);
+  const outerwearItem = findMatchingItem(items, ["outerwear"]);
+  const jewelryItem = findMatchingItem(items, [], ["jewelry", "necklace", "earring", "bracelet", "ring", "watch"]);
+
+  const baseBand = dressItem
+    ? [{ label: "Dress", value: describeSuggestedItem(dressItem, "A clean dress silhouette") }]
+    : [
+        { label: "Top", value: describeSuggestedItem(topItem, "Clean fitted top or bodysuit") },
+        { label: "Bottom", value: describeSuggestedItem(bottomItem, "Tailored trouser, straight skirt, or clean denim") },
+      ];
+
+  const supportBand = [
+    { label: "Shoes", value: describeSuggestedItem(shoeItem, "Simple heel or polished flat") },
+    { label: "Outerwear", value: describeSuggestedItem(outerwearItem, "Light blazer, wrap, or cardigan") },
+  ];
+
+  const finishBand = [
+    { label: "Hair", value: vibeText.includes("confident") || vibeText.includes("statement") ? "Sleek bun or polished blowout" : "Soft waves or a polished bun" },
+    { label: "Makeup", value: colorFamily === "pink" || colorFamily === "warm" ? "Glow-forward skin and a soft lip" : "Clean skin, soft definition, and a neutral lip" },
+    { label: "Jewelry", value: describeSuggestedItem(jewelryItem, "Gold hoops or a delicate chain") },
+  ];
+
+  return {
+    title: "What works best",
+    intro: "If you do not love the looks above, here is the cleaner direction I would take with this look.",
+    bands: [{ items: baseBand }, { items: supportBand }, { items: finishBand }],
+    final: "Keep the styling cohesive, let one piece lead, and avoid anything that fights the shape or texture of the outfit.",
+    avoid: weatherSyncText.includes("indoor") || weatherSyncText.includes("mild")
+      ? "Avoid anything that feels too heavy or overworked for the setting."
+      : "Avoid anything that fights the shape, texture, or weather of the outfit.",
+  };
+}
+
 export default function EventsPage() {
   const [text,           setText]           = useState("");
   const [loading,        setLoading]        = useState(false);
   const [eventId,        setEventId]        = useState<string | null>(null);
   const [suggestions,    setSuggestions]    = useState<OutfitSuggestion[]>([]);
+  const [activeSuggestionId, setActiveSuggestionId] = useState<string | null>(null);
   const [wardrobeMap,    setWardrobeMap]    = useState<Record<string, ClothingItem>>({});
   // Accumulated suggestion IDs shown across all regenerates this session
   const [allShownIds,    setAllShownIds]    = useState<string[]>([]);
@@ -36,6 +133,14 @@ export default function EventsPage() {
   const [coverageHints,   setCoverageHints]   = useState<string[]>([]);
   // Controls visibility of the "None of these work" tooltip
   const [showBadTip,      setShowBadTip]      = useState(false);
+  const [showExpertSuggestion, setShowExpertSuggestion] = useState(true);
+
+  useEffect(() => {
+    setActiveSuggestionId(suggestions[0]?.id ?? null);
+  }, [suggestions]);
+
+  const activeSuggestion = suggestions.find((suggestion) => suggestion.id === activeSuggestionId) || suggestions[0] || null;
+  const styleDirection = buildStyleDirection(activeSuggestion, wardrobeMap);
 
   async function handleGenerate() {
     if (!text.trim()) return;
@@ -286,7 +391,14 @@ export default function EventsPage() {
 
               <div className="outfit-carousel">
                 {suggestions.map((s, idx) => (
-                  <div key={s.id} className="outfit-card-wrap">
+                  <div
+                    key={s.id}
+                    className="outfit-card-wrap"
+                    onMouseEnter={() => setActiveSuggestionId(s.id)}
+                    onFocus={() => setActiveSuggestionId(s.id)}
+                    tabIndex={0}
+                    style={{ outline: "none" }}
+                  >
                     <OutfitSuggestionCard
                       suggestion={s}
                       rank={idx + 1}
@@ -296,6 +408,105 @@ export default function EventsPage() {
                   </div>
                 ))}
               </div>
+
+              {styleDirection ? (
+                <div
+                  style={{
+                    marginTop: "24px",
+                    padding: "20px",
+                    borderRadius: "22px",
+                    background: "linear-gradient(145deg, rgba(212,169,106,0.10) 0%, rgba(255,255,255,0.04) 100%)",
+                    border: "1px solid rgba(212,169,106,0.18)",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+                    <div>
+                      <p className="type-kicker" style={{ margin: 0, fontSize: "11px", color: "var(--gold)", letterSpacing: "0.14em", textTransform: "uppercase" }}>
+                        Experts suggest
+                      </p>
+                      <h3 style={{ margin: "8px 0 0", fontFamily: "Playfair Display, serif", fontSize: "clamp(24px, 3vw, 32px)", lineHeight: 1.05, color: "var(--charcoal)" }}>
+                        {styleDirection.title}
+                      </h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowExpertSuggestion((value) => !value)}
+                      aria-expanded={showExpertSuggestion}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        border: "1px solid rgba(212,169,106,0.18)",
+                        background: "rgba(17, 15, 12, 0.42)",
+                        color: "var(--charcoal)",
+                        borderRadius: "999px",
+                        padding: "8px 12px",
+                        fontSize: "12px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {showExpertSuggestion ? "Hide" : "Show"}
+                      <ChevronDown size={14} style={{ transform: showExpertSuggestion ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.18s ease" }} />
+                    </button>
+                  </div>
+
+                  {showExpertSuggestion ? (
+                    <div style={{ marginTop: "14px" }}>
+                      <p style={{ margin: 0, color: "var(--charcoal)", fontSize: "15px", lineHeight: 1.7, fontStyle: "italic" }}>
+                        {styleDirection.intro}
+                      </p>
+
+                      <div style={{ display: "grid", gap: "10px", marginTop: "18px" }}>
+                        {styleDirection.bands.map((band, bandIndex) => (
+                          <div key={bandIndex} style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                            {band.items.map((row) => (
+                              <span
+                                key={row.label}
+                                className="type-chip"
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "baseline",
+                                  gap: "6px",
+                                  background: "rgba(17, 15, 12, 0.52)",
+                                  color: "#FFF7ED",
+                                  border: "1px solid rgba(212,169,106,0.18)",
+                                  padding: "12px 14px",
+                                  borderRadius: "4px",
+                                  width: "fit-content",
+                                  maxWidth: "100%",
+                                }}
+                              >
+                                <strong style={{ color: "var(--gold)", whiteSpace: "nowrap" }}>{row.label}:</strong>
+                                <span style={{ whiteSpace: "normal" }}>{row.value}</span>
+                              </span>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: "18px",
+                          padding: "14px 16px",
+                          borderRadius: "16px",
+                          background: "rgba(17, 15, 12, 0.60)",
+                          border: "1px solid rgba(212,169,106,0.14)",
+                        }}
+                      >
+                        <p className="type-kicker" style={{ margin: 0, fontSize: "11px", color: "var(--gold)", letterSpacing: "0.14em", textTransform: "uppercase" }}>
+                          My recommendation
+                        </p>
+                        <p style={{ margin: "8px 0 0", color: "#FFF7ED", fontSize: "14px", lineHeight: 1.7, fontStyle: "italic" }}>
+                          {styleDirection.final}
+                        </p>
+                        <p style={{ margin: "10px 0 0", color: "rgba(255,247,237,0.76)", fontSize: "13px", lineHeight: 1.6 }}>
+                          {styleDirection.avoid}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           )}
         </div>

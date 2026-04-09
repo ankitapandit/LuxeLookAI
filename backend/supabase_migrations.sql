@@ -105,7 +105,19 @@ alter table public.clothing_items
   add column if not exists media_status text default 'pending',
   add column if not exists media_stage text,
   add column if not exists media_error text,
-  add column if not exists media_updated_at timestamptz;
+  add column if not exists media_updated_at timestamptz,
+  add column if not exists is_archived boolean default false,
+  add column if not exists archived_on timestamptz default null;
+
+-- Backfill archive metadata for existing rows.
+-- Active rows remain unarchived; previously soft-deleted rows get their
+-- archived timestamp from deleted_at, or now() if deleted_at was missing.
+update public.clothing_items
+   set is_archived = case when coalesce(is_active, true) then false else true end,
+       archived_on = case
+         when coalesce(is_active, true) then null
+         else coalesce(archived_on, deleted_at, now())
+       end;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -114,13 +126,34 @@ alter table public.clothing_items
 
 -- Extended user profile fields
 alter table public.users
+  add column if not exists gender         text default 'prefer_not_to_say',
+  add column if not exists ethnicity      text default 'prefer_not_to_say',
   add column if not exists body_type        text,
   add column if not exists height           float,
   add column if not exists weight           float,
   add column if not exists complexion       text,
   add column if not exists face_shape       text,
-  add column if not exists hairstyle        text,
-  add column if not exists preferred_styles jsonb default '{}';
+  add column if not exists hairstyle        text;
+
+alter table public.users
+  alter column gender set default 'prefer_not_to_say',
+  alter column ethnicity set default 'prefer_not_to_say';
+
+update public.users
+   set gender = coalesce(nullif(gender, ''), 'prefer_not_to_say'),
+       ethnicity = coalesce(nullif(ethnicity, ''), 'prefer_not_to_say')
+ where gender is null
+    or ethnicity is null
+    or gender = ''
+    or ethnicity = '';
+
+alter table public.users
+  drop column if exists preferred_styles,
+  drop column if exists disliked_styles;
+
+alter table public.users
+  alter column gender set not null,
+  alter column ethnicity set not null;
 
 -- RLS: allow users to update their own profile
 -- (may already exist from schema.sql — safe to skip if duplicate error)
@@ -141,6 +174,229 @@ create policy "Service role can update users"
 create policy "Users can update own profile"
   on public.users for update
   using (auth.uid() = id);
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v2.0.0 — Discover taste-learning tables
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.style_catalog (
+    id            uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    style_key     text NOT NULL UNIQUE,
+    label         text NOT NULL,
+    dimension     text NOT NULL,
+    description   text,
+    aliases       jsonb DEFAULT '[]'::jsonb,
+    sort_order    int DEFAULT 0,
+    is_active     boolean DEFAULT true,
+    created_at    timestamptz DEFAULT now(),
+    updated_at    timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_style_catalog_dimension
+    ON public.style_catalog (dimension);
+
+CREATE INDEX IF NOT EXISTS idx_style_catalog_key
+    ON public.style_catalog (style_key);
+
+CREATE TABLE IF NOT EXISTS public.discover_ignored_urls (
+    id             uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id        uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    source_url     text NOT NULL,
+    normalized_url text NOT NULL,
+    image_url      text,
+    thumbnail_url  text,
+    source_domain  text,
+    search_query   text,
+    last_action    text,
+    reason         text,
+    last_seen_at   timestamptz DEFAULT now(),
+    created_at     timestamptz DEFAULT now(),
+    UNIQUE (user_id, normalized_url)
+);
+
+CREATE INDEX IF NOT EXISTS idx_discover_ignored_user
+    ON public.discover_ignored_urls (user_id);
+
+CREATE TABLE IF NOT EXISTS public.discover_style_interactions (
+    id                uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id           uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    card_id           text NOT NULL,
+    source_url        text NOT NULL,
+    normalized_url    text NOT NULL,
+    image_url         text NOT NULL,
+    thumbnail_url     text,
+    source_domain     text,
+    title             text NOT NULL,
+    summary           text,
+    search_query      text,
+    style_ids         text[] DEFAULT '{}',
+    style_tags        text[] DEFAULT '{}',
+    action            text NOT NULL CHECK (action IN ('love', 'like', 'dislike')),
+    person_count      int DEFAULT 1,
+    is_single_person  boolean DEFAULT true,
+    analysis          jsonb DEFAULT '{}',
+    interaction_index int,
+    created_at        timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_discover_swipe_user
+    ON public.discover_style_interactions (user_id);
+
+CREATE INDEX IF NOT EXISTS idx_discover_swipe_url
+    ON public.discover_style_interactions (user_id, normalized_url);
+
+CREATE TABLE IF NOT EXISTS public.discover_candidates (
+    id               uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id          uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    normalized_url   text NOT NULL,
+    source_url       text NOT NULL,
+    image_url        text NOT NULL,
+    thumbnail_url    text,
+    source_domain    text,
+    provider_name    text,
+    title            text NOT NULL,
+    summary          text,
+    source_note      text,
+    search_query     text,
+    status           text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'ready', 'filtered', 'failed')),
+    analysis         jsonb DEFAULT '{}',
+    style_tags       text[] DEFAULT '{}',
+    style_ids        text[] DEFAULT '{}',
+    person_count     int DEFAULT 0,
+    is_single_person boolean DEFAULT false,
+    last_error       text,
+    last_analyzed_at timestamptz,
+    created_at       timestamptz DEFAULT now(),
+    updated_at       timestamptz DEFAULT now(),
+    UNIQUE (user_id, normalized_url)
+);
+
+CREATE INDEX IF NOT EXISTS idx_discover_candidates_user
+    ON public.discover_candidates (user_id);
+
+CREATE INDEX IF NOT EXISTS idx_discover_candidates_status
+    ON public.discover_candidates (user_id, status, updated_at);
+
+CREATE TABLE IF NOT EXISTS public.user_style_preferences (
+    id                 uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id            uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    style_id           text NOT NULL,
+    style_key          text NOT NULL,
+    label              text NOT NULL,
+    dimension          text NOT NULL,
+    score              float DEFAULT 0,
+    confidence         float DEFAULT 0,
+    exposure_count     int DEFAULT 0,
+    love_count         int DEFAULT 0,
+    like_count         int DEFAULT 0,
+    dislike_count      int DEFAULT 0,
+    positive_count     int DEFAULT 0,
+    negative_count     int DEFAULT 0,
+    status             text DEFAULT 'emerging',
+    last_interaction_at timestamptz,
+    updated_at         timestamptz DEFAULT now(),
+    created_at         timestamptz DEFAULT now(),
+    UNIQUE (user_id, style_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_style_preferences_user
+    ON public.user_style_preferences (user_id);
+
+CREATE INDEX IF NOT EXISTS idx_user_style_preferences_status
+    ON public.user_style_preferences (user_id, status);
+
+CREATE TABLE IF NOT EXISTS public.discover_jobs (
+    id            uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id       uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    job_type      text NOT NULL,
+    status        text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
+    priority      int DEFAULT 100,
+    payload       jsonb DEFAULT '{}',
+    dedupe_key    text,
+    attempts      int DEFAULT 0,
+    max_attempts  int DEFAULT 3,
+    scheduled_for timestamptz DEFAULT now(),
+    locked_at     timestamptz,
+    locked_by     text,
+    last_error    text,
+    result        jsonb,
+    created_at    timestamptz DEFAULT now(),
+    updated_at    timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_discover_jobs_user
+    ON public.discover_jobs (user_id);
+
+CREATE INDEX IF NOT EXISTS idx_discover_jobs_status
+    ON public.discover_jobs (status, scheduled_for, priority);
+
+alter table public.style_catalog enable row level security;
+alter table public.discover_candidates enable row level security;
+alter table public.discover_ignored_urls enable row level security;
+alter table public.discover_style_interactions enable row level security;
+alter table public.user_style_preferences enable row level security;
+alter table public.discover_jobs enable row level security;
+
+create policy "Style catalog is readable"
+  on public.style_catalog for select
+  using (true);
+
+create policy "Users can view own discover candidates"
+  on public.discover_candidates for select
+  using (auth.uid() = user_id);
+
+create policy "Users can insert own discover candidates"
+  on public.discover_candidates for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can update own discover candidates"
+  on public.discover_candidates for update
+  using (auth.uid() = user_id);
+
+create policy "Users can view own ignored discover URLs"
+  on public.discover_ignored_urls for select
+  using (auth.uid() = user_id);
+
+create policy "Users can insert own ignored discover URLs"
+  on public.discover_ignored_urls for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can update own ignored discover URLs"
+  on public.discover_ignored_urls for update
+  using (auth.uid() = user_id);
+
+create policy "Users can view own discover interactions"
+  on public.discover_style_interactions for select
+  using (auth.uid() = user_id);
+
+create policy "Users can insert own discover interactions"
+  on public.discover_style_interactions for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can view own style preferences"
+  on public.user_style_preferences for select
+  using (auth.uid() = user_id);
+
+create policy "Users can insert own style preferences"
+  on public.user_style_preferences for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can update own style preferences"
+  on public.user_style_preferences for update
+  using (auth.uid() = user_id);
+
+create policy "Users can view own discover jobs"
+  on public.discover_jobs for select
+  using (auth.uid() = user_id);
+
+create policy "Users can insert own discover jobs"
+  on public.discover_jobs for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can update own discover jobs"
+  on public.discover_jobs for update
+  using (auth.uid() = user_id);
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -220,6 +476,10 @@ create policy "Users can delete own profile photo"
 alter table public.users rename column height to height_cm;
 alter table public.users rename column weight to weight_kg;
 
+-- Remove deprecated favorite photo embedding column if it exists
+alter table public.users drop column if exists favorite_photo;
+alter table public.users drop column if exists favorite_photo_embedding;
+
 create policy "Users can upload own profile photo"
   on storage.objects for insert to authenticated
   with check (
@@ -270,11 +530,13 @@ create policy "Service role can update AI profile photos"
 alter table public.clothing_items
   add column if not exists descriptors jsonb default '{}';
 
--- Audit and soft-delete columns for clothing_items
+-- Audit, soft-delete, and archive columns for clothing_items
 alter table public.clothing_items
   add column if not exists updated_at   timestamptz default now(),
   add column if not exists deleted_at   timestamptz default null,
-  add column if not exists is_active    boolean     default true;
+  add column if not exists is_active    boolean     default true,
+  add column if not exists is_archived   boolean     default false,
+  add column if not exists archived_on   timestamptz default null;
 
 -- Auto-update updated_at on any row change
 create or replace function public.set_updated_at()
@@ -303,7 +565,7 @@ ALTER TABLE events ADD COLUMN event_tokens jsonb DEFAULT '[]';
 -- ─────────────────────────────────────────────────────────────────────────────
 -- v1.8.0 — 90-day auto-purge for soft-deleted wardrobe items
 -- ─────────────────────────────────────────────────────────────────────────────
--- Items are soft-deleted (is_active=FALSE, deleted_at=<timestamp>).
+-- Items are archived (is_active=FALSE, is_archived=TRUE, archived_on=<timestamp>).
 -- After 90 days they should be hard-deleted (DB row + storage file).
 --
 -- TWO options — choose one:
@@ -318,8 +580,8 @@ ALTER TABLE events ADD COLUMN event_tokens jsonb DEFAULT '[]';
 --   '0 3 * * *',                               -- daily at 03:00 UTC
 --   $$
 --     delete from public.clothing_items
---     where is_active = false
---       and deleted_at < now() - interval '90 days';
+--     where is_archived = true
+--       and coalesce(archived_on, deleted_at) < now() - interval '90 days';
 --   $$
 -- );
 --
@@ -603,6 +865,138 @@ VALUES
   ('descriptor', 'dresses', 'pattern', 'tie-dye', '{}', 6),
   ('descriptor', 'dresses', 'pattern', 'plaid', '{}', 7),
   ('descriptor', 'dresses', 'pattern', 'animal print', '{}', 8),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'cotton', '{}', 1),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'polyester', '{}', 2),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'nylon', '{}', 3),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'spandex', '{}', 4),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'elastane', '{}', 5),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'rayon', '{}', 6),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'linen', '{}', 7),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'denim', '{}', 8),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'satin', '{}', 9),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'silk', '{}', 10),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'chiffon', '{}', 11),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'mesh', '{}', 12),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'lace', '{}', 13),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'knit', '{}', 14),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'wool', '{}', 15),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'leather', '{}', 16),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'suede', '{}', 17),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'faux fur', '{}', 18),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'tweed', '{}', 19),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'jersey', '{}', 20),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'terry', '{}', 21),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'lycra', '{}', 22),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'recycled nylon', '{}', 23),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'fleece', '{}', 24),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'modal', '{}', 25),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'bamboo', '{}', 26),
+  ('descriptor', 'jumpsuits', 'fabric_type', 'waffle-knit', '{}', 27),
+  ('descriptor', 'jumpsuits', 'jumpsuit_style', 'tailored', '{}', 1),
+  ('descriptor', 'jumpsuits', 'jumpsuit_style', 'utility', '{}', 2),
+  ('descriptor', 'jumpsuits', 'jumpsuit_style', 'romper', '{}', 3),
+  ('descriptor', 'jumpsuits', 'jumpsuit_style', 'playsuit', '{}', 4),
+  ('descriptor', 'jumpsuits', 'jumpsuit_style', 'halter', '{}', 5),
+  ('descriptor', 'jumpsuits', 'jumpsuit_style', 'strapless', '{}', 6),
+  ('descriptor', 'jumpsuits', 'jumpsuit_style', 'boiler', '{}', 7),
+  ('descriptor', 'jumpsuits', 'jumpsuit_style', 'evening', '{}', 8),
+  ('descriptor', 'jumpsuits', 'jumpsuit_style', 'boho', '{}', 9),
+  ('descriptor', 'jumpsuits', 'jumpsuit_style', 'wide-leg', '{}', 10),
+  ('descriptor', 'jumpsuits', 'jumpsuit_style', 'straight-leg', '{}', 11),
+  ('descriptor', 'jumpsuits', 'jumpsuit_style', 'tapered', '{}', 12),
+  ('descriptor', 'jumpsuits', 'neckline', 'crew', '{}', 1),
+  ('descriptor', 'jumpsuits', 'neckline', 'round', '{}', 2),
+  ('descriptor', 'jumpsuits', 'neckline', 'V-neck', '{}', 3),
+  ('descriptor', 'jumpsuits', 'neckline', 'square', '{}', 4),
+  ('descriptor', 'jumpsuits', 'neckline', 'scoop', '{}', 5),
+  ('descriptor', 'jumpsuits', 'neckline', 'sweetheart', '{}', 6),
+  ('descriptor', 'jumpsuits', 'neckline', 'off-shoulder', '{}', 7),
+  ('descriptor', 'jumpsuits', 'neckline', 'halter', '{}', 8),
+  ('descriptor', 'jumpsuits', 'neckline', 'high neck', '{}', 9),
+  ('descriptor', 'jumpsuits', 'neckline', 'turtleneck', '{}', 10),
+  ('descriptor', 'jumpsuits', 'neckline', 'collar', '{}', 11),
+  ('descriptor', 'jumpsuits', 'neckline', 'cowl', '{}', 12),
+  ('descriptor', 'jumpsuits', 'neckline', 'asymmetrical', '{}', 13),
+  ('descriptor', 'jumpsuits', 'sleeve_length', 'sleeveless', '{}', 1),
+  ('descriptor', 'jumpsuits', 'sleeve_length', 'cap', '{}', 2),
+  ('descriptor', 'jumpsuits', 'sleeve_length', 'short', '{}', 3),
+  ('descriptor', 'jumpsuits', 'sleeve_length', '3/4', '{}', 4),
+  ('descriptor', 'jumpsuits', 'sleeve_length', 'long', '{}', 5),
+  ('descriptor', 'jumpsuits', 'sleeve_style', 'puff', '{}', 1),
+  ('descriptor', 'jumpsuits', 'sleeve_style', 'bishop', '{}', 2),
+  ('descriptor', 'jumpsuits', 'sleeve_style', 'balloon', '{}', 3),
+  ('descriptor', 'jumpsuits', 'sleeve_style', 'bell', '{}', 4),
+  ('descriptor', 'jumpsuits', 'sleeve_style', 'raglan', '{}', 5),
+  ('descriptor', 'jumpsuits', 'sleeve_style', 'batwing', '{}', 6),
+  ('descriptor', 'jumpsuits', 'sleeve_style', 'cold shoulder', '{}', 7),
+  ('descriptor', 'jumpsuits', 'sleeve_style', 'flutter', '{}', 8),
+  ('descriptor', 'jumpsuits', 'strap_type', 'strapless', '{}', 1),
+  ('descriptor', 'jumpsuits', 'strap_type', 'spaghetti', '{}', 2),
+  ('descriptor', 'jumpsuits', 'strap_type', 'wide', '{}', 3),
+  ('descriptor', 'jumpsuits', 'strap_type', 'adjustable', '{}', 4),
+  ('descriptor', 'jumpsuits', 'strap_type', 'racerback', '{}', 5),
+  ('descriptor', 'jumpsuits', 'strap_type', 'cross-back', '{}', 6),
+  ('descriptor', 'jumpsuits', 'strap_type', 'halter', '{}', 7),
+  ('descriptor', 'jumpsuits', 'fit', 'slim', '{}', 1),
+  ('descriptor', 'jumpsuits', 'fit', 'regular', '{}', 2),
+  ('descriptor', 'jumpsuits', 'fit', 'relaxed', '{}', 3),
+  ('descriptor', 'jumpsuits', 'fit', 'loose', '{}', 4),
+  ('descriptor', 'jumpsuits', 'fit', 'oversized', '{}', 5),
+  ('descriptor', 'jumpsuits', 'fit', 'bodycon', '{}', 6),
+  ('descriptor', 'jumpsuits', 'fit', 'tailored', '{}', 7),
+  ('descriptor', 'jumpsuits', 'fit', 'A-line', '{}', 8),
+  ('descriptor', 'jumpsuits', 'fit', 'fit & flare', '{}', 9),
+  ('descriptor', 'jumpsuits', 'fit', 'wrap', '{}', 10),
+  ('descriptor', 'jumpsuits', 'fit', 'belted', '{}', 11),
+  ('descriptor', 'jumpsuits', 'length', 'short', '{}', 1),
+  ('descriptor', 'jumpsuits', 'length', 'cropped', '{}', 2),
+  ('descriptor', 'jumpsuits', 'length', 'ankle', '{}', 3),
+  ('descriptor', 'jumpsuits', 'length', 'full-length', '{}', 4),
+  ('descriptor', 'jumpsuits', 'leg_shape', 'shorts', '{}', 1),
+  ('descriptor', 'jumpsuits', 'leg_shape', 'straight', '{}', 2),
+  ('descriptor', 'jumpsuits', 'leg_shape', 'wide-leg', '{}', 3),
+  ('descriptor', 'jumpsuits', 'leg_shape', 'tapered', '{}', 4),
+  ('descriptor', 'jumpsuits', 'leg_shape', 'flared', '{}', 5),
+  ('descriptor', 'jumpsuits', 'leg_shape', 'culotte', '{}', 6),
+  ('descriptor', 'jumpsuits', 'waist_structure', 'elastic', '{}', 1),
+  ('descriptor', 'jumpsuits', 'waist_structure', 'drawstring', '{}', 2),
+  ('descriptor', 'jumpsuits', 'waist_structure', 'belted', '{}', 3),
+  ('descriptor', 'jumpsuits', 'waist_structure', 'paperbag', '{}', 4),
+  ('descriptor', 'jumpsuits', 'waist_structure', 'corset', '{}', 5),
+  ('descriptor', 'jumpsuits', 'waist_structure', 'smocked', '{}', 6),
+  ('descriptor', 'jumpsuits', 'closure', 'pullover', '{}', 1),
+  ('descriptor', 'jumpsuits', 'closure', 'button-front', '{}', 2),
+  ('descriptor', 'jumpsuits', 'closure', 'zip-up', '{}', 3),
+  ('descriptor', 'jumpsuits', 'closure', 'wrap', '{}', 4),
+  ('descriptor', 'jumpsuits', 'closure', 'open front', '{}', 5),
+  ('descriptor', 'jumpsuits', 'detailing', 'ruffles', '{}', 1),
+  ('descriptor', 'jumpsuits', 'detailing', 'pleats', '{}', 2),
+  ('descriptor', 'jumpsuits', 'detailing', 'ruched', '{}', 3),
+  ('descriptor', 'jumpsuits', 'detailing', 'smocked', '{}', 4),
+  ('descriptor', 'jumpsuits', 'detailing', 'tiered', '{}', 5),
+  ('descriptor', 'jumpsuits', 'detailing', 'draped', '{}', 6),
+  ('descriptor', 'jumpsuits', 'detailing', 'cut-out', '{}', 7),
+  ('descriptor', 'jumpsuits', 'detailing', 'slit', '{}', 8),
+  ('descriptor', 'jumpsuits', 'detailing', 'bow', '{}', 9),
+  ('descriptor', 'jumpsuits', 'detailing', 'knot', '{}', 10),
+  ('descriptor', 'jumpsuits', 'detailing', 'lace-up', '{}', 11),
+  ('descriptor', 'jumpsuits', 'detailing', 'fringe', '{}', 12),
+  ('descriptor', 'jumpsuits', 'detailing', 'embroidery', '{}', 13),
+  ('descriptor', 'jumpsuits', 'elasticity', 'non-stretch', '{}', 1),
+  ('descriptor', 'jumpsuits', 'elasticity', 'slight stretch', '{}', 2),
+  ('descriptor', 'jumpsuits', 'elasticity', 'medium stretch', '{}', 3),
+  ('descriptor', 'jumpsuits', 'elasticity', 'high stretch', '{}', 4),
+  ('descriptor', 'jumpsuits', 'sheer', 'opaque', '{}', 1),
+  ('descriptor', 'jumpsuits', 'sheer', 'semi-sheer', '{}', 2),
+  ('descriptor', 'jumpsuits', 'sheer', 'sheer', '{}', 3),
+  ('descriptor', 'jumpsuits', 'pattern', 'solid', '{}', 1),
+  ('descriptor', 'jumpsuits', 'pattern', 'floral', '{}', 2),
+  ('descriptor', 'jumpsuits', 'pattern', 'striped', '{}', 3),
+  ('descriptor', 'jumpsuits', 'pattern', 'graphic', '{}', 4),
+  ('descriptor', 'jumpsuits', 'pattern', 'abstract', '{}', 5),
+  ('descriptor', 'jumpsuits', 'pattern', 'tie-dye', '{}', 6),
+  ('descriptor', 'jumpsuits', 'pattern', 'plaid', '{}', 7),
+  ('descriptor', 'jumpsuits', 'pattern', 'animal print', '{}', 8),
   ('descriptor', 'outerwear', 'fabric_type', 'cotton', '{}', 1),
   ('descriptor', 'outerwear', 'fabric_type', 'polyester', '{}', 2),
   ('descriptor', 'outerwear', 'fabric_type', 'nylon', '{}', 3),
@@ -886,10 +1280,11 @@ INSERT INTO public.style_taxonomy (domain, category, attribute, value, meta, sor
 VALUES
   ('clip_label', '', 'category', 'tops', '{"clip_prompt": "a photo of a top, t-shirt, blouse, shirt, or sweater worn on the upper body"}', 1),
   ('clip_label', '', 'category', 'bottoms', '{"clip_prompt": "a photo of trousers, jeans, skirt, shorts, or pants worn on the lower body"}', 2),
-  ('clip_label', '', 'category', 'dresses', '{"clip_prompt": "a photo of a dress or jumpsuit that covers both the torso and legs"}', 3),
-  ('clip_label', '', 'category', 'shoes', '{"clip_prompt": "a photo of shoes, boots, heels, sneakers, sandals, or footwear"}', 4),
-  ('clip_label', '', 'category', 'outerwear', '{"clip_prompt": "a photo of a coat, jacket, blazer, or cardigan worn as an outer layer"}', 5),
-  ('clip_label', '', 'category', 'accessories', '{"clip_prompt": "a photo of an accessory such as a handbag, jewelry, belt, scarf, or hat"}', 6),
+  ('clip_label', '', 'category', 'dresses', '{"clip_prompt": "a photo of a dress that covers both the torso and legs"}', 3),
+  ('clip_label', '', 'category', 'jumpsuits', '{"clip_prompt": "a photo of a jumpsuit, romper, or playsuit that covers the torso and either full legs or shorts"}', 4),
+  ('clip_label', '', 'category', 'shoes', '{"clip_prompt": "a photo of shoes, boots, heels, sneakers, sandals, or footwear"}', 5),
+  ('clip_label', '', 'category', 'outerwear', '{"clip_prompt": "a photo of a coat, jacket, blazer, or cardigan worn as an outer layer"}', 6),
+  ('clip_label', '', 'category', 'accessories', '{"clip_prompt": "a photo of an accessory such as a handbag, jewelry, belt, scarf, or hat"}', 7),
   ('clip_label', '', 'season', 'summer', '{"clip_prompt": "lightweight summer clothing \u2014 thin fabric, sleeveless, breathable, for hot weather"}', 1),
   ('clip_label', '', 'season', 'winter', '{"clip_prompt": "heavy winter clothing \u2014 thick fabric, warm, insulating, for cold weather"}', 2),
   ('clip_label', '', 'season', 'spring', '{"clip_prompt": "light layering piece for mild spring or autumn weather"}', 3),
@@ -926,6 +1321,14 @@ VALUES
   ('body_type', 'hourglass', 'dresses_length', 'midi', '{}', 1),
   ('body_type', 'hourglass', 'dresses_length', 'knee', '{}', 2),
   ('body_type', 'hourglass', 'dresses_length', 'mini', '{}', 3),
+  ('body_type', 'hourglass', 'jumpsuits_fit', 'fitted', '{}', 1),
+  ('body_type', 'hourglass', 'jumpsuits_fit', 'tailored', '{}', 2),
+  ('body_type', 'hourglass', 'jumpsuits_fit', 'wrap', '{}', 3),
+  ('body_type', 'hourglass', 'jumpsuits_length', 'ankle', '{}', 1),
+  ('body_type', 'hourglass', 'jumpsuits_length', 'full-length', '{}', 2),
+  ('body_type', 'hourglass', 'jumpsuits_leg_shape', 'straight', '{}', 1),
+  ('body_type', 'hourglass', 'jumpsuits_leg_shape', 'tapered', '{}', 2),
+  ('body_type', 'hourglass', 'jumpsuits_leg_shape', 'flared', '{}', 3),
   ('body_type', 'hourglass', 'outerwear_fit', 'fitted', '{}', 1),
   ('body_type', 'hourglass', 'outerwear_fit', 'tailored', '{}', 2),
   ('body_type', 'rectangle', 'tops_fit', 'oversized', '{}', 1),
@@ -948,6 +1351,14 @@ VALUES
   ('body_type', 'rectangle', 'dresses_fit', 'peplum', '{}', 4),
   ('body_type', 'rectangle', 'dresses_length', 'midi', '{}', 1),
   ('body_type', 'rectangle', 'dresses_length', 'maxi', '{}', 2),
+  ('body_type', 'rectangle', 'jumpsuits_fit', 'tailored', '{}', 1),
+  ('body_type', 'rectangle', 'jumpsuits_fit', 'relaxed', '{}', 2),
+  ('body_type', 'rectangle', 'jumpsuits_fit', 'wrap', '{}', 3),
+  ('body_type', 'rectangle', 'jumpsuits_length', 'ankle', '{}', 1),
+  ('body_type', 'rectangle', 'jumpsuits_length', 'full-length', '{}', 2),
+  ('body_type', 'rectangle', 'jumpsuits_leg_shape', 'wide-leg', '{}', 1),
+  ('body_type', 'rectangle', 'jumpsuits_leg_shape', 'straight', '{}', 2),
+  ('body_type', 'rectangle', 'jumpsuits_leg_shape', 'culotte', '{}', 3),
   ('body_type', 'rectangle', 'outerwear_fit', 'oversized', '{}', 1),
   ('body_type', 'rectangle', 'outerwear_fit', 'relaxed', '{}', 2),
   ('body_type', 'rectangle', 'outerwear_fit', 'belted', '{}', 3),
@@ -970,6 +1381,13 @@ VALUES
   ('body_type', 'pear', 'dresses_fit', 'empire', '{}', 3),
   ('body_type', 'pear', 'dresses_length', 'midi', '{}', 1),
   ('body_type', 'pear', 'dresses_length', 'knee', '{}', 2),
+  ('body_type', 'pear', 'jumpsuits_fit', 'relaxed', '{}', 1),
+  ('body_type', 'pear', 'jumpsuits_fit', 'tailored', '{}', 2),
+  ('body_type', 'pear', 'jumpsuits_length', 'ankle', '{}', 1),
+  ('body_type', 'pear', 'jumpsuits_length', 'full-length', '{}', 2),
+  ('body_type', 'pear', 'jumpsuits_leg_shape', 'wide-leg', '{}', 1),
+  ('body_type', 'pear', 'jumpsuits_leg_shape', 'straight', '{}', 2),
+  ('body_type', 'pear', 'jumpsuits_leg_shape', 'flared', '{}', 3),
   ('body_type', 'pear', 'outerwear_fit', 'structured', '{}', 1),
   ('body_type', 'pear', 'outerwear_fit', 'tailored', '{}', 2),
   ('body_type', 'apple', 'tops_fit', 'relaxed', '{}', 1),
@@ -988,6 +1406,14 @@ VALUES
   ('body_type', 'apple', 'dresses_fit', 'shift', '{}', 3),
   ('body_type', 'apple', 'dresses_length', 'midi', '{}', 1),
   ('body_type', 'apple', 'dresses_length', 'maxi', '{}', 2),
+  ('body_type', 'apple', 'jumpsuits_fit', 'relaxed', '{}', 1),
+  ('body_type', 'apple', 'jumpsuits_fit', 'regular', '{}', 2),
+  ('body_type', 'apple', 'jumpsuits_fit', 'wrap', '{}', 3),
+  ('body_type', 'apple', 'jumpsuits_length', 'ankle', '{}', 1),
+  ('body_type', 'apple', 'jumpsuits_length', 'full-length', '{}', 2),
+  ('body_type', 'apple', 'jumpsuits_leg_shape', 'straight', '{}', 1),
+  ('body_type', 'apple', 'jumpsuits_leg_shape', 'wide-leg', '{}', 2),
+  ('body_type', 'apple', 'jumpsuits_leg_shape', 'culotte', '{}', 3),
   ('body_type', 'apple', 'outerwear_fit', 'open-front', '{}', 1),
   ('body_type', 'apple', 'outerwear_fit', 'relaxed', '{}', 2),
   ('body_type', 'inverted triangle', 'tops_fit', 'regular', '{}', 1),
@@ -1008,6 +1434,13 @@ VALUES
   ('body_type', 'inverted triangle', 'dresses_fit', 'fit and flare', '{}', 3),
   ('body_type', 'inverted triangle', 'dresses_length', 'midi', '{}', 1),
   ('body_type', 'inverted triangle', 'dresses_length', 'maxi', '{}', 2),
+  ('body_type', 'inverted triangle', 'jumpsuits_fit', 'relaxed', '{}', 1),
+  ('body_type', 'inverted triangle', 'jumpsuits_fit', 'tailored', '{}', 2),
+  ('body_type', 'inverted triangle', 'jumpsuits_length', 'ankle', '{}', 1),
+  ('body_type', 'inverted triangle', 'jumpsuits_length', 'full-length', '{}', 2),
+  ('body_type', 'inverted triangle', 'jumpsuits_leg_shape', 'wide-leg', '{}', 1),
+  ('body_type', 'inverted triangle', 'jumpsuits_leg_shape', 'straight', '{}', 2),
+  ('body_type', 'inverted triangle', 'jumpsuits_leg_shape', 'flared', '{}', 3),
   ('body_type', 'inverted triangle', 'outerwear_fit', 'relaxed', '{}', 1),
   ('body_type', 'inverted triangle', 'outerwear_fit', 'oversized', '{}', 2),
   ('body_type', 'petite', 'tops_fit', 'fitted', '{}', 1),
@@ -1025,6 +1458,12 @@ VALUES
   ('body_type', 'petite', 'dresses_fit', 'fitted', '{}', 2),
   ('body_type', 'petite', 'dresses_length', 'mini', '{}', 1),
   ('body_type', 'petite', 'dresses_length', 'knee', '{}', 2),
+  ('body_type', 'petite', 'jumpsuits_fit', 'fitted', '{}', 1),
+  ('body_type', 'petite', 'jumpsuits_fit', 'tailored', '{}', 2),
+  ('body_type', 'petite', 'jumpsuits_fit', 'slim', '{}', 3),
+  ('body_type', 'petite', 'jumpsuits_length', 'short', '{}', 1),
+  ('body_type', 'petite', 'jumpsuits_length', 'cropped', '{}', 2),
+  ('body_type', 'petite', 'jumpsuits_length', 'ankle', '{}', 3),
   ('body_type', 'petite', 'outerwear_fit', 'fitted', '{}', 1),
   ('body_type', 'petite', 'outerwear_fit', 'cropped', '{}', 2)
 ON CONFLICT DO NOTHING;
@@ -1491,7 +1930,7 @@ ON CONFLICT DO NOTHING;
 -- Run each CREATE OR REPLACE statement in the Supabase SQL editor.
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- 1. Soft-delete an item (sets is_active=false, records deleted_at).
+-- 1. Soft-delete an item (sets is_active=false, is_archived=true, records deleted_at/archived_on).
 --    Returns true if the row was found and updated, false otherwise.
 CREATE OR REPLACE FUNCTION public.soft_delete_clothing_item(
   p_item_id  uuid,
@@ -1505,14 +1944,16 @@ AS $$
 BEGIN
   UPDATE clothing_items
      SET is_active  = false,
-         deleted_at = now()
+         is_archived = true,
+         deleted_at = now(),
+         archived_on = now()
    WHERE id      = p_item_id
      AND user_id = p_user_id;
   RETURN FOUND;
 END;
 $$;
 
--- 2. Restore a soft-deleted item (sets is_active=true, clears deleted_at).
+-- 2. Restore a soft-deleted item (sets is_active=true, clears deleted_at/archived_on).
 --    Returns true if found and restored.
 CREATE OR REPLACE FUNCTION public.restore_clothing_item(
   p_item_id  uuid,
@@ -1526,7 +1967,9 @@ AS $$
 BEGIN
   UPDATE clothing_items
      SET is_active  = true,
-         deleted_at = null
+         is_archived = false,
+         deleted_at = null,
+         archived_on = null
    WHERE id      = p_item_id
      AND user_id = p_user_id;
   RETURN FOUND;

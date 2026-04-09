@@ -1,12 +1,13 @@
 # LuxeLook AI 💎
 
-> AI-powered personal stylist. Upload your wardrobe, describe your occasion, get a styled outfit.
+> AI-powered personal stylist. Upload your wardrobe, learn your taste, style specific pieces, and get occasion-ready outfits.
 
-Built with **Next.js · FastAPI · Supabase · CLIP · OpenAI (GPT-4o + GPT-4o-mini)**.
+Built with **Next.js · FastAPI · Supabase · CLIP · Pexels · OpenAI**.
 
-Current user-facing sections are: **Wardrobe · Event · Archive · Profile**.
+Current user-facing sections are: **Wardrobe · Discover · Event · Archive · Profile**.
+Supporting flows include **Style Item** (`/style-item`) and the dedicated AI profiling photo path inside Profile.
 Legacy frontend URLs `/events` and `/outfits` permanently redirect to `/event` and `/archive`.
-Sessions now restore on refresh, wardrobe uploads show live media-processing status, and refreshed outfit batches preserve saved ratings while avoiding exact duplicate looks.
+Sessions now restore on refresh, wardrobe uploads show live media-processing status, Discover learns from swipes, and refreshed outfit batches preserve saved ratings while avoiding exact duplicate looks.
 
 ---
 
@@ -22,6 +23,7 @@ luxelook-ai/
 │   ├── routers/                # API route handlers
 │   │   ├── auth.py             # POST /auth/signup, /auth/login
 │   │   ├── clothing.py         # Wardrobe CRUD, pagination, trash restore, thumbnail backfill
+│   │   ├── discover.py         # Discover feed, swipes, jobs, status
 │   │   ├── event.py            # POST /event/create-event, GET /event/list
 │   │   ├── recommendations.py  # POST /recommend/generate-outfits
 │   │   ├── feedback.py         # POST /feedback/rate-outfit
@@ -29,6 +31,10 @@ luxelook-ai/
 │   ├── services/               # Business logic layer
 │   │   ├── recommender.py      # Core outfit scoring engine
 │   │   ├── clothing_service.py # Upload, tag, embed, duplicate detection
+│   │   ├── discover_service.py # Discover feed assembly + seeded context
+│   │   ├── discover_search.py  # Pexels/mock provider normalization
+│   │   ├── discover_jobs.py    # Durable Discover job queue helpers
+│   │   ├── style_learning.py   # Swipe logging + learned style aggregation
 │   │   └── event_service.py    # Event creation and retrieval
 │   ├── ml/                     # AI components
 │   │   ├── embeddings.py       # CLIP embedding generation (mock + real)
@@ -37,18 +43,22 @@ luxelook-ai/
 │   │                           # face shape detection, clothing descriptors
 │   ├── models/
 │   │   └── schemas.py          # Pydantic request/response models
-│   └── utils/
+│   ├── utils/
 │       ├── db.py               # Supabase client (service role)
 │       ├── auth.py             # JWT create + verify
 │       ├── mock_auth_store.py  # In-memory auth for local dev
 │       └── mock_db_store.py    # In-memory database for local dev
+│   └── workers/
+│       └── discover_worker.py  # Embedded/standalone Discover background worker
 │
 └── frontend/                   # Next.js TypeScript app
     ├── pages/
     │   ├── index.tsx            # Landing + Auth (login/signup)
     │   ├── wardrobe.tsx         # Upload, tag, browse wardrobe
+    │   ├── discover.tsx         # Swipe-based taste-learning feed
     │   ├── event.tsx            # Describe event → AI parses → outfit suggestions
     │   ├── archive.tsx          # View outfit history + rate suggestions
+    │   ├── style-item.tsx       # Style around one chosen wardrobe item
     │   └── profile.tsx          # User profile, body type, face shape, photo
     ├── components/
     │   ├── layout/Navbar.tsx    # Top navigation
@@ -124,6 +134,9 @@ SUPABASE_URL=https://your-project-id.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_KEY=your-service-role-key
 OPENAI_API_KEY=sk-your-key
+PEXELS_API_KEY=your-pexels-key
+DISCOVER_SEARCH_PROVIDER=pexels
+DISCOVER_EMBEDDED_WORKER=true
 JWT_SECRET=any-long-random-string
 USE_MOCK_AUTH=true    # set false when Supabase is configured
 USE_MOCK_AI=true      # set false when OpenAI + CLIP are ready
@@ -174,26 +187,36 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    - Wardrobe uploads save immediately, then generate thumbnails / subject cutouts in the background
    - A compact activity tray shows per-item processing status while media is being generated
    - Wardrobe browsing uses infinite scroll and processed previews for better large-closet performance
+   - Supported core categories now include `jumpsuits` as a dedicated category alongside tops, bottoms, dresses, outerwear, shoes, accessories, sets, swimwear, and loungewear
 3. **Set up your profile** — body type, height, weight, complexion, face shape
    - Body type calculator from bust/waist/hip measurements
    - Complexion identifier from 3 questions
+   - Gender and ethnicity can optionally be stored to improve Discover seeding later
    - Separate AI profiling photo suggests face shape, body type, complexion and hair traits
-4. **Create an event** — type e.g. _"Dinner party Friday evening, smart casual"_
+4. **Use Discover** — open **Discover / The Edit** to swipe fashion inspiration
+   - Discover seeds a per-user search using profile context and learned style signals
+   - Candidate images are cached, filtered to single-person looks, and analyzed before being shown
+   - `like`, `love`, and `dislike` interactions build learned preference rows over time
+   - Daily swipe pacing is enforced on the user’s local day while timestamps remain stored in UTC
+5. **Create an event** — type e.g. _"Dinner party Friday evening, smart casual"_
    - Click **Generate Outfit Suggestions** — occasion is parsed silently on the backend,
      outfit generation begins immediately with no intermediate step
-5. **Get outfit suggestions** — AI builds complete looks across 7 outfit templates
+6. **Get outfit suggestions** — AI builds complete looks across 7 outfit templates
    (top+bottom+shoes, top+bottom+outerwear+shoes, dress+shoes, dress+outerwear+shoes,
    set+shoes, set+outerwear+shoes, swimwear+shoes).
    If the wardrobe is missing item types needed to unlock some templates, an
    **"Unlock more looks"** banner shows actionable hints below the suggestions. If
    a look reappears after refresh, its saved stars are preserved and shown again
    instead of resetting to unrated.
-6. **Rate outfits** — 1–5 stars to improve future suggestions
-7. **Regenerate** — "Show me more" for a neutral refresh; "None of these work" to
+7. **Style a specific item** — from the wardrobe, go to **Style Item** to build looks around one selected piece
+   - complete wardrobe-only outfits reuse the standard suggestion cards
+   - incomplete wardrobes fall back to editorial styling guidance and missing-piece direction
+8. **Rate outfits** — 1–5 stars to improve future suggestions
+9. **Regenerate** — "Show me more" for a neutral refresh; "None of these work" to
    signal the current batch was wrong; ratings are tracked per combo + occasion context
    so future events of the same type benefit from accumulated feedback. Exact
    duplicate outfit combos are filtered out on refresh so fresh options surface first.
-8. **Reset** — if you've exhausted all combinations for an event a banner appears;
+10. **Reset** — if you've exhausted all combinations for an event a banner appears;
    "Reset & start fresh" clears combo ratings for that occasion context and starts fresh
 
 ---
@@ -244,6 +267,13 @@ Full interactive docs at [http://localhost:8000/docs](http://localhost:8000/docs
 | GET | `/recommend/suggestions/{event_id}` | Fetch saved suggestions (de-duped by outfit combo) |
 | POST | `/recommend/reset-feedback` | Clear combo ratings for an occasion context |
 | POST | `/feedback/rate-outfit` | Submit 1–5 star rating |
+| POST | `/discover/prewarm` | Queue candidate warm-up for Discover |
+| GET | `/discover/feed` | Build the Discover feed from cached/analyzed candidates |
+| POST | `/discover/interaction` | Log a Discover `like` / `love` / `dislike` |
+| POST | `/discover/recompute` | Rebuild learned Discover style preferences from stored history |
+| GET | `/discover/status` | Fetch Discover totals, learned rows, and background status |
+| GET | `/discover/jobs/{job_id}` | Poll one Discover background job |
+| POST | `/discover/retry-seed` | Queue another Discover warm-up job |
 | GET | `/profile` | Get user profile |
 | PUT | `/profile` | Update profile fields |
 | POST | `/profile/photo` | Upload cropped profile/avatar photo |
@@ -259,7 +289,8 @@ All routes except `/auth/*` require `Authorization: Bearer <token>` header.
 |---|---|---|
 | **tops** | T-shirts, blouses, shirts, sweaters | Core (upper body) |
 | **bottoms** | Trousers, jeans, skirts, shorts | Core (lower body) |
-| **dresses** | Dresses, jumpsuits | Core (full body — templates C, D) |
+| **dresses** | Dresses | Core (full body — templates C, D) |
+| **jumpsuits** | Jumpsuits, rompers, playsuits | Core (full body styling piece) |
 | **set** | Co-ord two-pieces (matching top + bottom sold together) | Core (full look — templates E, F) |
 | **swimwear** | Bikinis, one-pieces, tankinis, monokinis, swim dresses | Core (beach/resort — template G) |
 | **loungewear** | Hoodies, joggers, pajama sets, robes, shorts sets | Casual/home only |

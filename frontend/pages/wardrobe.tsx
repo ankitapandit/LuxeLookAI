@@ -24,7 +24,7 @@ import {
   deleteClothingItem, getWardrobeItemsPage, getDeletedItems, restoreClothingItem,
   getWardrobeMediaStatus, TagPreview, TagOptions, ClothingItem,
 } from "@/services/api";
-import { AlertCircle, Upload, Trash2, ShirtIcon, Loader, CheckCircle, Pencil, X, Pipette, RotateCcw } from "lucide-react";
+import { AlertCircle, Upload, Archive, ShirtIcon, Loader, CheckCircle, Pencil, X, Pipette, RotateCcw } from "lucide-react";
 import toast from "react-hot-toast";
 
 // Maps any color value → a human-readable name.
@@ -92,6 +92,31 @@ function normalizeToPresetKey(color: string): string | null {
     if (lower.includes(c.key)) return c.key;
   }
   return null;
+}
+
+function getCurrentSeason(date: Date = new Date()): string {
+  const month = date.getMonth() + 1;
+  if (month >= 3 && month <= 5) return "spring";
+  if (month >= 6 && month <= 8) return "summer";
+  if (month >= 9 && month <= 11) return "fall";
+  return "winter";
+}
+
+function getSeasonLabel(value: string): string {
+  if (!value) return "";
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function isCompatibleSeasonPair(a: string, b: string): boolean {
+  const seasonA = (a || "").toLowerCase().trim();
+  const seasonB = (b || "").toLowerCase().trim();
+  if (!seasonA || !seasonB) return false;
+  if (seasonA === "all" || seasonB === "all") return true;
+  if (seasonA === seasonB) return true;
+
+  const warm = new Set(["spring", "summer"]);
+  const cool = new Set(["fall", "winter"]);
+  return (warm.has(seasonA) && warm.has(seasonB)) || (cool.has(seasonA) && cool.has(seasonB));
 }
 
 // ── Preset solid colors (pattern removed — handled separately) ────────────────
@@ -276,6 +301,27 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
     sheer:         ["opaque","semi-sheer","sheer"],
     pattern:       ["solid","floral","striped","graphic","abstract","tie-dye","plaid","animal print"],
   },
+  // ── Jumpsuits / Rompers ───────────────────────────────────────────────────
+  jumpsuits: {
+    fabric_type:    [...FABRIC_OPTIONS],
+    jumpsuit_style: ["tailored","utility","romper","playsuit","halter","strapless","boiler","evening","boho","wide-leg","straight-leg","tapered"],
+    neckline:       ["crew","round","V-neck","square","scoop","sweetheart","off-shoulder",
+                     "halter","high neck","turtleneck","collar","cowl","asymmetrical"],
+    sleeve_length:  ["sleeveless","cap","short","3/4","long"],
+    sleeve_style:   ["puff","bishop","balloon","bell","raglan","batwing","cold shoulder","flutter"],
+    strap_type:     ["strapless","spaghetti","wide","adjustable","racerback","cross-back","halter"],
+    fit:            ["slim","regular","relaxed","loose","oversized","bodycon",
+                     "tailored","A-line","fit & flare","wrap","belted"],
+    length:         ["short","cropped","ankle","full-length"],
+    leg_shape:      ["shorts","straight","wide-leg","tapered","flared","culotte"],
+    waist_structure:["elastic","drawstring","belted","paperbag","corset","smocked"],
+    closure:        ["pullover","button-front","zip-up","wrap","open front"],
+    detailing:      ["ruffles","pleats","ruched","smocked","tiered","draped",
+                     "cut-out","slit","bow","knot","lace-up","fringe","embroidery"],
+    elasticity:     ["non-stretch","slight stretch","medium stretch","high stretch"],
+    sheer:          ["opaque","semi-sheer","sheer"],
+    pattern:        ["solid","floral","striped","graphic","abstract","tie-dye","plaid","animal print"],
+  },
   // ── Outerwear ───────────────────────────────────────────────────────────────
   outerwear: {
     outerwear_type:     ["blazer","jacket","coat","trench","cardigan","bomber","puffer","shacket","cape","vest"],
@@ -335,6 +381,7 @@ const CATEGORY_FILTER_OPTIONS = [
   "tops",
   "bottoms",
   "dresses",
+  "jumpsuits",
   "outerwear",
   "shoes",
   "accessories",
@@ -481,6 +528,7 @@ export default function WardrobePage() {
   const [duplicate, setDuplicate] = useState<TagPreview["duplicate"]>(null);
   const [editingItem, setEditingItem] = useState<ClothingItem | null>(null);
   const [deletingItem, setDeletingItem] = useState<ClothingItem | null>(null);
+  const [archiveAfterSave, setArchiveAfterSave] = useState(false);
   const [trackedMediaIds, setTrackedMediaIds] = useState<string[]>([]);
   const [mediaActivity, setMediaActivity] = useState<Record<string, ClothingItem>>({});
   const [activityExpanded, setActivityExpanded] = useState(false);
@@ -551,11 +599,23 @@ export default function WardrobePage() {
       setDeletedItems(deleted);
       setDeletedLoaded(true);
     } catch {
-      toast.error("Failed to load trash");
+      toast.error("Failed to load archived items");
     } finally {
       setLoadingTrash(false);
     }
   }, [deletedLoaded, loadingTrash]);
+
+  const addUploadedItem = useCallback((item: ClothingItem) => {
+    setTotalCount((prev) => prev + 1);
+    const matchesFilters =
+      (filterCat === "all" || item.category === filterCat) &&
+      (filterSeason === "all" || item.season === filterSeason || item.season === "all") &&
+      (filterFormality === "all" || formalityBucket(item.formality_score) === filterFormality);
+    if (matchesFilters) {
+      setItems((prev) => [item, ...prev]);
+    }
+    registerMediaItems([item]);
+  }, [filterCat, filterFormality, filterSeason, registerMediaItems]);
 
   useEffect(() => {
     void loadWardrobePage(true, 0);
@@ -568,6 +628,10 @@ export default function WardrobePage() {
   useEffect(() => {
     if (showTrash) void loadTrashItems();
   }, [loadTrashItems, showTrash]);
+
+  useEffect(() => {
+    void loadTrashItems();
+  }, [loadTrashItems]);
 
   const loadMoreItems = useCallback(() => {
     if (loading || loadingMore || !hasMore || showTrash) return;
@@ -649,6 +713,7 @@ export default function WardrobePage() {
     setCorrectedCat(""); setCorrectedColor(""); setStep("idle");
     setDescriptors({});
     setDuplicate(null);
+    setArchiveAfterSave(false);
   }, [pendingPreview]);
 
   const onDrop = useCallback(async (accepted: File[]) => {
@@ -686,16 +751,30 @@ export default function WardrobePage() {
         color:    correctedColor  !== aiTags.color   ? correctedColor  : undefined,
         descriptors: Object.keys(descriptors).length > 0 ? descriptors : undefined,
       });
-      setTotalCount(prev => prev + 1);
-      const matchesFilters =
-        (filterCat === "all" || newItem.category === filterCat) &&
-        (filterSeason === "all" || newItem.season === filterSeason || newItem.season === "all") &&
-        (filterFormality === "all" || formalityBucket(newItem.formality_score) === filterFormality);
-      if (matchesFilters) {
-        setItems(prev => [newItem, ...prev]);
+      const detectedSeason = (newItem.season || "").toLowerCase().trim();
+      const currentSeason = getCurrentSeason();
+      const seasonMismatch = !!detectedSeason && !isCompatibleSeasonPair(detectedSeason, currentSeason);
+
+      if (seasonMismatch && archiveAfterSave) {
+        try {
+          await deleteClothingItem(newItem.id);
+          const archivedOn = new Date().toISOString();
+          setDeletedItems((prev) => [{
+            ...newItem,
+            is_active: false,
+            is_archived: true,
+            archived_on: archivedOn,
+            deleted_at: archivedOn,
+          }, ...prev.filter((entry) => entry.id !== newItem.id)]);
+          toast.success("Saved and moved to Archived");
+        } catch {
+          addUploadedItem(newItem);
+          toast.error("Saved to wardrobe, but could not move it to Archived");
+        }
+      } else {
+        addUploadedItem(newItem);
+        toast.success("Item added to wardrobe!");
       }
-      registerMediaItems([newItem]);
-      toast.success("Item added to wardrobe!");
     } catch {
       toast.error("Upload failed — please try again");
     } finally { resetWizard(); }
@@ -728,15 +807,24 @@ export default function WardrobePage() {
         return next;
       });
       setTotalCount(prev => Math.max(0, prev - 1));
-      if (removed && deletedLoaded) setDeletedItems(prev => [{ ...removed, is_active: false }, ...prev]);
-      toast.success("Moved to trash — restore any time");
+      if (removed) {
+        const archivedOn = new Date().toISOString();
+        setDeletedItems(prev => [{
+          ...removed,
+          is_active: false,
+          is_archived: true,
+          archived_on: archivedOn,
+          deleted_at: archivedOn,
+        }, ...prev]);
+      }
+      toast.success("Moved to Archived — restore any time");
     } catch { toast.error("Could not remove item"); }
   }
 
   async function handleRestore(itemId: string) {
     try {
       const status = await restoreClothingItem(itemId);
-      // Remove from trash view in all success cases
+      // Remove from archived view in all success cases
       setDeletedItems(prev => prev.filter(i => i.id !== itemId));
       if (status === "restored") {
         await loadWardrobePage(true, 0);
@@ -822,12 +910,12 @@ export default function WardrobePage() {
                 transition: "all 0.15s ease",
               }}
             >
-              <Trash2 size={14} />
+              <Archive size={14} />
               {showTrash
                 ? "← Back to Wardrobe"
-                : deletedLoaded
-                  ? `Trash (${deletedItems.length})`
-                  : "Trash"}
+                : deletedLoaded || deletedItems.length > 0
+                  ? `Archived (${deletedItems.length})`
+                  : "Archived"}
             </button>
         </div>
 
@@ -874,6 +962,12 @@ export default function WardrobePage() {
             correctedColor={correctedColor}
             descriptors={descriptors}
             duplicate={duplicate}
+            seasonWarning={
+              aiTags.season && !isCompatibleSeasonPair(aiTags.season, getCurrentSeason())
+                ? `This looks more like a ${getSeasonLabel(aiTags.season)} piece than a ${getSeasonLabel(getCurrentSeason())} wardrobe.`
+                : null
+            }
+            archiveAfterSave={archiveAfterSave}
             onCatChange={setCorrectedCat}
             onColorChange={setCorrectedColor}
             onDescriptorChange={(key, val) =>
@@ -885,6 +979,7 @@ export default function WardrobePage() {
               handleConfirm();
             }}
             onKeepBoth={() => setDuplicate(null)}
+            onArchiveAfterSaveChange={setArchiveAfterSave}
             onConfirm={handleConfirm}
             onCancel={resetWizard}
           />
@@ -898,15 +993,15 @@ export default function WardrobePage() {
         )}
 
         {showTrash ? (
-          /* ── Trash view ───────────────────────────────────────────────── */
+          /* ── Archived view ─────────────────────────────────────────────── */
           <div>
             <p className="type-body" style={{ color: "var(--muted)", fontSize: "14px", marginBottom: "20px" }}>
-              Items moved to trash are hidden from outfit suggestions. Restore them to bring them back.
+              Archived items are hidden from outfit suggestions. Restore them to bring them back.
             </p>
             {loadingTrash ? (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
                 <Loader size={24} color="var(--gold)" style={{ animation: "spin 1s linear infinite", display: "block", margin: "0 auto 12px" }} />
-                <p className="type-helper" style={{ color: "var(--muted)", fontSize: "13px" }}>Loading trash…</p>
+                <p className="type-helper" style={{ color: "var(--muted)", fontSize: "13px" }}>Loading archived items…</p>
               </div>
             ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "16px" }}>
@@ -1057,8 +1152,8 @@ export default function WardrobePage() {
             ) : (
               <>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "20px" }}>
-                  {items.map(item => (
-                    <ItemCard key={item.id} item={item}
+                  {items.map((item, index) => (
+                    <ItemCard key={item.id} item={item} priority={index < 4}
                       onEdit={() => openEditModal(item)}
                       onRequestDelete={() => openDeleteDialog(item)}
                     />
@@ -1227,6 +1322,7 @@ function ManagedImage({
   fill = false,
   width,
   height,
+  priority = false,
   onLoad,
   crossOrigin,
 }: {
@@ -1238,6 +1334,7 @@ function ManagedImage({
   fill?: boolean;
   width?: number;
   height?: number;
+  priority?: boolean;
   onLoad?: (e: React.SyntheticEvent<HTMLImageElement>) => void;
   crossOrigin?: "" | "anonymous" | "use-credentials";
 }) {
@@ -1256,6 +1353,7 @@ function ManagedImage({
       width={fill ? undefined : width}
       height={fill ? undefined : height}
       sizes={sizes}
+      priority={priority}
       crossOrigin={crossOrigin}
       onLoad={onLoad}
       onError={() => {
@@ -1275,8 +1373,10 @@ function ReviewPanel({
   previewUrl, aiTags, tagOptions, tagOptionsLoading,
   correctedCat, correctedColor,
   descriptors, duplicate,
+  seasonWarning, archiveAfterSave,
   onCatChange, onColorChange,
   onDescriptorChange, onReplaceExisting, onKeepBoth,
+  onArchiveAfterSaveChange,
   onConfirm, onCancel,
 }: {
   previewUrl: string;
@@ -1290,6 +1390,9 @@ function ReviewPanel({
   descriptors: Record<string, string>;
   onDescriptorChange: (key: string, val: string) => void;
   duplicate?: TagPreview["duplicate"];
+  seasonWarning?: string | null;
+  archiveAfterSave: boolean;
+  onArchiveAfterSaveChange: (value: boolean) => void;
   onReplaceExisting: () => void;
   onKeepBoth: () => void;
   onConfirm: () => void;
@@ -1407,8 +1510,8 @@ function ReviewPanel({
 
           {/* Category */}
           <div style={{ marginBottom: "20px" }}>
-            <label style={labelStyle}>Category {catChanged && <ChangedBadge />}</label>
-            <select value={correctedCat} onChange={e => onCatChange(e.target.value)}
+            <label htmlFor="review-category" style={labelStyle}>Category {catChanged && <ChangedBadge />}</label>
+            <select id="review-category" name="category" value={correctedCat} onChange={e => onCatChange(e.target.value)}
               disabled={tagOptionsLoading && tagOptions.categories.length === 0}
               className="input" style={{ padding: "8px 12px", fontSize: "14px", textTransform: "capitalize" }}>
               {categoryOptions.map(c => (
@@ -1442,8 +1545,47 @@ function ReviewPanel({
                 descriptors={descriptors}
                 onDescriptorChange={onDescriptorChange}
               />
-            );
+              );
           })()}
+
+          {seasonWarning && (
+            <div style={{
+              marginBottom: "16px",
+              padding: "12px 14px",
+              borderRadius: "8px",
+              background: "rgba(212,169,106,0.10)",
+              border: "1px solid rgba(212,169,106,0.28)",
+            }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                <AlertCircle size={15} color="#B8860B" style={{ flexShrink: 0, marginTop: "1px" }} />
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ fontSize: "13px", color: "var(--gold)", lineHeight: 1.5, margin: 0 }}>
+                    {seasonWarning}
+                  </p>
+                  <label style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    marginTop: "8px",
+                    fontSize: "12px",
+                    color: "var(--charcoal)",
+                    cursor: "pointer",
+                  }}>
+                    <input
+                      id="archive-after-save"
+                      name="archive_after_save"
+                      type="checkbox"
+                      checked={archiveAfterSave}
+                      onChange={(e) => onArchiveAfterSaveChange(e.target.checked)}
+                      style={{ accentColor: "var(--gold)" }}
+                    />
+                    Archive this item after saving
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Actions */}
           <div style={{ display: "flex", gap: "10px" }}>
             <button className="btn-primary" onClick={onConfirm} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -1603,6 +1745,8 @@ function ColorPicker({ selected, onSelect }: { selected: string; onSelect: (key:
       {/* Custom hex input */}
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
         <input
+          name="custom_colour_picker"
+          aria-label="Pick a custom colour"
           type="color"
           value={isCustom ? selected : "#ffffff"}
           onChange={e => { setCustomHex(e.target.value); onSelect(e.target.value); }}
@@ -1610,6 +1754,8 @@ function ColorPicker({ selected, onSelect }: { selected: string; onSelect: (key:
           style={{ width: "32px", height: "32px", border: "1px solid var(--border)", borderRadius: "6px", cursor: "pointer", padding: "2px" }}
         />
         <input
+          name="custom_colour_hex"
+          aria-label="Custom colour hex"
           type="text"
           value={isCustom ? selected : customHex}
           placeholder="#hex or type colour"
@@ -1782,11 +1928,12 @@ function StyleDetailsSection({ allDescriptors, descriptors, onDescriptorChange }
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ItemCard — popup edit modal + delete confirmation
+// ItemCard — popup edit modal + archive confirmation
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function ItemCard({ item, onEdit, onRequestDelete }: {
+function ItemCard({ item, priority = false, onEdit, onRequestDelete }: {
   item: ClothingItem;
+  priority?: boolean;
   onEdit: () => void;
   onRequestDelete: () => void;
 }) {
@@ -1811,9 +1958,10 @@ function ItemCard({ item, onEdit, onRequestDelete }: {
             alt={`${item.category} - ${resolveColorName(item.color || "")}`}
             fallbackSrc={`https://placehold.co/300x400/F5F0E8/8A8580?text=${encodeURIComponent(item.category)}`}
             fill
-          sizes="(max-width: 768px) 50vw, 200px"
-          style={{ objectFit: "cover" }}
-        />
+            sizes="(max-width: 768px) 50vw, 200px"
+            priority={priority}
+            style={{ objectFit: "cover" }}
+          />
         {mediaBadge && (
           <div style={{
             position: "absolute",
@@ -1834,7 +1982,7 @@ function ItemCard({ item, onEdit, onRequestDelete }: {
         )}
         <div className="card-actions" style={{ position: "absolute", top: "8px", right: "8px", display: "flex", flexDirection: "column", gap: "4px", opacity: 0, transition: "opacity 0.2s ease" }}>
           <ActionBtn onClick={onEdit} icon={<Pencil size={13} />} label="Edit item" />
-          <ActionBtn onClick={onRequestDelete} icon={<Trash2 size={13} color="#DC2626" />} label="Delete item" />
+          <ActionBtn onClick={onRequestDelete} icon={<Archive size={13} color="#D4A96A" />} label="Archive item" />
         </div>
       </div>
 
@@ -1969,8 +2117,8 @@ function ItemEditModal({
             </div>
 
             <div style={{ flex: "1 1 340px", minWidth: "280px" }}>
-              <label style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "6px" }}>Category</label>
-              <select value={editCat} onChange={e => setEditCat(e.target.value)}
+              <label htmlFor="edit-item-category" style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "6px" }}>Category</label>
+              <select id="edit-item-category" name="edit_category" value={editCat} onChange={e => setEditCat(e.target.value)}
                 disabled={tagOptionsLoading && tagOptions.categories.length === 0}
                 className="input" style={{ padding: "8px 12px", fontSize: "14px", marginBottom: "20px", textTransform: "capitalize" }}>
                 {editCategoryOptions.map(c => <option key={c} value={c} style={{ textTransform: "capitalize" }}>{c}</option>)}
@@ -1979,7 +2127,7 @@ function ItemEditModal({
                 <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "-14px", marginBottom: "16px" }}>Loading category options…</p>
               )}
 
-              <label style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "8px" }}>Colour</label>
+              <label htmlFor="edit-item-colour-custom" style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "8px" }}>Colour</label>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
                 {SOLID_COLORS.map(c => (
                   <button key={c.key} title={c.label} onClick={() => setEditColor(c.key)} style={{
@@ -1993,7 +2141,7 @@ function ItemEditModal({
                 ))}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "20px", flexWrap: "wrap" }}>
-                <input type="color" value={editColor.startsWith("#") ? editColor : "#ffffff"}
+                <input id="edit-item-colour-custom" name="edit_colour_custom" type="color" value={editColor.startsWith("#") ? editColor : "#ffffff"}
                   onChange={e => setEditColor(e.target.value)}
                   style={{ width: "32px", height: "32px", border: "1px solid var(--border)", borderRadius: "6px", cursor: "pointer", padding: "2px" }} />
                 <span style={{ fontSize: "12px", color: "var(--muted)" }}>or pick custom</span>
@@ -2077,7 +2225,7 @@ function DeleteItemDialog({
         boxShadow: "0 24px 64px rgba(0,0,0,0.25)",
       }}>
         <p style={{ fontWeight: 600, fontSize: "16px", color: "var(--charcoal)", marginBottom: "8px" }}>
-          Remove this item?
+          Archive this item?
         </p>
         <p style={{ color: "var(--muted)", fontSize: "13px", marginBottom: "18px", textTransform: "capitalize" }}>
           {item.category} · {resolveColorName(item.color || "")}
@@ -2086,16 +2234,15 @@ function DeleteItemDialog({
           <button onClick={onClose} className="btn-secondary">Cancel</button>
           <button
             onClick={onConfirm}
-            style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: "#DC2626", color: "white", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+            style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: "var(--gold)", color: "#0A0908", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
           >
-            Delete
+            Archive
           </button>
         </div>
       </div>
     </>
   );
 }
-
 
 // ── Tiny helpers ──────────────────────────────────────────────────────────────
 

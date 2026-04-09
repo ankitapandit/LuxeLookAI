@@ -21,6 +21,12 @@ _tables: Dict[str, Dict[str, dict]] = {
     "clothing_items":    {},
     "events":            {},
     "outfit_suggestions": {},
+    "style_catalog":     {},
+    "discover_candidates": {},
+    "discover_ignored_urls": {},
+    "discover_style_interactions": {},
+    "user_style_preferences": {},
+    "discover_jobs": {},
 }
 
 
@@ -85,7 +91,7 @@ def delete(table: str, row_id: str, extra_filters: Optional[Dict[str, Any]] = No
 
 def soft_delete(table: str, row_id: str, extra_filters: Optional[Dict[str, Any]] = None) -> bool:
     """
-    Soft-delete a row by setting is_active=False and recording deleted_at.
+    Soft-delete a row by setting is_active=False, is_archived=True and recording timestamps.
     The row stays in memory and can be restored via update().
     Returns True if found and marked inactive.
     """
@@ -97,8 +103,11 @@ def soft_delete(table: str, row_id: str, extra_filters: Optional[Dict[str, Any]]
         for key, val in extra_filters.items():
             if row.get(key) != val:
                 return False
-    row["is_active"]  = False
-    row["deleted_at"] = datetime.now(timezone.utc).isoformat()
+    archived_on = datetime.now(timezone.utc).isoformat()
+    row["is_active"]   = False
+    row["is_archived"]  = True
+    row["deleted_at"]   = archived_on
+    row["archived_on"]  = archived_on
     logger.debug(f"[MockDB] SOFT-DELETE from {table} id={row_id}")
     return True
 

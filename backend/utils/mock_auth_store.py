@@ -69,5 +69,11 @@ def get_mock_user_profile(user_id: str) -> Optional[dict]:
     """Return a minimal user profile row for the given mock user id."""
     for email, record in _users.items():
         if record["user_id"] == user_id:
-            return {"id": user_id, "email": email, "is_pro": False}
+            return {
+                "id": user_id,
+                "email": email,
+                "is_pro": False,
+                "gender": "prefer_not_to_say",
+                "ethnicity": "prefer_not_to_say",
+            }
     return None

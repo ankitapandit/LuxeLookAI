@@ -7,7 +7,7 @@ Each schema mirrors the database tables defined in the spec.
 
 from __future__ import annotations
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
@@ -50,6 +50,8 @@ class AIProfileAnalysis(BaseModel):
 class UserProfile(BaseModel):
     id: UUID
     email: str
+    gender: Optional[str] = "prefer_not_to_say"
+    ethnicity: Optional[str] = "prefer_not_to_say"
     body_type: Optional[str] = None
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
@@ -57,8 +59,6 @@ class UserProfile(BaseModel):
     face_shape: Optional[str] = None
     hairstyle: Optional[str] = None
     age_range: Optional[str] = None
-    preferred_styles: Optional[dict] = None
-    disliked_styles: Optional[dict] = None
     photo_url: Optional[str] = None
     ai_profile_photo_url: Optional[str] = None
     ai_profile_analysis: Optional[AIProfileAnalysis] = None
@@ -67,6 +67,8 @@ class UserProfile(BaseModel):
 
 
 class UpdateProfileRequest(BaseModel):
+    gender: Optional[str] = None
+    ethnicity: Optional[str] = None
     body_type:  Optional[str]   = None
     height_cm:     Optional[float] = None
     weight_kg:     Optional[float] = None
@@ -110,6 +112,10 @@ class ClothingItem(ClothingItemCreate):
     media_stage: Optional[str] = None
     media_error: Optional[str] = None
     media_updated_at: Optional[datetime] = None
+    is_active: bool = True
+    is_archived: bool = False
+    archived_on: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
     embedding_vector: Optional[List[float]] = None  # 512-dim CLIP vector
     created_at: datetime
     descriptors: Optional[dict] = {}
@@ -138,6 +144,142 @@ class Event(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── Discover ─────────────────────────────────────────────────────────────────
+
+class DiscoverProfileContext(BaseModel):
+    gender: str = "prefer_not_to_say"
+    ethnicity: str = "prefer_not_to_say"
+    body_type: Optional[str] = None
+    complexion: Optional[str] = None
+    age_range: Optional[str] = None
+    hairstyle: Optional[str] = None
+    season: Optional[str] = None
+
+
+class DiscoverCard(BaseModel):
+    id: str
+    source_url: str
+    normalized_url: str
+    image_url: str
+    thumbnail_url: Optional[str] = None
+    display_image_url: Optional[str] = None
+    source_domain: Optional[str] = None
+    title: str
+    summary: str
+    source_note: Optional[str] = None
+    style_tags: List[str] = []
+    style_ids: List[str] = []
+    person_count: int = 1
+    is_single_person: bool = True
+    search_query: Optional[str] = None
+    analysis: Optional[dict] = None
+
+
+class DiscoverFeedResponse(BaseModel):
+    seed_query: str
+    profile_context: DiscoverProfileContext
+    cards: List[DiscoverCard]
+    ignored_url_count: int = 0
+    total_interactions: int = 0
+    daily_interactions: int = 0
+    daily_limit: int = 10
+    preference_rows: List[DiscoverPreferenceRow] = []
+    style_seed: Optional[dict] = None
+    warming_up: bool = False
+    queued_job_id: Optional[str] = None
+
+
+class DiscoverInteractionRequest(BaseModel):
+    action: Literal["love", "like", "dislike"]
+    card_id: str
+    source_url: str
+    normalized_url: Optional[str] = None
+    image_url: str
+    thumbnail_url: Optional[str] = None
+    source_domain: Optional[str] = None
+    title: str
+    summary: Optional[str] = None
+    search_query: Optional[str] = None
+    style_tags: List[str] = []
+    style_ids: List[str] = []
+    person_count: int = 1
+    is_single_person: bool = True
+    analysis: Optional[dict] = None
+    interaction_index: Optional[int] = None
+    commit_preferences: bool = False
+
+
+class DiscoverPreferenceRow(BaseModel):
+    style_id: str
+    style_key: str
+    label: str
+    dimension: str
+    score: float
+    confidence: float
+    exposure_count: int
+    love_count: int
+    like_count: int
+    dislike_count: int
+    positive_count: int
+    negative_count: int
+    status: str
+    last_interaction_at: Optional[str] = None
+
+
+class DiscoverInteractionResponse(BaseModel):
+    status: str = "recorded"
+    ignored_url: Optional[str] = None
+    commit_triggered: bool = False
+    total_interactions: int = 0
+    daily_interactions: int = 0
+    daily_limit: int = 10
+    message: Optional[str] = None
+    preference_summary: Optional[dict] = None
+    updated_preferences: List[DiscoverPreferenceRow] = []
+    queued_job_id: Optional[str] = None
+    queued_job_status: Optional[str] = None
+
+
+class DiscoverJobResponse(BaseModel):
+    id: str
+    job_type: str
+    status: str
+    result: Optional[dict] = None
+    last_error: Optional[str] = None
+    attempts: int = 0
+    max_attempts: int = 0
+    locked_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class DiscoverStatusResponse(BaseModel):
+    total_interactions: int = 0
+    daily_interactions: int = 0
+    daily_limit: int = 10
+    preference_rows: List[DiscoverPreferenceRow] = []
+    queued_count: int = 0
+    running_count: int = 0
+    failed_count: int = 0
+    latest_seed_job: Optional[DiscoverJobResponse] = None
+    latest_refresh_job: Optional[DiscoverJobResponse] = None
+    latest_failed_job: Optional[DiscoverJobResponse] = None
+
+
+class DiscoverRetrySeedResponse(BaseModel):
+    status: str = "queued"
+    queued_job_id: str
+    queued_job_status: str
+    seed_query: str
+
+
+class DiscoverPrewarmResponse(BaseModel):
+    status: str
+    seed_query: str
+    ready_count: int = 0
+    queued_job_id: Optional[str] = None
+    queued_job_status: Optional[str] = None
 
 
 # ── Outfit Suggestions ────────────────────────────────────────────────────────
@@ -193,6 +335,7 @@ class OutfitSuggestion(BaseModel):
 class GenerateOutfitsRequest(BaseModel):
     event_id: UUID
     top_n: int = 3
+    anchor_item_id: Optional[UUID] = None
     # IDs of all suggestions shown so far in this session (accumulates across regenerates).
     # Their combos are soft-downranked so fresh looks always surface first.
     previously_shown_ids: Optional[List[str]] = []
@@ -209,6 +352,10 @@ class ResetFeedbackRequest(BaseModel):
 class GenerateOutfitsResponse(BaseModel):
     event: Event
     suggestions: List[OutfitSuggestion]
+    status: Optional[str] = None
+    stylist_note: Optional[str] = None
+    missing_items: Optional[List[str]] = None
+    anchor_item: Optional[ClothingItem] = None
 
 
 # ── Feedback ─────────────────────────────────────────────────────────────────

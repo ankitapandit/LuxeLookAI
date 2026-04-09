@@ -63,6 +63,38 @@ def _rows(domain: str) -> List[dict]:
     return [r for r in _load_all() if r["domain"] == domain]
 
 
+def _merge_missing_labels(
+    loaded: Dict[str, List[Tuple[str, str]]],
+    fallback: Dict[str, List[Tuple[str, str]]],
+) -> Dict[str, List[Tuple[str, str]]]:
+    merged = {key: list(values) for key, values in loaded.items()}
+    seen = {key: {value for value, _ in values} for key, values in merged.items()}
+    for attr, labels in fallback.items():
+        merged.setdefault(attr, [])
+        seen.setdefault(attr, set())
+        for value, prompt in labels:
+            if value in seen[attr]:
+                continue
+            merged[attr].append((value, prompt))
+            seen[attr].add(value)
+    return merged
+
+
+def _merge_missing_descriptors(
+    loaded: Dict[str, Dict[str, List[str]]],
+    fallback: Dict[str, Dict[str, List[str]]],
+) -> Dict[str, Dict[str, List[str]]]:
+    merged = {cat: {attr: list(values) for attr, values in attrs.items()} for cat, attrs in loaded.items()}
+    for cat, attrs in fallback.items():
+        merged.setdefault(cat, {})
+        for attr, values in attrs.items():
+            merged[cat].setdefault(attr, [])
+            for value in values:
+                if value not in merged[cat][attr]:
+                    merged[cat][attr].append(value)
+    return merged
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Public getters — call these everywhere instead of the hardcoded constants
 # ─────────────────────────────────────────────────────────────────────────────
@@ -86,7 +118,8 @@ def get_descriptors() -> Dict[str, Dict[str, List[str]]]:
             val  = row["value"]
             out.setdefault(cat, {}).setdefault(attr, []).append(val)
         if out:
-            return out
+            from ml.llm import CATEGORY_DESCRIPTORS
+            return _merge_missing_descriptors(out, CATEGORY_DESCRIPTORS)
     except Exception as exc:
         logger.warning("taxonomy: descriptor load failed (%s) — using hardcoded fallback", exc)
 
@@ -150,16 +183,31 @@ def get_clip_labels() -> Dict[str, List[Tuple[str, str]]]:
             prompt = meta.get("clip_prompt", val)
             out.setdefault(attr, []).append((val, prompt))
         if out:
-            return out
+            from ml.tagger import CATEGORY_LABELS, SEASON_LABELS, ACCESSORY_LABELS
+            return _merge_missing_labels(
+                out,
+                {
+                    "category":       CATEGORY_LABELS,
+                    "season":         SEASON_LABELS,
+                    "accessory_type": ACCESSORY_LABELS,
+                },
+            )
     except Exception as exc:
         logger.warning("taxonomy: clip_label load failed (%s) — using hardcoded fallback", exc)
 
     from ml.tagger import CATEGORY_LABELS, SEASON_LABELS, ACCESSORY_LABELS
-    return {
-        "category":       CATEGORY_LABELS,
-        "season":         SEASON_LABELS,
-        "accessory_type": ACCESSORY_LABELS,
-    }
+    return _merge_missing_labels(
+        {
+            "category":       CATEGORY_LABELS,
+            "season":         SEASON_LABELS,
+            "accessory_type": ACCESSORY_LABELS,
+        },
+        {
+            "category":       CATEGORY_LABELS,
+            "season":         SEASON_LABELS,
+            "accessory_type": ACCESSORY_LABELS,
+        },
+    )
 
 
 @lru_cache(maxsize=1)
