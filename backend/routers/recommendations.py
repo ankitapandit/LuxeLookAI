@@ -4,12 +4,14 @@ POST /recommend/generate-outfits
 POST /recommend/reset-feedback
 """
 
-from typing import Dict, List, Set
+import math
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Set
 from fastapi import APIRouter, Depends, HTTPException
 from models.schemas import GenerateOutfitsRequest, ResetFeedbackRequest
 from services.clothing_service import get_user_items
 from services.event_service import get_event
-from services.recommender import generate_outfit_suggestions, wardrobe_coverage_gaps
+from services.recommender import compute_look_title, generate_outfit_suggestions, wardrobe_coverage_gaps
 from utils.auth import get_current_user_id
 from config import get_settings
 
@@ -28,6 +30,15 @@ RATING_TO_WEIGHT: Dict[int, float] = {
     4: 0.80,
     5: 1.00,
 }
+
+# Bayesian prior strength for attribute preference averaging.
+# Equivalent to "assume 4 neutral (0.5) observations" before any real data.
+# At n=2 ratings: score is pulled ~57% toward 0.5. At n=10: ~67% trust.
+ATTRIBUTE_PRIOR_STRENGTH: int = 4
+
+# Half-life for time decay on attribute preference weights (days).
+# exp(-0.693 * days_ago / 30) → rating from 30 days ago counts at 50%.
+ATTRIBUTE_DECAY_HALFLIFE_DAYS: int = 30
 
 # Token discriminative-power weights for weighted Jaccard similarity.
 # Activity tokens are most discriminative (dinner vs interview are very different occasions).
@@ -286,6 +297,231 @@ def _dedupe_suggestions_by_combo(suggestions: List[Dict]) -> List[Dict]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Attribute preference aggregation & user style centroid
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _compute_attribute_preferences(
+    user_id: str,
+    current_occasion: Optional[Dict] = None,
+) -> Dict[str, Dict[str, float]]:
+    """
+    Build a per-user attribute preference vector from all rated suggestion cards.
+
+    For each rated suggestion that has a card JSON, extracts:
+        vibe, color_theory, fit_check, trend_label
+
+    Each rating contributes a weight that is the product of three factors:
+      1. Base weight     — RATING_TO_WEIGHT[rating] (star quality signal)
+      2. Time decay      — exp(-0.693 * days_ago / half_life) anchored to the
+                           user's most recent rating. half_life is adaptive:
+                           max(30d, span_of_rating_history / 2), capped at 365d.
+                           Infrequent users get a longer half-life so old-but-valid
+                           ratings aren't discarded just because of a long gap.
+      3. Occasion weight — _occasion_similarity(current_occasion, historical_event).
+                           When current_occasion is provided, ratings from unrelated
+                           occasion types are skipped (sim=0 → continue).
+                           This prevents beach-casual 5★s from biasing formal scoring.
+
+    Final per-value score uses Bayesian averaging with ATTRIBUTE_PRIOR_STRENGTH=4
+    neutral observations (each worth 0.5) prepended to the weighted list. This
+    graduates confidence: few ratings → pulled toward neutral; many ratings →
+    trust the data.
+
+    Returns {} when fewer than 3 rated cards survive filtering.
+
+    Example return value:
+        {
+          "vibe":         {"Elegant + Confident": 0.82, "Off-Duty + Effortless": 0.52},
+          "color_theory": {"Analogous": 0.87, "Neutral Base + Pop": 0.61},
+          "fit_check":    {"Tailored": 0.79, "Relaxed": 0.53},
+          "trend_label":  {"Trendy": 0.71, "Classic": 0.62},
+        }
+    """
+    settings = get_settings()
+    rated_cards: list = []
+    events_map: Dict[str, dict] = {}
+
+    if settings.use_mock_auth:
+        from utils.mock_db_store import select_all
+        all_s = select_all(TABLE, {"user_id": user_id})
+        rated_cards = [
+            s for s in all_s
+            if s.get("user_rating") is not None and s.get("card")
+        ]
+        if current_occasion:
+            all_e = select_all(EVENTS_TABLE, {"user_id": user_id})
+            events_map = {str(e["id"]): e for e in all_e}
+    else:
+        from utils.db import get_supabase
+        db = get_supabase()
+        result = (
+            db.table(TABLE)
+            .select("user_rating, card, generated_at, event_id")
+            .eq("user_id", user_id)
+            .not_.is_("user_rating", "null")
+            .not_.is_("card", "null")
+            .execute()
+        )
+        rated_cards = result.data or []
+        if current_occasion and rated_cards:
+            event_ids = list({str(s["event_id"]) for s in rated_cards if s.get("event_id")})
+            if event_ids:
+                evts = (
+                    db.table(EVENTS_TABLE)
+                    .select("id, occasion_type, formality_level, temperature_context, event_tokens")
+                    .in_("id", event_ids)
+                    .execute()
+                )
+                events_map = {str(e["id"]): e for e in (evts.data or [])}
+
+    # Anchor time decay to the user's most recent rating, not wall-clock now.
+    # This prevents preferences from being artificially diluted when the user
+    # takes a long break — only relative age within their own history matters.
+    def _parse_ts(s: dict) -> Optional[datetime]:
+        raw = s.get("generated_at")
+        if not raw:
+            return None
+        if isinstance(raw, str):
+            raw = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if raw.tzinfo is None:
+            raw = raw.replace(tzinfo=timezone.utc)
+        return raw
+
+    most_recent_ts: Optional[datetime] = None
+    oldest_ts: Optional[datetime] = None
+    for s in rated_cards:
+        ts = _parse_ts(s)
+        if ts:
+            if most_recent_ts is None or ts > most_recent_ts:
+                most_recent_ts = ts
+            if oldest_ts is None or ts < oldest_ts:
+                oldest_ts = ts
+    # Fall back to now only if no timestamps exist at all (shouldn't happen in prod)
+    decay_anchor = most_recent_ts or datetime.now(timezone.utc)
+
+    # Adaptive half-life: scale to the user's own rating cadence.
+    # A user whose ratings span 6 months gets half_life=90d; one who rates
+    # over 7 days still gets the 30d floor so rapid-fire sessions don't collapse.
+    if most_recent_ts and oldest_ts:
+        span_days = max(1, (most_recent_ts - oldest_ts).days)
+        half_life = max(ATTRIBUTE_DECAY_HALFLIFE_DAYS, min(365, span_days // 2))
+    else:
+        half_life = ATTRIBUTE_DECAY_HALFLIFE_DAYS
+
+    # Accumulate per-attribute-value weighted lists
+    accum: Dict[str, Dict[str, List[float]]] = {
+        "vibe": {}, "color_theory": {}, "fit_check": {}, "trend_label": {},
+    }
+    surviving = 0
+    for s in rated_cards:
+        rating = s.get("user_rating")
+        card   = s.get("card") or {}
+
+        # ── Occasion filter (skip entirely if occasion_type doesn't match) ──
+        occ_weight = 1.0
+        if current_occasion:
+            hist_event = events_map.get(str(s.get("event_id", "")), {})
+            occ_sim = _occasion_similarity(current_occasion, hist_event)
+            if occ_sim <= 0:
+                continue  # different occasion type — not relevant
+            occ_weight = occ_sim
+
+        # ── Time decay (relative to user's most recent rating, adaptive half-life) ──
+        ts = _parse_ts(s)
+        if ts:
+            days_ago = max(0, (decay_anchor - ts).days)
+            time_weight = math.exp(-0.693 * days_ago / half_life)
+        else:
+            time_weight = 1.0
+
+        # ── Combined weight ─────────────────────────────────────────────────
+        base_weight  = RATING_TO_WEIGHT.get(int(rating), 0.50)
+        final_weight = base_weight * time_weight * occ_weight
+
+        surviving += 1
+        for attr in accum:
+            val = card.get(attr)
+            if val and isinstance(val, str):
+                accum[attr].setdefault(val, []).append(final_weight)
+
+    if surviving < 3:
+        return {}
+
+    # Bayesian averaging: prepend ATTRIBUTE_PRIOR_STRENGTH neutral (0.5) pseudo-observations.
+    # Result for n real observations: (prior_strength*0.5 + sum(weights)) / (prior_strength + n)
+    # At n=2: ~57% pulled toward 0.5.  At n=10: only ~29% influence from prior.
+    prefs: Dict[str, Dict[str, float]] = {}
+    for attr, val_map in accum.items():
+        filtered: Dict[str, float] = {}
+        for val, ws in val_map.items():
+            if len(ws) < 2:
+                continue  # single observation — insufficient signal
+            n = len(ws)
+            bayesian_score = (ATTRIBUTE_PRIOR_STRENGTH * 0.5 + sum(ws)) / (ATTRIBUTE_PRIOR_STRENGTH + n)
+            filtered[val] = round(bayesian_score, 4)
+        if filtered:
+            prefs[attr] = filtered
+
+    return prefs
+
+
+def _compute_user_style_centroid(
+    user_id: str,
+    item_by_id: Dict[str, Dict],
+) -> Optional[List[float]]:
+    """
+    Compute the mean CLIP embedding of items from the user's 4–5 star outfits.
+
+    This gives a vector representation of the user's preferred visual aesthetic
+    in CLIP space.  Candidate outfits are scored by cosine similarity to this
+    centroid in score_user_style_centroid().
+
+    Returns None when fewer than 3 qualifying rated suggestions exist or when
+    no embedding vectors are available.
+    """
+    settings = get_settings()
+    high_rated: list = []
+
+    if settings.use_mock_auth:
+        from utils.mock_db_store import select_all
+        all_s = select_all(TABLE, {"user_id": user_id})
+        high_rated = [
+            s for s in all_s
+            if (s.get("user_rating") or 0) >= 4
+        ]
+    else:
+        from utils.db import get_supabase
+        result = (
+            get_supabase().table(TABLE)
+            .select("item_ids, accessory_ids")
+            .eq("user_id", user_id)
+            .gte("user_rating", 4)
+            .execute()
+        )
+        high_rated = result.data or []
+
+    if len(high_rated) < 3:
+        return None
+
+    # Collect all CLIP vectors from items in highly-rated outfits
+    all_vecs: List[List[float]] = []
+    for s in high_rated:
+        ids = list(s.get("item_ids") or []) + list(s.get("accessory_ids") or [])
+        for iid in ids:
+            item = item_by_id.get(str(iid))
+            vec  = item.get("embedding_vector") if item else None
+            if vec:
+                all_vecs.append(vec)
+
+    if not all_vecs:
+        return None
+
+    dim      = len(all_vecs[0])
+    centroid = [sum(v[d] for v in all_vecs) / len(all_vecs) for d in range(dim)]
+    return centroid
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Profile loader
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -308,6 +544,47 @@ def _load_user_profile(user_id: str) -> dict:
             return result.data or {}
     except Exception:
         return {}
+
+
+def _style_item_note(anchor_item: dict, event: dict) -> str:
+    """Write a short editorial note around the chosen anchor item."""
+    category = (anchor_item.get("category") or "").lower()
+    color = (anchor_item.get("color") or "").strip()
+    occasion = (event.get("occasion_type") or "occasion").replace("_", " ")
+
+    labels = {
+        "tops": "top",
+        "bottoms": "bottom",
+        "dresses": "dress",
+        "outerwear": "layer",
+        "shoes": "shoes",
+        "accessories": "accessory",
+        "set": "set",
+        "swimwear": "swim piece",
+        "loungewear": "lounge piece",
+    }
+    label = labels.get(category, category or "piece")
+    color_prefix = f"{color} " if color else ""
+
+    if category == "tops":
+        return f"Build around the {color_prefix}{label} with a clean lower half and one sharp layer for this {occasion}."
+    if category == "bottoms":
+        return f"Let the {color_prefix}{label} lead, then keep the top half refined and balanced for this {occasion}."
+    if category == "dresses":
+        return f"Let the {color_prefix}{label} stay central, then sharpen it with shoes and a layer that suits this {occasion}."
+    if category == "outerwear":
+        return f"Make the {color_prefix}{label} the statement and keep the base simple and proportional for this {occasion}."
+    if category == "shoes":
+        return f"Treat the {color_prefix}{label} as the finish point and keep the rest of the look aligned to this {occasion}."
+    if category == "accessories":
+        return f"Use the {color_prefix}{label} as the signature piece and keep the outfit around it quiet for this {occasion}."
+    if category == "set":
+        return f"Let the {color_prefix}{label} stay intact, then tune the shoes and layer to the energy of this {occasion}."
+    if category == "swimwear":
+        return f"Keep the {color_prefix}{label} as the anchor and add a light layer or cover-up that fits this {occasion}."
+    if category == "loungewear":
+        return f"Build a relaxed, intentional look around the {color_prefix}{label} for this {occasion}."
+    return f"Style the {color_prefix}{label} as the anchor and keep the rest of the look tailored to this {occasion}."
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -364,12 +641,25 @@ def generate_outfits(
     # ── Step 5: wardrobe + profile ─────────────────────────────────────────
     items        = get_user_items(user_id)
     user_profile = _load_user_profile(user_id)
+    item_by_id   = {str(i.get("id")): i for i in items}
 
     if not items:
         raise HTTPException(
             status_code=400,
             detail="No clothing items found. Upload some items first."
         )
+
+    anchor_item = None
+    if payload.anchor_item_id:
+        anchor_item = item_by_id.get(str(payload.anchor_item_id))
+        if not anchor_item:
+            raise HTTPException(status_code=404, detail="Anchor item not found")
+
+    # ── Step 5b: attribute preferences + CLIP style centroid ──────────────
+    # Runs concurrently with generation; both default gracefully to neutral
+    # when insufficient rating history exists (< 3 rated cards).
+    attribute_prefs = _compute_attribute_preferences(user_id, current_occasion=event)
+    style_centroid  = _compute_user_style_centroid(user_id, item_by_id)
 
     # ── Step 6: generate ───────────────────────────────────────────────────
     suggestions, all_seen = generate_outfit_suggestions(
@@ -381,13 +671,30 @@ def generate_outfits(
         user_profile=user_profile,
         combo_feedback_weights=combo_weights,
         seen_item_combos=seen_combos,
+        attribute_prefs=attribute_prefs,
+        user_style_centroid=style_centroid,
+        anchor_item_id=str(payload.anchor_item_id) if payload.anchor_item_id else None,
     )
 
-    if not suggestions:
+    style_note = _style_item_note(anchor_item, event) if anchor_item else None
+    if not suggestions and not anchor_item:
         raise HTTPException(
             status_code=400,
             detail="Could not generate outfits. You may need more items (try uploading a top, bottom, and shoes)."
         )
+
+    if not suggestions and anchor_item:
+        coverage_hints = wardrobe_coverage_gaps(items)
+        return {
+            "event":          event,
+            "suggestions":    [],
+            "all_seen":       all_seen,
+            "coverage_hints": coverage_hints,
+            "status":         "text_only",
+            "stylist_note":   style_note,
+            "missing_items":  coverage_hints,
+            "anchor_item":    anchor_item,
+        }
 
     existing_combo_ratings = _load_existing_combo_ratings(str(payload.event_id), user_id)
     for suggestion in suggestions:
@@ -414,6 +721,10 @@ def generate_outfits(
         "suggestions":    suggestions,
         "all_seen":       all_seen,
         "coverage_hints": coverage_hints,   # [] when wardrobe is sufficient
+        "status":         "moodboard" if anchor_item else None,
+        "stylist_note":   style_note,
+        "missing_items":  None,
+        "anchor_item":    anchor_item,
     }
 
 
@@ -480,13 +791,39 @@ def reset_feedback(
     }
 
 
+def _enrich_suggestions(rows: list, event: dict, item_by_id: Dict[str, dict]) -> list:
+    """
+    Back-fill `look_title` on stored cards that predate the field.
+    Uses the full _look_title() path (via compute_look_title) so titles are
+    derived from actual item colors + occasion tokens — same varied output as
+    freshly generated cards, not a simplified card-only approximation.
+    """
+    for row in rows:
+        card = row.get("card")
+        if not (card and isinstance(card, dict) and not card.get("look_title")):
+            continue
+        item_ids = list(row.get("item_ids") or []) + list(row.get("accessory_ids") or [])
+        items = [item_by_id[str(iid)] for iid in item_ids if str(iid) in item_by_id]
+        card["look_title"] = compute_look_title(
+            items,
+            event,
+            card.get("fit_check") or "",
+            card.get("color_theory") or "",
+        )
+    return rows
+
+
 @router.get("/suggestions/{event_id}")
 def get_suggestions(event_id: str, user_id: str = Depends(get_current_user_id)):
     """Fetch previously generated outfit suggestions for an event."""
+    event      = get_event(event_id, user_id) or {}
+    items      = get_user_items(user_id)
+    item_by_id = {str(i.get("id")): i for i in items}
+
     settings = get_settings()
     if settings.use_mock_auth:
         from utils.mock_db_store import select_all
-        return _dedupe_suggestions_by_combo(select_all(TABLE, {"event_id": event_id, "user_id": user_id}))
+        rows = select_all(TABLE, {"event_id": event_id, "user_id": user_id})
     else:
         from utils.db import get_supabase
         rows = (
@@ -496,5 +833,6 @@ def get_suggestions(event_id: str, user_id: str = Depends(get_current_user_id)):
             .eq("user_id", user_id)
             .execute()
             .data
-        )
-        return _dedupe_suggestions_by_combo(rows or [])
+        ) or []
+
+    return _dedupe_suggestions_by_combo(_enrich_suggestions(rows, event, item_by_id))

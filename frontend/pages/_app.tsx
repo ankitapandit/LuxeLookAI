@@ -8,6 +8,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/router";
 import { Toaster } from "react-hot-toast";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { prewarmDiscover } from "@/services/api";
 import "@/styles/globals.css";
 
 export default function App({ Component, pageProps }: AppProps) {
@@ -38,7 +39,7 @@ export default function App({ Component, pageProps }: AppProps) {
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, userId } = useAuth();
   const isPublicRoute = router.pathname === "/";
 
   useEffect(() => {
@@ -47,6 +48,25 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       router.replace("/");
     }
   }, [loading, isAuthenticated, isPublicRoute, router]);
+
+  useEffect(() => {
+    if (loading || !isAuthenticated || !userId) return;
+    if (typeof window === "undefined") return;
+
+    const key = `luxelook-discover-prewarm:${userId}`;
+    const lastRun = Number(window.localStorage.getItem(key) || "0");
+    const now = Date.now();
+    const cooldownMs = 1000 * 60 * 20;
+    if (lastRun > 0 && now - lastRun < cooldownMs) {
+      return;
+    }
+
+    window.localStorage.setItem(key, String(now));
+    void prewarmDiscover(6).catch(() => {
+      window.localStorage.removeItem(key);
+      // Discover prewarm is intentionally silent from the global shell.
+    });
+  }, [loading, isAuthenticated, userId]);
 
   if (loading) {
     return (

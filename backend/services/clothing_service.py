@@ -30,7 +30,8 @@ DUPLICATE_THRESHOLD = 0.95
 ITEM_LIST_FIELDS = (
     "id, user_id, category, item_type, accessory_subtype, color, pattern, "
     "season, formality_score, image_url, thumbnail_url, cutout_url, "
-    "media_status, media_stage, media_error, media_updated_at, descriptors, created_at"
+    "media_status, media_stage, media_error, media_updated_at, "
+    "is_active, is_archived, archived_on, deleted_at, descriptors, created_at"
 )
 
 
@@ -261,6 +262,10 @@ def _upload_mock(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
         "media_stage":       "queued",
         "media_error":       None,
         "media_updated_at":  _media_timestamp(),
+        "is_active":         True,
+        "is_archived":       False,
+        "archived_on":       None,
+        "deleted_at":        None,
         "embedding_vector":  embedding,
         "descriptors": tags.get("descriptors") or (manual_tags or {}).get("descriptors") or {},
     }
@@ -339,7 +344,8 @@ def _get_items_page_mock(
 def _get_deleted_items_mock(user_id: str) -> List[Dict]:
     from utils.mock_db_store import select_all
     rows = select_all(TABLE, {"user_id": user_id})
-    return [r for r in rows if not r.get("is_active", True)]
+    deleted = [r for r in rows if not r.get("is_active", True)]
+    return sorted(deleted, key=lambda r: r.get("archived_on") or r.get("deleted_at") or "", reverse=True)
 
 
 def _delete_item_mock(item_id: str, user_id: str) -> bool:
@@ -380,8 +386,12 @@ def _restore_item_mock(item_id: str, user_id: str) -> RestoreResult:
             return "auto_purged"
         return "duplicate_conflict"
 
-    update(TABLE, item_id, {"is_active": True, "deleted_at": None},
-           extra_filters={"user_id": user_id})
+    update(TABLE, item_id, {
+        "is_active": True,
+        "is_archived": False,
+        "deleted_at": None,
+        "archived_on": None,
+    }, extra_filters={"user_id": user_id})
     return "restored"
 
 
@@ -449,6 +459,10 @@ def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
         "media_stage":       "queued",
         "media_error":       None,
         "media_updated_at":  _media_timestamp(),
+        "is_active":         True,
+        "is_archived":       False,
+        "archived_on":       None,
+        "deleted_at":        None,
         "embedding_vector": vec_str,
         "descriptors": tags.get("descriptors") or (manual_tags or {}).get("descriptors") or {},
     }
@@ -547,10 +561,11 @@ def _get_deleted_items_real(user_id: str) -> List[Dict]:
     return (
         db.table(TABLE)
         .select("id, category, item_type, accessory_subtype, color, pattern, season, "
-                "formality_score, image_url, thumbnail_url, cutout_url, descriptors, created_at, deleted_at")
+                "formality_score, image_url, thumbnail_url, cutout_url, descriptors, created_at, "
+                "deleted_at, archived_on, is_archived")
         .eq("user_id", user_id)
         .eq("is_active", False)
-        .order("deleted_at", desc=True)
+        .order("archived_on", desc=True)
         .execute().data
     )
 
@@ -970,12 +985,12 @@ def _purge_old_deleted_mock(user_id: str, days: int) -> int:
     for row in rows:
         if row.get("is_active", True):
             continue
-        deleted_at_str = row.get("deleted_at") or ""
+        archived_at_str = row.get("archived_on") or row.get("deleted_at") or ""
         try:
-            deleted_at = datetime.fromisoformat(deleted_at_str.replace("Z", "+00:00"))
+            archived_at = datetime.fromisoformat(archived_at_str.replace("Z", "+00:00"))
         except ValueError:
             continue
-        if deleted_at <= cutoff:
+        if archived_at <= cutoff:
             hard_delete(TABLE, row["id"])
             purged += 1
     return purged
@@ -991,10 +1006,10 @@ def _purge_old_deleted_real(user_id: str, days: int) -> int:
     # Fetch rows to purge (need image_url for storage cleanup)
     rows = (
         db.table(TABLE)
-        .select("id, image_url, thumbnail_url, cutout_url")
+        .select("id, image_url, thumbnail_url, cutout_url, archived_on, deleted_at")
         .eq("user_id", user_id)
         .eq("is_active", False)
-        .lt("deleted_at", cutoff)
+        .or_(f"archived_on.lt.{cutoff},deleted_at.lt.{cutoff}")
         .execute()
         .data
     )

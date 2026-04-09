@@ -64,6 +64,10 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (timezone) {
+    config.headers["X-Client-Timezone"] = timezone;
+  }
   return config;
 });
 
@@ -127,6 +131,10 @@ export interface ClothingItem {
   media_stage?: "queued" | "thumbnail" | "cutout" | "complete";
   media_error?: string | null;
   media_updated_at?: string | null;
+  is_active?: boolean;
+  is_archived?: boolean;
+  archived_on?: string | null;
+  deleted_at?: string | null;
   created_at: string;
   descriptors?: Record<string, string>;
 }
@@ -304,6 +312,181 @@ export async function getEvents(): Promise<Event[]> {
   return data;
 }
 
+// ── Discover ─────────────────────────────────────────────────────────────
+
+export interface DiscoverProfileContext {
+  gender: string;
+  ethnicity: string;
+  body_type?: string | null;
+  complexion?: string | null;
+  age_range?: string | null;
+  hairstyle?: string | null;
+  season?: string | null;
+}
+
+export interface DiscoverCard {
+  id: string;
+  source_url: string;
+  normalized_url: string;
+  image_url: string;
+  thumbnail_url?: string | null;
+  display_image_url?: string | null;
+  source_domain?: string | null;
+  title: string;
+  summary: string;
+  source_note?: string | null;
+  style_tags: string[];
+  style_ids: string[];
+  person_count: number;
+  is_single_person: boolean;
+  search_query?: string | null;
+  analysis?: Record<string, unknown> | null;
+}
+
+export interface DiscoverFeedResponse {
+  seed_query: string;
+  profile_context: DiscoverProfileContext;
+  cards: DiscoverCard[];
+  ignored_url_count: number;
+  total_interactions: number;
+  daily_interactions: number;
+  daily_limit: number;
+  preference_rows: DiscoverPreferenceRow[];
+  style_seed?: { preferred: string[]; disliked: string[] } | null;
+  warming_up?: boolean;
+  queued_job_id?: string | null;
+}
+
+export type DiscoverAction = "love" | "like" | "dislike";
+
+export interface DiscoverInteractionRequest {
+  action: DiscoverAction;
+  card_id: string;
+  source_url: string;
+  normalized_url?: string;
+  image_url: string;
+  thumbnail_url?: string | null;
+  source_domain?: string | null;
+  title: string;
+  summary?: string | null;
+  search_query?: string | null;
+  style_tags?: string[];
+  style_ids?: string[];
+  person_count?: number;
+  is_single_person?: boolean;
+  analysis?: Record<string, unknown> | null;
+  interaction_index?: number;
+  commit_preferences?: boolean;
+}
+
+export interface DiscoverPreferenceRow {
+  style_id: string;
+  style_key: string;
+  label: string;
+  dimension: string;
+  score: number;
+  confidence: number;
+  exposure_count: number;
+  love_count: number;
+  like_count: number;
+  dislike_count: number;
+  positive_count: number;
+  negative_count: number;
+  status: string;
+  last_interaction_at?: string | null;
+}
+
+export interface DiscoverInteractionResponse {
+  status: string;
+  ignored_url?: string | null;
+  commit_triggered: boolean;
+  total_interactions: number;
+  daily_interactions: number;
+  daily_limit: number;
+  message?: string | null;
+  preference_summary?: Record<string, unknown> | null;
+  updated_preferences: DiscoverPreferenceRow[];
+  queued_job_id?: string | null;
+  queued_job_status?: string | null;
+}
+
+export interface DiscoverJobResponse {
+  id: string;
+  job_type: string;
+  status: string;
+  result?: Record<string, unknown> | null;
+  last_error?: string | null;
+  attempts: number;
+  max_attempts: number;
+  locked_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface DiscoverStatusResponse {
+  total_interactions: number;
+  daily_interactions: number;
+  daily_limit: number;
+  preference_rows: DiscoverPreferenceRow[];
+  queued_count: number;
+  running_count: number;
+  failed_count: number;
+  latest_seed_job?: DiscoverJobResponse | null;
+  latest_refresh_job?: DiscoverJobResponse | null;
+  latest_failed_job?: DiscoverJobResponse | null;
+}
+
+export interface DiscoverRetrySeedResponse {
+  status: string;
+  queued_job_id: string;
+  queued_job_status: string;
+  seed_query: string;
+}
+
+export interface DiscoverPrewarmResponse {
+  status: string;
+  seed_query: string;
+  ready_count: number;
+  queued_job_id?: string | null;
+  queued_job_status?: string | null;
+}
+
+export async function getDiscoverFeed(limit: number = 6): Promise<DiscoverFeedResponse> {
+  const { data } = await api.get<DiscoverFeedResponse>("/discover/feed", { params: { limit } });
+  return data;
+}
+
+export async function recordDiscoverInteraction(payload: DiscoverInteractionRequest): Promise<DiscoverInteractionResponse> {
+  const { data } = await api.post<DiscoverInteractionResponse>("/discover/interaction", payload);
+  return data;
+}
+
+export async function recomputeDiscoverPreferences(): Promise<DiscoverInteractionResponse> {
+  const { data } = await api.post<DiscoverInteractionResponse>("/discover/recompute");
+  return data;
+}
+
+export async function getDiscoverJobStatus(jobId: string): Promise<DiscoverJobResponse> {
+  const { data } = await api.get<DiscoverJobResponse>(`/discover/jobs/${jobId}`);
+  return data;
+}
+
+export async function getDiscoverStatus(): Promise<DiscoverStatusResponse> {
+  const { data } = await api.get<DiscoverStatusResponse>("/discover/status");
+  return data;
+}
+
+export async function retryDiscoverSeed(): Promise<DiscoverRetrySeedResponse> {
+  const { data } = await api.post<DiscoverRetrySeedResponse>("/discover/retry-seed");
+  return data;
+}
+
+export async function prewarmDiscover(minimumReady: number = 6): Promise<DiscoverPrewarmResponse> {
+  const { data } = await api.post<DiscoverPrewarmResponse>("/discover/prewarm", null, {
+    params: { minimum_ready: minimumReady },
+  });
+  return data;
+}
+
 // ── Recommendations ───────────────────────────────────────────────────────
 
 /** Structured 5-row at-a-glance card for an outfit suggestion (v2.0+). */
@@ -348,6 +531,14 @@ export interface OutfitsResponse {
   suggestions: OutfitSuggestion[];
   /** True when every returned outfit was already shown — wardrobe variety exhausted. */
   all_seen?: boolean;
+  /** Optional mode flag for anchor-item styling flows. */
+  status?: "moodboard" | "text_only" | "partial" | string;
+  /** Short editorial note for anchor-item styling flows. */
+  stylist_note?: string;
+  /** Suggested missing items or wardrobe gaps when no full outfit can be formed. */
+  missing_items?: string[];
+  /** Anchor item echoed back for convenience in style-item flows. */
+  anchor_item?: ClothingItem;
   /**
    * Plain-English hints about missing item types that would unlock more outfit templates.
    * Empty array when the wardrobe already covers at least one full template family.
@@ -370,11 +561,13 @@ export async function generateOutfits(
   topN: number = 3,
   previouslyShownIds?: string[],
   markAsBad: boolean = false,
+  anchorItemId?: string,
 ): Promise<OutfitsResponse> {
   const { data } = await api.post<OutfitsResponse>("/recommend/generate-outfits", {
     event_id: eventId,
     top_n: topN,
     mark_as_bad: markAsBad,
+    ...(anchorItemId ? { anchor_item_id: anchorItemId } : {}),
     ...(previouslyShownIds && previouslyShownIds.length > 0
       ? { previously_shown_ids: previouslyShownIds }
       : {}),
@@ -407,6 +600,8 @@ export default api;
 export interface UserProfile {
   id: string;
   email: string;
+  gender?: string;
+  ethnicity?: string;
   body_type?: string;
   height_cm?: number;
   weight_kg?: number;
@@ -422,6 +617,8 @@ export interface UserProfile {
 }
 
 export interface UpdateProfileRequest {
+  gender?: string;
+  ethnicity?: string;
   body_type?: string;
   height_cm?: number;
   weight_kg?: number;

@@ -661,6 +661,28 @@ CATEGORY_DESCRIPTORS = {
         "sheer":         ["opaque", "semi-sheer", "sheer"],
         "pattern":       ["solid", "floral", "striped", "graphic", "abstract", "tie-dye", "plaid", "animal print"],
     },
+    # ── Jumpsuits / Rompers ───────────────────────────────────────────────────
+    "jumpsuits": {
+        "fabric_type":    list(_FABRIC_OPTIONS),
+        "jumpsuit_style": ["tailored", "utility", "romper", "playsuit", "halter", "strapless",
+                           "boiler", "evening", "boho", "wide-leg", "straight-leg", "tapered"],
+        "neckline":       ["crew", "round", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
+                           "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
+        "sleeve_length":  ["sleeveless", "cap", "short", "3/4", "long"],
+        "sleeve_style":   ["puff", "bishop", "balloon", "bell", "raglan", "batwing", "cold shoulder", "flutter"],
+        "strap_type":     ["strapless", "spaghetti", "wide", "adjustable", "racerback", "cross-back", "halter"],
+        "fit":            ["slim", "regular", "relaxed", "loose", "oversized", "bodycon",
+                           "tailored", "A-line", "fit & flare", "wrap", "belted"],
+        "length":         ["short", "cropped", "ankle", "full-length"],
+        "leg_shape":      ["shorts", "straight", "wide-leg", "tapered", "flared", "culotte"],
+        "waist_structure":["elastic", "drawstring", "belted", "paperbag", "corset", "smocked"],
+        "closure":        ["pullover", "button-front", "zip-up", "wrap", "open front"],
+        "detailing":      ["ruffles", "pleats", "ruched", "smocked", "tiered", "draped",
+                           "cut-out", "slit", "bow", "knot", "lace-up", "fringe", "embroidery"],
+        "elasticity":     ["non-stretch", "slight stretch", "medium stretch", "high stretch"],
+        "sheer":          ["opaque", "semi-sheer", "sheer"],
+        "pattern":        ["solid", "floral", "striped", "graphic", "abstract", "tie-dye", "plaid", "animal print"],
+    },
     # ── Outerwear ─────────────────────────────────────────────────────────────
     "outerwear": {
         "fabric_type":        list(_FABRIC_OPTIONS),
@@ -883,6 +905,23 @@ def describe_clothing(image_bytes: bytes, category: str, mime_type: str = "image
 def _mock_describe_clothing(category: str) -> dict:
     """Deterministic mock descriptors for local dev."""
     cat = category.lower()
+    if "jumpsuit" in cat or "romper" in cat or "playsuit" in cat:
+        return {
+            "fabric_type": "polyester",
+            "jumpsuit_style": "tailored",
+            "neckline": "V-neck",
+            "sleeve_length": "sleeveless",
+            "strap_type": "wide",
+            "fit": "tailored",
+            "length": "full-length",
+            "leg_shape": "straight",
+            "waist_structure": "belted",
+            "closure": "zip-up",
+            "detailing": "none",
+            "elasticity": "medium stretch",
+            "sheer": "opaque",
+            "pattern": "solid",
+        }
     if "dress" in cat:
         return {
             "fabric_type": "polyester", "neckline": "V-neck", "sleeve_length": "sleeveless",

@@ -5,12 +5,17 @@ All secrets and service URLs are read from a .env file.
 Never hard-code credentials in source code.
 """
 
-import os
 from functools import lru_cache
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(
+        env_file=".env",
+        extra="ignore",
+    )
+
     # ── Supabase ─────────────────────────────────────────────────────────────
     supabase_url: str = "https://your-project.supabase.co"
     supabase_anon_key: str = "your-anon-key"
@@ -18,6 +23,17 @@ class Settings(BaseSettings):
 
     # ── OpenAI ───────────────────────────────────────────────────────────────
     openai_api_key: str = "sk-your-openai-key"
+
+    # ── Pexels ───────────────────────────────────────────────────────────────
+    pexels_api_key: str = ""
+
+    # ── Discover search provider ─────────────────────────────────────────────
+    # auto: prefers a configured real provider, else falls back to mock
+    # pexels: uses the Pexels search API if the key exists
+    # mock: deterministic placeholder results for local development
+    discover_search_provider: str = "auto"
+    discover_embedded_worker: bool = True
+    discover_worker_poll_seconds: float = 3.0
 
     # ── JWT ──────────────────────────────────────────────────────────────────
     jwt_secret: str = "change-me-in-production"
@@ -32,10 +48,6 @@ class Settings(BaseSettings):
     # Perfect for local development before Supabase is configured.
     # Set to false once you have real Supabase credentials in .env
     use_mock_auth: bool = True
-
-    class Config:
-        env_file = ".env"
-
 
 @lru_cache()
 def get_settings() -> Settings:

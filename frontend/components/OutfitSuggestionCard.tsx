@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { Expand, X } from "lucide-react";
+import { useState } from "react";
 import OutfitMetricCard, { isCurrentCardSchema } from "@/components/OutfitCard";
 import OutfitMoodboard from "@/components/OutfitMoodboard";
 import { ClothingItem, OutfitSuggestion } from "@/services/api";
@@ -28,14 +27,17 @@ export default function OutfitSuggestionCard({
   rank,
   wardrobeMap,
   onRate,
+  compact = false,
+  imageMode = "cutout",
 }: {
   suggestion: OutfitSuggestion;
   rank: number;
   wardrobeMap: Record<string, ClothingItem>;
   onRate: (rating: number) => void;
+  compact?: boolean;
+  imageMode?: "cutout" | "upload";
 }) {
   const [hover, setHover] = useState(0);
-  const [expanded, setExpanded] = useState(false);
 
   const items = [...suggestion.item_ids, ...(suggestion.accessory_ids || [])]
     .map((id) => wardrobeMap[id])
@@ -44,49 +46,37 @@ export default function OutfitSuggestionCard({
   const currentRating = suggestion.user_rating ?? 0;
   const hasRating = suggestion.user_rating !== null && suggestion.user_rating !== undefined;
 
-  useEffect(() => {
-    if (!expanded) return;
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setExpanded(false);
-    };
-
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", handleEscape);
-
-    return () => {
-      document.body.style.overflow = originalOverflow;
-      window.removeEventListener("keydown", handleEscape);
-    };
-  }, [expanded]);
-
   return (
     <>
-      <div className="card fade-up" style={{ padding: "24px" }}>
-        <OutfitMoodboard
-          items={items}
-          card={suggestion.card}
-          title={title}
-          eyebrow={`Look #${rank}`}
-          scoreLabel={`${Math.round(suggestion.score * 100)}% match`}
-        />
+      <div
+        className="card fade-up"
+        style={{
+          padding: compact ? "16px" : "24px",
+          minHeight: compact ? "0" : "300px",
+          height: "100%",
+          boxSizing: "border-box",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        {/* Grows to absorb any extra height, keeping rating row pinned to bottom */}
+        <div style={{ flex: 1 }}>
+          <OutfitMoodboard
+            items={items}
+            card={suggestion.card}
+            title={title}
+            eyebrow={`Look #${rank}`}
+            scoreLabel={`${Math.round(suggestion.score * 100)}% match`}
+            compact={compact}
+            imageMode={imageMode}
+          />
 
-        <div style={{ marginTop: "16px", marginBottom: "16px", display: "flex", justifyContent: "flex-end" }}>
-          <button
-            className="btn-secondary"
-            onClick={() => setExpanded(true)}
-            style={{ display: "inline-flex", alignItems: "center", gap: "7px", fontSize: "12px" }}
-          >
-            <Expand size={14} />
-            View full board
-          </button>
+          {!compact && isCurrentCardSchema(suggestion.card) ? (
+            <div style={{ marginTop: "20px", marginBottom: "16px" }}>
+              <OutfitMetricCard card={suggestion.card} />
+            </div>
+          ) : null}
         </div>
-
-        {isCurrentCardSchema(suggestion.card) ? (
-          <div style={{ marginBottom: "16px" }}>
-            <OutfitMetricCard card={suggestion.card} />
-          </div>
-        ) : null}
 
         <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
           <span className="type-helper" style={{ fontSize: "13px", color: "var(--muted)" }}>
@@ -115,61 +105,7 @@ export default function OutfitSuggestionCard({
             </span>
           ) : null}
         </div>
-      </div>
-
-      {expanded ? (
-        <div
-          className="moodboard-modal-backdrop"
-          onClick={() => setExpanded(false)}
-          role="presentation"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(8, 7, 6, 0.82)",
-            backdropFilter: "blur(8px)",
-            zIndex: 1300,
-            padding: "24px",
-            overflowY: "auto",
-          }}
-        >
-          <div
-            className="moodboard-modal-panel"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Expanded moodboard for look ${rank}`}
-            style={{
-              maxWidth: "1240px",
-              margin: "0 auto",
-              background: "#13110D",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: "28px",
-              boxShadow: "0 28px 70px rgba(0,0,0,0.35)",
-              padding: "22px",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "12px" }}>
-              <button
-                className="btn-secondary"
-                onClick={() => setExpanded(false)}
-                style={{ display: "inline-flex", alignItems: "center", gap: "7px", fontSize: "12px" }}
-              >
-                <X size={14} />
-                Close
-              </button>
-            </div>
-
-            <OutfitMoodboard
-              items={items}
-              card={suggestion.card}
-              title={title}
-              eyebrow={`Look #${rank}`}
-              scoreLabel={`${Math.round(suggestion.score * 100)}% match`}
-              expanded
-            />
-          </div>
-        </div>
-      ) : null}
+      </div>  {/* end .card */}
     </>
   );
 }

@@ -35,6 +35,13 @@ router = APIRouter()
 TABLE = "users"
 
 
+def _normalize_profile_defaults(row: dict) -> dict:
+    row = dict(row)
+    row["gender"] = row.get("gender") or "prefer_not_to_say"
+    row["ethnicity"] = row.get("ethnicity") or "prefer_not_to_say"
+    return row
+
+
 def _mock_seed_profile_if_needed(user_id: str) -> dict:
     from utils.mock_auth_store import get_mock_user_profile
     from utils.mock_db_store import insert, select_one
@@ -60,7 +67,7 @@ def _get_profile_or_404(user_id: str) -> dict:
     result = get_supabase().table(TABLE).select("*").eq("id", user_id).single().execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Profile not found")
-    return result.data
+    return _normalize_profile_defaults(result.data)
 
 
 def _update_profile_row(user_id: str, updates: dict) -> dict:
@@ -72,7 +79,7 @@ def _update_profile_row(user_id: str, updates: dict) -> dict:
         result = update(TABLE, user_id, updates, extra_filters={"id": user_id})
         if not result:
             raise HTTPException(status_code=404, detail="Profile not found")
-        return result
+        return _normalize_profile_defaults(result)
 
     from utils.db import get_supabase
 

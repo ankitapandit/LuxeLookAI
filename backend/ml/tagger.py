@@ -32,7 +32,8 @@ logger = logging.getLogger(__name__)
 CATEGORY_LABELS: List[Tuple[str, str]] = [
     ("tops",        "a photo of a top, t-shirt, blouse, shirt, or sweater worn on the upper body"),
     ("bottoms",     "a photo of trousers, jeans, skirt, shorts, or pants worn on the lower body"),
-    ("dresses",     "a photo of a dress or jumpsuit that covers both the torso and legs"),
+    ("dresses",     "a photo of a dress that covers both the torso and legs"),
+    ("jumpsuits",   "a photo of a jumpsuit, romper, or playsuit that covers the torso and either full legs or shorts"),
     ("shoes",       "a photo of shoes, boots, heels, sneakers, sandals, or footwear"),
     ("outerwear",   "a photo of a coat, jacket, blazer, or cardigan worn as an outer layer"),
     ("accessories", "a photo of an accessory such as a handbag, jewelry, belt, scarf, or hat"),
@@ -193,6 +194,7 @@ def _real_tag(image_bytes: bytes) -> Dict[str, Any]:
         "tops": 0.42,  # blouses/shirts are at least smart casual
         "bottoms": 0.40,
         "dresses": 0.55,  # dresses default to at least smart casual
+        "jumpsuits": 0.55,
         "shoes": 0.45,
         "outerwear": 0.50,
         "accessories": 0.40,
@@ -252,6 +254,83 @@ def _fallback_tags() -> Dict[str, Any]:
     }
 
 
+_FALL_FABRICS = {
+    "wool", "tweed", "knit", "leather", "suede", "denim", "corduroy", "velvet", "boucle"
+}
+_WINTER_FABRICS = {
+    "wool", "tweed", "knit", "leather", "suede", "faux fur", "fleece", "cashmere",
+    "heavyweight", "insulated", "down-filled"
+}
+_SPRING_SUMMER_FABRICS = {
+    "cotton", "linen", "chiffon", "mesh", "rayon", "lightweight", "breathable", "sheer"
+}
+_FALL_PATTERNS = {"plaid", "tartan", "check", "checkered", "houndstooth"}
+_FALL_COLORS = {"olive", "brown", "beige", "camel", "tan", "khaki", "rust", "burgundy", "gold", "plum"}
+_SPRING_SUMMER_COLORS = {"white", "ivory", "cream", "pastel", "pink", "sky blue", "blue", "yellow", "mint"}
+
+
+def _normalize_text(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _refine_season_from_tags(tags: Dict[str, Any]) -> str:
+    """
+    Light heuristic layer over CLIP season labels.
+
+    We keep the model's initial guess as one signal, then nudge the result when
+    the descriptors clearly point toward cooler or warmer weather. This is meant
+    to fix borderline items like wool plaid outerwear without hard-coding
+    one-off item rules.
+    """
+    base = _normalize_text(tags.get("season"))
+    scores = {season: 0.0 for season in ("spring", "summer", "fall", "winter")}
+    if base in scores:
+        scores[base] += 1.0
+
+    category = _normalize_text(tags.get("category"))
+    color = _normalize_text(tags.get("color"))
+    descriptors = tags.get("descriptors") or {}
+
+    values: List[str] = [color]
+    values.extend(_normalize_text(v) for v in descriptors.values())
+
+    def bump(season: str, amount: float) -> None:
+        scores[season] += amount
+
+    if category == "outerwear":
+        bump("fall", 0.45)
+        bump("winter", 0.15)
+    elif category in {"dresses", "jumpsuits"}:
+        bump("fall", 0.15)
+
+    for value in values:
+        if not value:
+            continue
+        if any(token in value for token in _FALL_FABRICS):
+            bump("fall", 0.75)
+        if any(token in value for token in _WINTER_FABRICS):
+            bump("winter", 0.70)
+        if any(token in value for token in _SPRING_SUMMER_FABRICS):
+            bump("spring", 0.45)
+            bump("summer", 0.45)
+        if any(token in value for token in _FALL_PATTERNS):
+            bump("fall", 0.55)
+        if any(token in value for token in _FALL_COLORS):
+            bump("fall", 0.35)
+        if any(token in value for token in _SPRING_SUMMER_COLORS):
+            bump("spring", 0.20)
+            bump("summer", 0.20)
+        if "longline" in value or "midweight" in value:
+            bump("fall", 0.25)
+        if "heavyweight" in value or "insulated" in value or "down-filled" in value:
+            bump("winter", 0.65)
+        if "sleeveless" in value or "strapless" in value:
+            bump("spring", 0.10)
+            bump("summer", 0.10)
+
+    return max(scores.items(), key=lambda kv: (kv[1], {"spring": 0, "summer": 1, "fall": 2, "winter": 3}[kv[0]]))[0]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Mock tagging (USE_MOCK_AI=true)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -309,6 +388,7 @@ def tag_clothing_item(image_url: str, image_bytes: bytes = None) -> Dict[str, An
         tags = _mock_tag(image_url)
         from ml.llm import _mock_describe_clothing
         tags["descriptors"] = _mock_describe_clothing(tags["category"])
+        tags["season"] = _refine_season_from_tags(tags)
         return tags
 
     if image_bytes is None:
@@ -328,6 +408,8 @@ def tag_clothing_item(image_url: str, image_bytes: bytes = None) -> Dict[str, An
     except Exception as e:
         logger.warning(f"Descriptor detection failed: {e}")
         tags["descriptors"] = {}
+
+    tags["season"] = _refine_season_from_tags(tags)
 
     return tags
 

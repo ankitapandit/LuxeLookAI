@@ -27,8 +27,46 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | 2.0.0   | 2026-04-01 | Structured outfit cards, smarter color/stylist scoring, richer wardrobe filters, and split AI profiling photo flow          |
 | 2.1.0   | 2026-04-01 | Event/Archive rename, mobile-first frontend polish, and major wardrobe performance upgrades                                  |
 | 2.2.0   | 2026-04-02 | Session restore, wardrobe media activity/status, cutout extraction, and duplicate-safe outfit refreshes                    |
+| 2.3.0   | 2026-04-09 | Discover taste-learning, Style Item workflow, jumpsuits taxonomy, and current data-model documentation                      |
 
 ---
+
+## [2.3.0] - 2026-04-09
+
+### Added
+- **Discover / The Edit** — added a new swipe-driven discovery surface powered by a seeded fashion image feed, per-user candidate cache, swipe logging, learned style preferences, ignored-link tracking, and a dedicated background job pipeline.
+- **Embedded Discover worker** — the backend now starts an embedded Discover worker on app startup for local/dev use, with durable `discover_jobs` rows handling candidate warm-up and style-preference refreshes.
+- **Pexels-backed Discover provider** — Discover search now runs through a provider abstraction and uses Pexels as the live image source, with mock fallback when no API key is configured.
+- **Style Item page** — added `/style-item`, a dedicated “style around this wardrobe piece” flow that anchors recommendations to one selected item and falls back to editorial guidance when a complete wardrobe-only look is not possible.
+- **Discover taste-learning schema** — formalized `style_catalog`, `discover_candidates`, `discover_style_interactions`, `discover_ignored_urls`, `user_style_preferences`, and `discover_jobs` as first-class product tables in the documented schema.
+- **Gender and ethnicity profile fields** — both fields now flow through backend models, Supabase schema, and the profile UI with `prefer_not_to_say` defaults.
+- **Jumpsuits category** — jumpsuits/rompers/playsuits now exist as a dedicated clothing category with their own descriptor vocabulary and recommendation handling.
+- **Archived metadata** — `is_archived` and `archived_on` are now tracked explicitly on wardrobe items instead of relying only on soft-delete semantics.
+- **Data model reference** — added a dedicated conceptual data-model document with ER diagram and record-style table definitions in `docs/data-model.md`.
+
+### Changed
+- **Discover analysis path** — candidate filtering and style-tag extraction now use the cached CLIP/Hugging Face path already present in the repo instead of per-candidate OpenAI vision calls.
+- **Discover query seeding** — search context now centers on complexion + gender + season, with learned style signals layered in; body shape is no longer part of the seed query.
+- **Discover UI behavior** — the page now tracks cumulative learning milestones, daily local-time swipe quotas, mobile-ready card layout, and touch swipe gestures while preserving buttons as fallback.
+- **Discover intro language** — the stage copy now explains the page through taste learning rather than search mechanics.
+- **Wardrobe archive language** — user-facing trash language has been renamed to Archived throughout the wardrobe flow.
+- **Wardrobe upload review** — season mismatch handling now appears inline in the review modal with an archive-after-save option instead of forcing a separate prompt.
+- **Wardrobe category taxonomy** — dresses no longer absorb jumpsuits implicitly; `jumpsuits` is now distinct in wardrobe filters, descriptors, and scoring.
+- **Frontend dependency baseline** — the frontend now targets the patched Next.js `15.5.15` line, and `dev.sh` no longer mutates dependencies via `npm audit fix`.
+
+### Fixed
+- **Discover worker deadlock in local dev** — queued Discover jobs no longer sit forever waiting on a manually started worker in normal development.
+- **Discover feed exhaustion** — cards are no longer excluded from future fetches merely for being shown once; ignored-link counts now reflect actual swiped looks.
+- **Discover interaction throttling mismatch** — daily quota logic now resets on the user’s local day while timestamps remain stored in UTC.
+- **Discover warm-up visibility** — the frontend now handles warm-up, refresh, and empty states more clearly without exposing internal worker counters to end users.
+- **Discover retry storms** — permanent provider/config failures now stop retrying as terminal errors instead of burning repeated background attempts.
+- **Wardrobe archived count lag** — the Archived badge now updates immediately without requiring the user to open the archive tab first.
+- **Wardrobe LCP warning** — the first above-the-fold wardrobe images now opt into `next/image` priority.
+- **Form accessibility gaps** — key wardrobe/profile/auth fields now carry `id`/`name` attributes and proper label associations.
+
+### Docs
+- **README refreshed for current product surface** — docs now reflect Discover, Style Item, Pexels configuration, embedded worker behavior, and current route structure.
+- **Conceptual schema document added** — `docs/data-model.md` now captures the live table model, cascade rules, and product-domain relationships for the app.
 
 ## [2.2.0] - 2026-04-02
 

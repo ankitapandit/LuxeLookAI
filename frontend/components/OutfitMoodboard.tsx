@@ -114,8 +114,11 @@ function getItemHoverLabel(item: ClothingItem): string {
   return color ? `${getDisplayName(item)} · ${color}` : getDisplayName(item);
 }
 
-function getImageSrc(item: ClothingItem): string {
-  return item.cutout_url || item.thumbnail_url || item.image_url;
+function getImageSrc(item: ClothingItem, imageMode: "cutout" | "upload"): string {
+  if (imageMode === "upload") {
+    return item.thumbnail_url || item.image_url || item.cutout_url || "";
+  }
+  return item.cutout_url || item.thumbnail_url || item.image_url || "";
 }
 
 type StagePlacement = {
@@ -188,8 +191,18 @@ function getStagePlacements(items: ClothingItem[]): StagePlacement[] {
   return placements;
 }
 
-function StageItem({ placement, expanded }: { placement: StagePlacement; expanded: boolean }) {
-  const imageSrc = getImageSrc(placement.item);
+function StageItem({
+  placement,
+  expanded,
+  compact,
+  imageMode,
+}: {
+  placement: StagePlacement;
+  expanded: boolean;
+  compact: boolean;
+  imageMode: "cutout" | "upload";
+}) {
+  const imageSrc = getImageSrc(placement.item, imageMode);
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -207,7 +220,9 @@ function StageItem({ placement, expanded }: { placement: StagePlacement; expande
         zIndex: placement.zIndex ?? 1,
         filter: expanded
           ? "drop-shadow(0 18px 30px rgba(104, 78, 43, 0.22))"
-          : "drop-shadow(0 12px 20px rgba(104, 78, 43, 0.19))",
+          : compact
+            ? "drop-shadow(0 10px 18px rgba(104, 78, 43, 0.16))"
+            : "drop-shadow(0 12px 20px rgba(104, 78, 43, 0.19))",
       }}
       title={getItemHoverLabel(placement.item)}
     >
@@ -216,7 +231,7 @@ function StageItem({ placement, expanded }: { placement: StagePlacement; expande
         alt={getDisplayName(placement.item)}
         fill
         unoptimized={shouldBypassImageOptimization(imageSrc)}
-        sizes={expanded ? "(max-width: 900px) 55vw, 620px" : "(max-width: 900px) 48vw, 420px"}
+        sizes={expanded ? "(max-width: 900px) 55vw, 620px" : compact ? "(max-width: 900px) 44vw, 380px" : "(max-width: 900px) 48vw, 420px"}
         style={{ objectFit: "contain" }}
       />
       {hovered && (
@@ -224,13 +239,13 @@ function StageItem({ placement, expanded }: { placement: StagePlacement; expande
           style={{
             position: "absolute",
             left: "50%",
-            bottom: expanded ? "-24px" : "-20px",
+            bottom: compact ? "-18px" : expanded ? "-24px" : "-20px",
             transform: "translateX(-50%)",
-            padding: expanded ? "7px 12px" : "6px 10px",
+            padding: compact ? "5px 8px" : expanded ? "7px 12px" : "6px 10px",
             borderRadius: "999px",
             background: "rgba(24, 23, 20, 0.88)",
             color: "#F4EEE4",
-            fontSize: expanded ? "12px" : "11px",
+            fontSize: compact ? "10px" : expanded ? "12px" : "11px",
             fontWeight: 500,
             whiteSpace: "nowrap",
             letterSpacing: "0.01em",
@@ -252,6 +267,8 @@ export default function OutfitMoodboard({
   eyebrow,
   scoreLabel,
   expanded = false,
+  compact = false,
+  imageMode = "cutout",
 }: {
   items: ClothingItem[];
   card?: OutfitCard;
@@ -259,6 +276,8 @@ export default function OutfitMoodboard({
   eyebrow: string;
   scoreLabel?: string;
   expanded?: boolean;
+  compact?: boolean;
+  imageMode?: "cutout" | "upload";
 }) {
   const palette = items
     .map((item) => parseColorSwatch(item.color))
@@ -274,9 +293,9 @@ export default function OutfitMoodboard({
       className="moodboard-shell"
       style={{
         display: "grid",
-        gap: expanded ? "22px" : "18px",
-        padding: expanded ? "30px" : "22px",
-        borderRadius: expanded ? "34px" : "28px",
+        gap: compact ? "14px" : expanded ? "22px" : "18px",
+        padding: compact ? "18px" : expanded ? "30px" : "22px",
+        borderRadius: compact ? "24px" : expanded ? "34px" : "28px",
         background: "linear-gradient(145deg, #FBF5EC 0%, #F4E8D8 62%, #E8D4B9 100%)",
         border: "1px solid rgba(148, 117, 78, 0.18)",
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.72), 0 22px 50px rgba(72, 53, 27, 0.10)",
@@ -287,15 +306,15 @@ export default function OutfitMoodboard({
         style={{
           display: "grid",
           gridTemplateColumns: "minmax(0, 1fr) auto",
-          gap: "18px",
+          gap: compact ? "12px" : "18px",
           alignItems: "start",
         }}
       >
         <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: compact ? "8px" : "12px" }}>
             <span
               style={{
-                fontSize: expanded ? "11px" : "10px",
+                fontSize: compact ? "10px" : expanded ? "11px" : "10px",
                 fontWeight: 700,
                 letterSpacing: "0.16em",
                 textTransform: "uppercase",
@@ -306,12 +325,12 @@ export default function OutfitMoodboard({
             </span>
             {scoreLabel ? (
               <span
-                style={{
-                  padding: expanded ? "6px 12px" : "5px 11px",
+              style={{
+                  padding: compact ? "4px 10px" : expanded ? "6px 12px" : "5px 11px",
                   borderRadius: "999px",
                   background: "rgba(114, 86, 44, 0.08)",
                   color: "#695535",
-                  fontSize: expanded ? "12px" : "11px",
+                  fontSize: compact ? "10px" : expanded ? "12px" : "11px",
                   fontWeight: 600,
                 }}
               >
@@ -324,11 +343,11 @@ export default function OutfitMoodboard({
             style={{
               margin: 0,
               fontFamily: "Playfair Display, serif",
-              fontSize: expanded ? "clamp(36px, 4vw, 52px)" : "clamp(28px, 3vw, 40px)",
+              fontSize: compact ? "clamp(24px, 3vw, 30px)" : expanded ? "clamp(36px, 4vw, 52px)" : "clamp(28px, 3vw, 40px)",
               lineHeight: 0.94,
               letterSpacing: "-0.04em",
               color: "#241B10",
-              maxWidth: expanded ? "14ch" : "12ch",
+              maxWidth: compact ? "11ch" : expanded ? "14ch" : "12ch",
             }}
           >
             {title}
@@ -336,11 +355,11 @@ export default function OutfitMoodboard({
 
           <p
             style={{
-              margin: "12px 0 0",
+              margin: compact ? "8px 0 0" : "12px 0 0",
               color: "#705B43",
-              fontSize: expanded ? "15px" : "13px",
+              fontSize: compact ? "12px" : expanded ? "15px" : "13px",
               lineHeight: 1.6,
-              maxWidth: expanded ? "38rem" : "30rem",
+              maxWidth: compact ? "26rem" : expanded ? "38rem" : "30rem",
             }}
           >
             {subhead}
@@ -353,9 +372,9 @@ export default function OutfitMoodboard({
               <span
                 key={`${swatch.label}-${swatch.swatch}`}
                 title={swatch.label}
-                style={{
-                  width: expanded ? "24px" : "20px",
-                  height: expanded ? "24px" : "20px",
+              style={{
+                  width: compact ? "16px" : expanded ? "24px" : "20px",
+                  height: compact ? "16px" : expanded ? "24px" : "20px",
                   borderRadius: "999px",
                   background: swatch.swatch,
                   border: "2px solid rgba(255,255,255,0.82)",
@@ -371,8 +390,8 @@ export default function OutfitMoodboard({
         className="moodboard-stage"
         style={{
           position: "relative",
-          minHeight: expanded ? "720px" : "470px",
-          borderRadius: expanded ? "30px" : "24px",
+          minHeight: compact ? "360px" : expanded ? "720px" : "470px",
+          borderRadius: compact ? "24px" : expanded ? "30px" : "24px",
           overflow: "hidden",
           background: "radial-gradient(circle at top left, rgba(255,255,255,0.88), rgba(255,255,255,0) 42%), linear-gradient(180deg, rgba(255,251,246,0.72) 0%, rgba(245,232,216,0.46) 100%)",
           border: "1px solid rgba(145, 116, 78, 0.12)",
@@ -405,28 +424,30 @@ export default function OutfitMoodboard({
             key={placement.item.id}
             placement={placement}
             expanded={expanded}
+            compact={compact}
+            imageMode={imageMode}
           />
         ))}
       </div>
 
       <div className="moodboard-footer">
         <div
-          style={{
-            borderRadius: expanded ? "22px" : "18px",
-            padding: expanded ? "18px" : "14px",
-            background: "rgba(255,255,255,0.48)",
-            border: "1px solid rgba(138, 110, 74, 0.14)",
-            maxWidth: expanded ? "340px" : "280px",
-          }}
-        >
-          <div
             style={{
-              color: "#896A45",
-              fontSize: expanded ? "11px" : "10px",
-              fontWeight: 700,
-              letterSpacing: "0.16em",
-              textTransform: "uppercase",
-              marginBottom: "10px",
+              borderRadius: compact ? "18px" : expanded ? "22px" : "18px",
+              padding: compact ? "12px" : expanded ? "18px" : "14px",
+              background: "rgba(255,255,255,0.48)",
+              border: "1px solid rgba(138, 110, 74, 0.14)",
+              maxWidth: compact ? "300px" : expanded ? "340px" : "280px",
+            }}
+          >
+            <div
+              style={{
+                color: "#896A45",
+                fontSize: compact ? "10px" : expanded ? "11px" : "10px",
+                fontWeight: 700,
+                letterSpacing: "0.16em",
+                textTransform: "uppercase",
+                marginBottom: "10px",
             }}
           >
             Stylist note
@@ -435,7 +456,7 @@ export default function OutfitMoodboard({
             style={{
               margin: 0,
               color: "#4A3724",
-              fontSize: expanded ? "18px" : "14px",
+              fontSize: compact ? "13px" : expanded ? "18px" : "14px",
               lineHeight: 1.5,
               fontStyle: "italic",
             }}

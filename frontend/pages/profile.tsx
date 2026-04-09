@@ -29,6 +29,29 @@ import toast from "react-hot-toast";
 // ── Static data ───────────────────────────────────────────────────────────────
 
 const BODY_TYPES  = ["hourglass", "pear", "apple", "rectangle", "inverted triangle"];
+const GENDER_OPTIONS = [
+  ["prefer_not_to_say", "Prefer not to say"],
+  ["woman", "Woman"],
+  ["man", "Man"],
+  ["non_binary", "Non-binary"],
+  ["trans_woman", "Trans woman"],
+  ["trans_man", "Trans man"],
+  ["other", "Other"],
+] as [string, string][];
+const ETHNICITY_OPTIONS = [
+  ["prefer_not_to_say", "Prefer not to say"],
+  ["asian", "Asian"],
+  ["black", "Black"],
+  ["white", "White"],
+  ["latine", "Latine / Hispanic"],
+  ["middle_eastern", "Middle Eastern / North African"],
+  ["south_asian", "South Asian"],
+  ["east_asian", "East Asian"],
+  ["southeast_asian", "Southeast Asian"],
+  ["pacific_islander", "Pacific Islander"],
+  ["mixed", "Mixed / Multiracial"],
+  ["other", "Other"],
+] as [string, string][];
 const COMPLEXIONS = ["fair", "light", "medium", "olive", "tan", "deep"];
 const FACE_SHAPES = ["oval", "round", "square", "heart", "diamond", "oblong"];
 const HAIR_TEXTURE = ["straight", "wavy", "curly", "coily"];
@@ -196,15 +219,24 @@ const labelStyle: React.CSSProperties = {
   letterSpacing: "0.07em", marginBottom: "6px",
 };
 
-function SelectField({ value, onChange, options }: {
-  value: string; onChange: (v: string) => void; options: string[];
+function SelectField({ id, name, value, onChange, options }: {
+  id?: string;
+  name?: string;
+  value: string; onChange: (v: string) => void; options: Array<string | [string, string]>;
 }) {
   return (
-    <select value={value} onChange={e => onChange(e.target.value)}
+    <select id={id} name={name} value={value} onChange={e => onChange(e.target.value)}
       className="input"
       style={{ padding: "10px 12px", fontSize: "14px", textTransform: "capitalize", width: "100%" }}>
       <option value="">Select…</option>
-      {options.map(o => <option key={o} value={o} style={{ textTransform: "capitalize" }}>{o}</option>)}
+      {options.map((option) => {
+        const [optionValue, optionLabel] = Array.isArray(option) ? option : [option, option];
+        return (
+          <option key={optionValue} value={optionValue} style={{ textTransform: "capitalize" }}>
+            {optionLabel}
+          </option>
+        );
+      })}
     </select>
   );
 }
@@ -428,6 +460,8 @@ export default function ProfilePage() {
 
   // Core form state
   const [bodyType,    setBodyType]    = useState("");
+  const [gender,      setGender]      = useState("prefer_not_to_say");
+  const [ethnicity,   setEthnicity]   = useState("prefer_not_to_say");
   const [ageRange,    setAgeRange]    = useState("");
   const [heightVal,   setHeightVal]   = useState("");
   const [heightUnit,  setHeightUnit]  = useState<"cm" | "in">("cm");
@@ -463,6 +497,8 @@ export default function ProfilePage() {
 
   function syncProfileState(p: UserProfile) {
     setProfile(p);
+    setGender(p.gender || "prefer_not_to_say");
+    setEthnicity(p.ethnicity || "prefer_not_to_say");
     setBodyType(p.body_type || "");
     setAgeRange(p.age_range || "");
     setComplexion(p.complexion || "");
@@ -658,6 +694,8 @@ export default function ProfilePage() {
         : undefined;
 
       const updated = await updateProfile({
+        gender: gender || "prefer_not_to_say",
+        ethnicity: ethnicity || "prefer_not_to_say",
         body_type:  bodyType   || undefined,
         age_range:  ageRange   || undefined,
         height_cm: heightCm,
@@ -947,6 +985,24 @@ export default function ProfilePage() {
         <section style={{ marginBottom: "40px" }}>
           <p className="type-kicker" style={{ ...labelStyle, fontSize: "13px", marginBottom: "20px" }}>Basic info</p>
 
+          {/* Gender + Ethnicity */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "24px" }}>
+            <div>
+              <label htmlFor="profile-gender" style={labelStyle}>Gender</label>
+              <SelectField id="profile-gender" name="gender" value={gender} onChange={setGender} options={GENDER_OPTIONS} />
+              <p className="type-micro" style={{ fontSize: "11px", color: "var(--muted)", marginTop: "6px" }}>
+                Used later to seed discovery queries. Default is “Prefer not to say.”
+              </p>
+            </div>
+            <div>
+              <label htmlFor="profile-ethnicity" style={labelStyle}>Ethnicity</label>
+              <SelectField id="profile-ethnicity" name="ethnicity" value={ethnicity} onChange={setEthnicity} options={ETHNICITY_OPTIONS} />
+              <p className="type-micro" style={{ fontSize: "11px", color: "var(--muted)", marginTop: "6px" }}>
+                Optional. Used later to make discovery more context-aware.
+              </p>
+            </div>
+          </div>
+
           {/* Age range */}
           <div style={{ marginBottom: "24px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" }}>
@@ -970,9 +1026,9 @@ export default function ProfilePage() {
           {/* Body type */}
           <div style={{ marginBottom: "24px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap", marginBottom: "6px" }}>
-              <label style={{ ...labelStyle, marginBottom: 0 }}>Body type</label>
+              <label htmlFor="profile-body-type" style={{ ...labelStyle, marginBottom: 0 }}>Body type</label>
               <div style={{ width: "220px", maxWidth: "100%", marginRight: "auto" }}>
-                <SelectField value={bodyType} onChange={setBodyType} options={BODY_TYPES} />
+                <SelectField id="profile-body-type" name="body_type" value={bodyType} onChange={setBodyType} options={BODY_TYPES} />
               </div>
               <CalcLinkButton label="Calculate mine" open={showBodyCalc} onClick={() => setShowBodyCalc(p => !p)} />
             </div>
@@ -987,15 +1043,17 @@ export default function ProfilePage() {
                     ["Bust",  bust,  setBust],
                     ["Waist", waist, setWaist],
                     ["Hips",  hip,   setHip],
-                  ] as [string, string, (v: string) => void][]).map(([lbl, val, setter]) => (
+                  ] as [string, string, (v: string) => void][]).map(([lbl, val, setter]) => {
+                    const fieldId = `body-calc-${lbl.toLowerCase()}`;
+                    return (
                     <div key={lbl}>
-                      <label style={labelStyle}>{lbl}</label>
-                      <input type="number" min="0" value={val}
+                      <label htmlFor={fieldId} style={labelStyle}>{lbl}</label>
+                      <input id={fieldId} name={fieldId} type="number" min="0" value={val}
                         onChange={e => setter(e.target.value)}
                         placeholder="0" className="input"
                         style={{ padding: "8px 10px", fontSize: "14px", width: "100%" }} />
                     </div>
-                  ))}
+                  )})}
                 </div>
 
                 {bust && waist && hip && !bodyResult && (
@@ -1031,10 +1089,10 @@ export default function ProfilePage() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                <label style={{ ...labelStyle, marginBottom: 0 }}>Height</label>
+                <label htmlFor="profile-height" style={{ ...labelStyle, marginBottom: 0 }}>Height</label>
                 <UnitToggle value={heightUnit} options={["cm", "in"]} onChange={handleHeightUnitToggle} />
               </div>
-              <input type="number" min="0" value={heightVal}
+              <input id="profile-height" name="height" type="number" min="0" value={heightVal}
                 onChange={e => setHeightVal(e.target.value)}
                 placeholder={heightUnit === "cm" ? "e.g. 165" : "e.g. 65"}
                 className="input" style={{ padding: "10px 12px", fontSize: "14px", width: "100%" }} />
@@ -1042,10 +1100,10 @@ export default function ProfilePage() {
 
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                <label style={{ ...labelStyle, marginBottom: 0 }}>Weight</label>
+                <label htmlFor="profile-weight" style={{ ...labelStyle, marginBottom: 0 }}>Weight</label>
                 <UnitToggle value={weightUnit} options={["kg", "lbs"]} onChange={handleWeightUnitToggle} />
               </div>
-              <input type="number" min="0" value={weightVal}
+              <input id="profile-weight" name="weight" type="number" min="0" value={weightVal}
                 onChange={e => setWeightVal(e.target.value)}
                 placeholder={weightUnit === "kg" ? "e.g. 60" : "e.g. 132"}
                 className="input" style={{ padding: "10px 12px", fontSize: "14px", width: "100%" }} />
@@ -1060,9 +1118,9 @@ export default function ProfilePage() {
           {/* Complexion */}
           <div style={{ marginBottom: "24px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap", marginBottom: "6px" }}>
-              <label style={{ ...labelStyle, marginBottom: 0 }}>Complexion</label>
+              <label htmlFor="profile-complexion" style={{ ...labelStyle, marginBottom: 0 }}>Complexion</label>
               <div style={{ width: "220px", maxWidth: "100%", marginRight: "auto" }}>
-                <SelectField value={complexion} onChange={setComplexion} options={COMPLEXIONS} />
+                <SelectField id="profile-complexion" name="complexion" value={complexion} onChange={setComplexion} options={COMPLEXIONS} />
               </div>
               <CalcLinkButton label="Help me identify" open={showComplexCalc} onClick={() => setShowComplexCalc(p => !p)} />
             </div>
@@ -1132,9 +1190,9 @@ export default function ProfilePage() {
           {/* Face shape */}
           <div style={{ marginBottom: "24px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" }}>
-              <label style={{ ...labelStyle, marginBottom: 0 }}>Face shape</label>
+              <label htmlFor="profile-face-shape" style={{ ...labelStyle, marginBottom: 0 }}>Face shape</label>
               <div style={{ width: "220px", maxWidth: "100%" }}>
-                <SelectField value={faceShape} onChange={setFaceShape} options={FACE_SHAPES} />
+                <SelectField id="profile-face-shape" name="face_shape" value={faceShape} onChange={setFaceShape} options={FACE_SHAPES} />
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "8px", flexWrap: "wrap" }}>
