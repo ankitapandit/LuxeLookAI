@@ -758,7 +758,7 @@ export default function ProfilePage() {
     <>
       <Head><title>My Profile — LuxeLook AI</title></Head>
       <Navbar />
-      <main className="page-main" style={{ maxWidth: "680px", margin: "0 auto", padding: "48px 24px" }}>
+      <main className="page-main" style={{ maxWidth: "1120px", margin: "0 auto", padding: "48px 24px" }}>
 
         {/* ── Header ── */}
         <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
@@ -981,8 +981,9 @@ export default function ProfilePage() {
           )}
         </section>
 
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "24px", marginBottom: "40px" }}>
         {/* ── Basic info ── */}
-        <section style={{ marginBottom: "40px" }}>
+        <section style={{ marginBottom: 0, padding: "20px", borderRadius: "20px", border: "1px solid var(--border)", background: "var(--surface)" }}>
           <p className="type-kicker" style={{ ...labelStyle, fontSize: "13px", marginBottom: "20px" }}>Basic info</p>
 
           {/* Gender + Ethnicity */}
@@ -1112,7 +1113,7 @@ export default function ProfilePage() {
         </section>
 
         {/* ── Personalised styling ── */}
-        <section style={{ marginBottom: "40px" }}>
+        <section style={{ marginBottom: 0, padding: "20px", borderRadius: "20px", border: "1px solid var(--border)", background: "var(--surface)" }}>
           <p className="type-kicker" style={{ ...labelStyle, fontSize: "13px", marginBottom: "20px" }}>Personalised styling</p>
 
           {/* Complexion */}
@@ -1272,6 +1273,7 @@ export default function ProfilePage() {
             </div>
           </div>
         </section>
+        </div>
 
         {/* ── Save ── */}
         <button className="btn-primary" onClick={handleSave} disabled={saving}

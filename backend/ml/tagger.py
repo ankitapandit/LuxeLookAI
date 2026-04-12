@@ -36,7 +36,8 @@ CATEGORY_LABELS: List[Tuple[str, str]] = [
     ("jumpsuits",   "a photo of a jumpsuit, romper, or playsuit that covers the torso and either full legs or shorts"),
     ("shoes",       "a photo of shoes, boots, heels, sneakers, sandals, or footwear"),
     ("outerwear",   "a photo of a coat, jacket, blazer, or cardigan worn as an outer layer"),
-    ("accessories", "a photo of an accessory such as a handbag, jewelry, belt, scarf, or hat"),
+    ("jewelry",     "a photo of jewelry such as a necklace, earrings, bracelet, ring, or watch"),
+    ("accessories", "a photo of a non-jewelry accessory such as a handbag, belt, scarf, hat, or sunglasses"),
     ("set",         "a photo of a co-ord set or matching two-piece outfit with a coordinated top and bottom in the same fabric or print"),
     ("swimwear",    "a photo of swimwear such as a bikini, one-piece swimsuit, tankini, monokini, or swim dress"),
     ("loungewear",  "a photo of loungewear, pajamas, sweatpants, joggers, a hoodie, or comfortable home or sleepwear clothing"),
@@ -84,12 +85,24 @@ FORMALITY_LABELS: List[Tuple[float, str]] = [
 ]
 
 ACCESSORY_LABELS: List[Tuple[str, str]] = [
-    ("bag",     "a handbag, purse, tote bag, clutch, or backpack"),
-    ("jewelry", "jewelry such as a necklace, earrings, bracelet, ring, or watch"),
-    ("belt",    "a belt worn around the waist"),
-    ("scarf",   "a scarf, wrap, or shawl worn around the neck or shoulders"),
-    ("hat",     "a hat, cap, or headwear"),
-    ("other",   "another type of accessory or fashion item"),
+    ("bag",   "a handbag, purse, tote bag, clutch, or backpack"),
+    ("belt",  "a belt worn around the waist"),
+    ("scarf", "a scarf, wrap, or shawl worn around the neck or shoulders"),
+    ("hat",   "a hat, cap, or headwear"),
+    ("sunglasses", "sunglasses or tinted eyewear"),
+    ("other", "another type of non-jewelry accessory or fashion item"),
+]
+
+JEWELRY_LABELS: List[Tuple[str, str]] = [
+    ("necklace", "a necklace, pendant, chain, choker, or collar necklace"),
+    ("earrings", "earrings such as studs, hoops, drops, or chandeliers"),
+    ("bracelet", "a bracelet or bangle worn on the wrist"),
+    ("ring", "a ring worn on the finger"),
+    ("watch", "a watch or wristwatch"),
+    ("anklet", "an anklet worn around the ankle"),
+    ("brooch", "a brooch, pin, or lapel jewel"),
+    ("cuff", "a cuff bracelet or structured wrist cuff"),
+    ("other", "another type of jewelry piece"),
 ]
 
 # Human-readable season descriptions shown in the frontend review form.
@@ -129,12 +142,10 @@ def _get_clip_pipeline():
     if _clip_pipeline is None:
         try:
             from transformers import pipeline
-            logger.info("Loading CLIP pipeline — first call may download ~600MB…")
             _clip_pipeline = pipeline(
                 "zero-shot-image-classification",
                 model="openai/clip-vit-base-patch32",
             )
-            logger.info("CLIP pipeline ready.")
         except Exception as e:
             raise RuntimeError(f"CLIP model failed to load: {e}") from e
     return _clip_pipeline
@@ -179,7 +190,6 @@ def _real_tag(image_bytes: bytes) -> Dict[str, Any]:
     import io
 
     image    = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    logger.info("Running CLIP zero-shot classification…")
 
     from services.taxonomy import get_clip_labels
     _clip = get_clip_labels()
@@ -197,18 +207,14 @@ def _real_tag(image_bytes: bytes) -> Dict[str, Any]:
         "jumpsuits": 0.55,
         "shoes": 0.45,
         "outerwear": 0.50,
+        "jewelry": 0.30,
         "accessories": 0.40,
     }
     floor = CATEGORY_FORMALITY_FLOOR.get(category, 0.0)
     formality_score = max(formality_score, floor)
 
-    logger.debug(
-        f"CLIP results → category:{category}({cat_conf:.2f}) "
-        f"color:{color}({color_conf:.2f}) season:{season} formality:{formality_score}"
-    )
-
     item_type = (
-        "accessory"    if category == "accessories" else
+        "accessory"    if category in {"accessories", "jewelry"} else
         "footwear"     if category == "shoes"       else
         "outerwear"    if category == "outerwear"   else
         "core_garment"
@@ -216,7 +222,10 @@ def _real_tag(image_bytes: bytes) -> Dict[str, Any]:
 
     accessory_subtype = None
     if item_type == "accessory":
-        accessory_subtype, _ = _classify(image, _clip.get("accessory_type", ACCESSORY_LABELS))
+        if category == "jewelry":
+            accessory_subtype, _ = _classify(image, _clip.get("jewelry_type", JEWELRY_LABELS))
+        else:
+            accessory_subtype, _ = _classify(image, _clip.get("accessory_type", ACCESSORY_LABELS))
 
     return {
         "category":          category,
@@ -225,8 +234,6 @@ def _real_tag(image_bytes: bytes) -> Dict[str, Any]:
         "color":             color,
         "season":            season,
         "formality_score":   formality_score,
-        # needs_review=False means AI is confident — show tags as pre-filled suggestions
-        # (user can still override any field)
         "needs_review":      False,
         "ai_confidence": {
             "category": round(cat_conf, 2),
@@ -255,11 +262,12 @@ def _fallback_tags() -> Dict[str, Any]:
 
 
 _FALL_FABRICS = {
-    "wool", "tweed", "knit", "leather", "suede", "denim", "corduroy", "velvet", "boucle"
+    "wool", "tweed", "knit", "ribbed", "leather", "suede", "denim", "corduroy", "velvet", "boucle",
+    "sweater", "jersey"
 }
 _WINTER_FABRICS = {
-    "wool", "tweed", "knit", "leather", "suede", "faux fur", "fleece", "cashmere",
-    "heavyweight", "insulated", "down-filled"
+    "wool", "tweed", "knit", "ribbed", "sweater", "leather", "suede", "faux fur", "fleece", "cashmere",
+    "heavyweight", "insulated", "down-filled", "mock neck", "turtleneck"
 }
 _SPRING_SUMMER_FABRICS = {
     "cotton", "linen", "chiffon", "mesh", "rayon", "lightweight", "breathable", "sheer"
@@ -302,6 +310,10 @@ def _refine_season_from_tags(tags: Dict[str, Any]) -> str:
         bump("winter", 0.15)
     elif category in {"dresses", "jumpsuits"}:
         bump("fall", 0.15)
+    elif category == "tops":
+        if any(token in value for token in values for token in ("knit", "ribbed", "sweater", "long sleeve", "mock neck", "turtleneck")):
+            bump("fall", 0.55)
+            bump("winter", 0.50)
 
     for value in values:
         if not value:
@@ -322,6 +334,12 @@ def _refine_season_from_tags(tags: Dict[str, Any]) -> str:
             bump("summer", 0.20)
         if "longline" in value or "midweight" in value:
             bump("fall", 0.25)
+        if "long sleeve" in value or "long-sleeve" in value:
+            bump("fall", 0.45)
+            bump("winter", 0.35)
+        if "mock neck" in value or "turtleneck" in value or "high neck" in value:
+            bump("fall", 0.35)
+            bump("winter", 0.55)
         if "heavyweight" in value or "insulated" in value or "down-filled" in value:
             bump("winter", 0.65)
         if "sleeveless" in value or "strapless" in value:
@@ -339,6 +357,7 @@ _MOCK_CATEGORIES = [v for v, _ in CATEGORY_LABELS]
 _MOCK_COLORS     = [v for v, _ in COLOR_LABELS]
 _MOCK_SEASONS    = [v for v, _ in SEASON_LABELS]
 _MOCK_ACC_TYPES  = [v for v, _ in ACCESSORY_LABELS]
+_MOCK_JEWELRY_TYPES = [v for v, _ in JEWELRY_LABELS]
 
 
 def _mock_tag(image_url: str) -> Dict[str, Any]:
@@ -351,15 +370,18 @@ def _mock_tag(image_url: str) -> Dict[str, Any]:
     rng       = random.Random(seed)
     category  = rng.choice(_MOCK_CATEGORIES)
     item_type = (
-        "accessory"    if category == "accessories" else
+        "accessory"    if category in {"accessories", "jewelry"} else
         "footwear"     if category == "shoes"       else
         "outerwear"    if category == "outerwear"   else
         "core_garment"
     )
+    accessory_subtype = None
+    if item_type == "accessory":
+        accessory_subtype = rng.choice(_MOCK_JEWELRY_TYPES if category == "jewelry" else _MOCK_ACC_TYPES)
     return {
         "category":          category,
         "item_type":         item_type,
-        "accessory_subtype": rng.choice(_MOCK_ACC_TYPES) if item_type == "accessory" else None,
+        "accessory_subtype": accessory_subtype,
         "color":             rng.choice(_MOCK_COLORS),
         "season":            rng.choice(_MOCK_SEASONS),
         "formality_score":   round(rng.uniform(0.0, 1.0), 2),
@@ -384,7 +406,6 @@ def tag_clothing_item(image_url: str, image_bytes: bytes = None) -> Dict[str, An
     settings = get_settings()
 
     if settings.use_mock_ai:
-        logger.debug("[MOCK] Tagging item — returning random tags, not reading image")
         tags = _mock_tag(image_url)
         from ml.llm import _mock_describe_clothing
         tags["descriptors"] = _mock_describe_clothing(tags["category"])

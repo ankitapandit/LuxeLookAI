@@ -20,7 +20,7 @@ def create_event_route(
     Accept a free-text occasion description, parse it via LLM,
     and persist the structured event. Returns the full event row.
     """
-    return create_event(user_id=user_id, raw_text=payload.raw_text)
+    return create_event(user_id=user_id, raw_text=payload.raw_text, raw_text_json=payload.raw_text_json)
 
 @router.get("/list")
 def list_events(user_id: str = Depends(get_current_user_id)):

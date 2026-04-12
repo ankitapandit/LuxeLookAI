@@ -12,12 +12,9 @@ This means:
 NEVER use this in production.
 """
 
-import logging
 import hashlib
 from typing import Dict, Optional
 import uuid
-
-logger = logging.getLogger(__name__)
 
 # In-memory store: { email -> { user_id, hashed_password } }
 _users: Dict[str, dict] = {}
@@ -43,7 +40,6 @@ def mock_signup(email: str, password: str) -> str:
         "user_id":         user_id,
         "hashed_password": _hash_password(password),
     }
-    logger.info(f"[MockAuth] User registered: {email} → {user_id}")
     return user_id
 
 
@@ -61,7 +57,6 @@ def mock_login(email: str, password: str) -> str:
     if record["hashed_password"] != _hash_password(password):
         raise ValueError("Incorrect password.")
 
-    logger.info(f"[MockAuth] Login OK: {email}")
     return record["user_id"]
 
 

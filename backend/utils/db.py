@@ -19,3 +19,8 @@ def get_supabase() -> Client:
     """
     settings = get_settings()
     return create_client(settings.supabase_url, settings.supabase_service_key)
+
+
+def reset_supabase_client() -> None:
+    """Drop the cached Supabase client so the next call gets a fresh connection."""
+    get_supabase.cache_clear()

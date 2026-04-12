@@ -33,9 +33,9 @@ create table if not exists users (
 create table if not exists clothing_items (
   id                 uuid primary key default gen_random_uuid(),
   user_id            uuid not null references users(id) on delete cascade,
-  category           text not null,        -- tops | bottoms | dresses | jumpsuits | shoes | outerwear | accessories
+  category           text not null,        -- tops | bottoms | dresses | jumpsuits | shoes | outerwear | accessories | jewelry
   item_type          text not null,        -- core_garment | footwear | outerwear | accessory
-  accessory_subtype  text,                 -- jewelry | bag | belt | scarf | other (nullable)
+  accessory_subtype  text,                 -- necklace | earrings | bracelet | ring | watch | bag | belt | scarf | hat | sunglasses | other (nullable)
   color              text,
   pattern            text,                 -- stripes | plaid | floral | polka_dots | animal_print | geometric | abstract (null = solid)
   season             text default 'all',   -- spring | summer | fall | winter | all
@@ -65,11 +65,34 @@ create index if not exists idx_clothing_embedding
   with (lists = 100);
 
 
+-- ── Clothing Tag Feedback ──────────────────────────────────────────────────
+create table if not exists clothing_tag_feedback (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid not null references users(id) on delete cascade,
+  item_id         uuid references clothing_items(id) on delete set null,
+  field_name      text not null,          -- category | color | season | formality_score | descriptor:<key>
+  old_value       text,
+  new_value       text not null,
+  item_category_snapshot text,
+  item_color_snapshot text,
+  item_season_snapshot text,
+  item_formality_score_snapshot float,
+  item_descriptors_snapshot jsonb default '{}'::jsonb,
+  feedback_source text not null default 'user_edit',
+  created_at      timestamptz default now()
+);
+
+create index if not exists idx_clothing_tag_feedback_user on clothing_tag_feedback(user_id);
+create index if not exists idx_clothing_tag_feedback_item on clothing_tag_feedback(item_id);
+create index if not exists idx_clothing_tag_feedback_field on clothing_tag_feedback(field_name);
+
+
 -- ── Events ────────────────────────────────────────────────────────────────
 create table if not exists events (
   id                   uuid primary key default gen_random_uuid(),
   user_id              uuid not null references users(id) on delete cascade,
   raw_text             text not null,          -- original user input
+  raw_text_json        jsonb not null default '{}'::jsonb, -- structured user input for prompting
   occasion_type        text not null,          -- formal | casual | business | party | etc.
   formality_level      float check (formality_level between 0 and 1),
   temperature_context  text,                   -- indoor | outdoor | mixed | unknown
@@ -86,7 +109,7 @@ create table if not exists outfit_suggestions (
   user_id         uuid not null references users(id) on delete cascade,
   event_id        uuid not null references events(id) on delete cascade,
   item_ids        uuid[] not null,     -- core garments
-  accessory_ids   uuid[] default '{}', -- up to 2 accessories (can be empty)
+  accessory_ids   uuid[] default '{}', -- up to 2 finishing pieces (accessories/jewelry; can be empty)
   score           float,               -- composite recommendation score 0–1
   explanation     text,                -- LLM-generated rationale
   user_rating     int check (user_rating between 1 and 5),  -- feedback
@@ -257,6 +280,45 @@ alter table discover_ignored_urls enable row level security;
 alter table discover_style_interactions enable row level security;
 alter table user_style_preferences enable row level security;
 alter table discover_jobs enable row level security;
+
+
+-- ── Table Comments ────────────────────────────────────────────────────────
+
+comment on table public.users is
+  'Application user profile table. Extends Supabase auth.users with styling context, demographic preferences, profile photos, and AI-derived profile analysis used across Wardrobe, Discover, Event, and Style Item flows.';
+
+comment on table public.clothing_items is
+'User-owned wardrobe inventory. Stores each clothing item''s category, color, season, formality score, descriptors, source image, derived media assets, and archive/delete lifecycle state.';
+
+comment on table public.clothing_tag_feedback is
+'Wardrobe correction feedback log. Stores per-field before/after edits plus a frozen snapshot of the item context at correction time, so the app can analyze correction patterns and build future prompt-tuning or retraining datasets.';
+
+comment on table public.events is
+  'User-created event or styling context. Stores a human-readable event summary plus structured JSON input used to derive occasion type, formality, temperature context, setting, and recommendation prompts.';
+
+comment on table public.outfit_suggestions is
+  'Generated outfit recommendation results for an event or styling request. Stores selected item IDs, computed scores, prompt context, and output metadata used for results display and archive history.';
+
+comment on table public.discover_candidates is
+  'Cached Discover feed candidates for a user. Stores source URLs, normalized URLs, analysis state, extracted style tags, single-person filtering results, and readiness status before cards are shown in Discover.';
+
+comment on table public.discover_ignored_urls is
+  'Per-user exclusion list for Discover. Tracks URLs the user has already acted on or should no longer see, preventing repeat cards from re-entering the feed pool.';
+
+comment on table public.discover_jobs is
+  'Durable background job queue for Discover warm-up and candidate seeding. Stores queued/running/failed job state, payloads, dedupe keys, retry counters, and job results.';
+
+comment on table public.discover_style_interactions is
+  'Per-card Discover interaction log. Records like, love, and dislike actions together with style tags, card metadata, and analysis context used for preference learning.';
+
+comment on table public.style_catalog is
+  'Canonical Discover style vocabulary. Stores normalized style signals such as silhouette, fabric, pattern, vibe, styling detail, garment type, season, and occasion for tag resolution and preference learning.';
+
+comment on table public.style_taxonomy is
+  'Shared classification taxonomy for wardrobe tagging and model alignment. Stores descriptor vocabularies, CLIP prompt labels, category attributes, and other structured styling metadata used by AI tagging and manual correction flows.';
+
+comment on table public.user_style_preferences is
+  'Derived per-user style preference summary for Discover. Aggregates interaction history into scored style signals with confidence, exposure, positive and negative counts, and preference status such as emerging, preferred, or disliked.';
 
 -- Users table policies
 create policy "Users can view own profile"

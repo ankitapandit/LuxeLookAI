@@ -151,7 +151,15 @@ export interface TagPreview {
   needs_review: boolean;       // true = AI failed/mocked → show full manual form
   ai_confidence: Record<string, number>;
   descriptors?: Record<string, string>;
-  duplicate?: { id: string; category: string; color: string; image_url: string; score: number; } | null;
+  duplicate?: {
+    id: string;
+    category: string;
+    color: string;
+    image_url: string;
+    score: number;
+    is_active: boolean;
+    is_archived: boolean;
+  } | null;
 }
 
 /**
@@ -266,6 +274,11 @@ export async function deleteClothingItem(itemId: string): Promise<void> {
   await api.delete(`/clothing/item/${itemId}`);
 }
 
+/** Permanently delete an item from the archive/trash view. */
+export async function purgeArchivedClothingItem(itemId: string): Promise<void> {
+  await api.delete(`/clothing/item/${itemId}/purge`);
+}
+
 /** Fetch soft-deleted items (trash view). */
 export async function getDeletedItems(): Promise<ClothingItem[]> {
   const { data } = await api.get<ClothingItem[]>("/clothing/items/deleted");
@@ -292,6 +305,7 @@ export interface Event {
   id: string;
   user_id: string;
   raw_text: string;
+  raw_text_json?: Record<string, unknown> | null;
   occasion_type: string;
   formality_level: number;
   temperature_context?: string;
@@ -300,9 +314,12 @@ export interface Event {
   created_at: string;
 }
 
-/** Create a new event from a free-text description. */
-export async function createEvent(rawText: string): Promise<Event> {
-  const { data } = await api.post<Event>("/event/create-event", { raw_text: rawText });
+/** Create a new event from a human-readable summary plus structured details. */
+export async function createEvent(rawText: string, rawTextJson?: Record<string, unknown> | null): Promise<Event> {
+  const { data } = await api.post<Event>("/event/create-event", {
+    raw_text: rawText,
+    raw_text_json: rawTextJson ?? undefined,
+  });
   return data;
 }
 
@@ -507,8 +524,8 @@ export interface OutfitCard {
   weather_sync: string;
   /** Optional risk flag — only present when dress-code rules are stretched. */
   risk_flag?: string | null;
-  /** Stylist verdict — 2-3 sentence punchy copy. */
-  verdict: string;
+  /** Legacy field retained for compatibility; no longer shown in the UI. */
+  verdict?: string;
 }
 
 export interface OutfitSuggestion {
@@ -518,12 +535,29 @@ export interface OutfitSuggestion {
   item_ids: string[];
   accessory_ids: string[];
   score: number;
-  /** Short stylist verdict (legacy text field — same as card.verdict). */
+  /** Legacy text field retained for compatibility. */
   explanation?: string;
   /** Structured quick-glance card. Present on all v2.0+ suggestions. */
   card?: OutfitCard;
   user_rating?: number;
   generated_at: string;
+}
+
+export interface StyleDirectionPiece {
+  label: string;
+  value: string;
+}
+
+export interface StyleDirectionOption {
+  name: string;
+  emoji: string;
+  pieces: StyleDirectionPiece[];
+  why: string;
+  tip: string;
+}
+
+export interface StyleDirectionData {
+  options: StyleDirectionOption[];
 }
 
 export interface OutfitsResponse {
@@ -533,8 +567,8 @@ export interface OutfitsResponse {
   all_seen?: boolean;
   /** Optional mode flag for anchor-item styling flows. */
   status?: "moodboard" | "text_only" | "partial" | string;
-  /** Short editorial note for anchor-item styling flows. */
-  stylist_note?: string;
+  /** LLM-authored outfit options built around the anchor item. */
+  style_direction?: StyleDirectionData;
   /** Suggested missing items or wardrobe gaps when no full outfit can be formed. */
   missing_items?: string[];
   /** Anchor item echoed back for convenience in style-item flows. */

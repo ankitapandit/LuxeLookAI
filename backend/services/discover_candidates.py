@@ -12,6 +12,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Set
 
+from httpx import RemoteProtocolError
+
 from config import get_settings
 from services.discover_analysis import analyze_discover_image
 from services.discover_search import search_discover_images
@@ -30,38 +32,54 @@ def _is_rate_limit_error(error: Exception) -> bool:
 
 
 def _load_rows(table: str, filters: Optional[Dict[str, Any]] = None) -> List[dict]:
-    settings = get_settings()
-    if settings.use_mock_auth:
-        from utils.mock_db_store import select_all
-        return select_all(table, filters)
+    def run() -> List[dict]:
+        settings = get_settings()
+        if settings.use_mock_auth:
+            from utils.mock_db_store import select_all
+            return select_all(table, filters)
 
-    from utils.db import get_supabase
+        from utils.db import get_supabase
 
-    query = get_supabase().table(table).select("*")
-    if filters:
-        for key, value in filters.items():
-            query = query.eq(key, value)
-    result = query.execute()
-    return result.data or []
+        query = get_supabase().table(table).select("*")
+        if filters:
+            for key, value in filters.items():
+                query = query.eq(key, value)
+        result = query.execute()
+        return result.data or []
+
+    try:
+        return run()
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        return run()
 
 
 def _upsert_row(table: str, row: dict, conflict: str) -> dict:
-    settings = get_settings()
-    if settings.use_mock_auth:
-        from utils.mock_db_store import insert, select_one, update
+    def run() -> dict:
+        settings = get_settings()
+        if settings.use_mock_auth:
+            from utils.mock_db_store import insert, select_one, update
 
-        if conflict == "user_id,normalized_url":
-            existing = select_one(table, {"user_id": row["user_id"], "normalized_url": row["normalized_url"]})
-        else:
-            existing = select_one(table, {"id": row["id"]})
-        if existing:
-            return update(table, str(existing["id"]), row, extra_filters={"user_id": row["user_id"]}) or existing
-        return insert(table, row)
+            if conflict == "user_id,normalized_url":
+                existing = select_one(table, {"user_id": row["user_id"], "normalized_url": row["normalized_url"]})
+            else:
+                existing = select_one(table, {"id": row["id"]})
+            if existing:
+                return update(table, str(existing["id"]), row, extra_filters={"user_id": row["user_id"]}) or existing
+            return insert(table, row)
 
-    from utils.db import get_supabase
+        from utils.db import get_supabase
 
-    result = get_supabase().table(table).upsert(row, on_conflict=conflict).execute()
-    return result.data[0]
+        result = get_supabase().table(table).upsert(row, on_conflict=conflict).execute()
+        return result.data[0]
+
+    try:
+        return run()
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        return run()
 
 
 def upsert_discover_candidate(user_id: str, payload: Dict[str, Any]) -> dict:
@@ -134,12 +152,7 @@ def build_card_from_candidate(row: dict) -> dict:
 
 
 def seed_discover_candidates(user_id: str, query: str, limit: int = 18) -> Dict[str, Any]:
-    print(f"[Discover] candidate-seed start user={user_id} query={query!r} limit={limit}", flush=True)
     provider_name, candidates = search_discover_images(query, limit=limit)
-    print(
-        f"[Discover] candidate-search complete user={user_id} provider={provider_name} raw_candidates={len(candidates)}",
-        flush=True,
-    )
     ready_count = 0
     filtered_count = 0
     failed_count = 0
@@ -151,10 +164,6 @@ def seed_discover_candidates(user_id: str, query: str, limit: int = 18) -> Dict[
         thumbnail_url = candidate.get("thumbnail_url") or image_url
         normalized = _canonical_url(source_url or image_url)
         if not normalized or not image_url:
-            print(
-                f"[Discover] candidate skipped user={user_id} index={index} reason=missing-url source_url={source_url!r} image_url={image_url!r}",
-                flush=True,
-            )
             continue
 
         base_row = {
@@ -173,10 +182,6 @@ def seed_discover_candidates(user_id: str, query: str, limit: int = 18) -> Dict[
             analysis = analyze_discover_image(query, image_url)
         except Exception as exc:
             failed_count += 1
-            print(
-                f"[Discover] candidate analysis-failed user={user_id} index={index} normalized_url={normalized!r} error={exc!r}",
-                flush=True,
-            )
             upsert_discover_candidate(
                 user_id,
                 {
@@ -188,10 +193,6 @@ def seed_discover_candidates(user_id: str, query: str, limit: int = 18) -> Dict[
             )
             if _is_rate_limit_error(exc):
                 rate_limited = True
-                print(
-                    f"[Discover] candidate-seed paused-for-rate-limit user={user_id} index={index} query={query!r}",
-                    flush=True,
-                )
                 break
             continue
 
@@ -240,5 +241,4 @@ def seed_discover_candidates(user_id: str, query: str, limit: int = 18) -> Dict[
         "failed_count": failed_count,
         "rate_limited": rate_limited,
     }
-    print(f"[Discover] candidate-seed complete user={user_id} summary={summary}", flush=True)
     return summary

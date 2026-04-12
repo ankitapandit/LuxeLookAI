@@ -14,6 +14,8 @@ from hashlib import sha1
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from httpx import RemoteProtocolError
+
 from config import get_settings
 from services.discover_candidates import seed_discover_candidates
 from services.style_learning import refresh_user_style_preferences
@@ -50,47 +52,71 @@ def _now_iso() -> str:
 
 
 def _load_rows(table: str, filters: Optional[Dict[str, Any]] = None) -> List[dict]:
-    settings = get_settings()
-    if settings.use_mock_auth:
-        from utils.mock_db_store import select_all
-        return select_all(table, filters)
+    def run() -> List[dict]:
+        settings = get_settings()
+        if settings.use_mock_auth:
+            from utils.mock_db_store import select_all
+            return select_all(table, filters)
 
-    from utils.db import get_supabase
+        from utils.db import get_supabase
 
-    query = get_supabase().table(table).select("*")
-    if filters:
-        for key, value in filters.items():
-            query = query.eq(key, value)
-    result = query.execute()
-    return result.data or []
+        query = get_supabase().table(table).select("*")
+        if filters:
+            for key, value in filters.items():
+                query = query.eq(key, value)
+        result = query.execute()
+        return result.data or []
+
+    try:
+        return run()
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        return run()
 
 
 def _insert_row(table: str, row: dict) -> dict:
-    settings = get_settings()
-    if settings.use_mock_auth:
-        from utils.mock_db_store import insert
-        return insert(table, row)
+    def run() -> dict:
+        settings = get_settings()
+        if settings.use_mock_auth:
+            from utils.mock_db_store import insert
+            return insert(table, row)
 
-    from utils.db import get_supabase
+        from utils.db import get_supabase
 
-    result = get_supabase().table(table).insert(row).execute()
-    return result.data[0]
+        result = get_supabase().table(table).insert(row).execute()
+        return result.data[0]
+
+    try:
+        return run()
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        return run()
 
 
 def _update_row(table: str, row_id: str, updates: dict, extra_filters: Optional[Dict[str, Any]] = None) -> Optional[dict]:
-    settings = get_settings()
-    if settings.use_mock_auth:
-        from utils.mock_db_store import update
-        return update(table, row_id, updates, extra_filters=extra_filters)
+    def run() -> Optional[dict]:
+        settings = get_settings()
+        if settings.use_mock_auth:
+            from utils.mock_db_store import update
+            return update(table, row_id, updates, extra_filters=extra_filters)
 
-    from utils.db import get_supabase
+        from utils.db import get_supabase
 
-    query = get_supabase().table(table).update(updates).eq("id", row_id)
-    if extra_filters:
-        for key, value in extra_filters.items():
-            query = query.eq(key, value)
-    result = query.execute()
-    return (result.data or [None])[0]
+        query = get_supabase().table(table).update(updates).eq("id", row_id)
+        if extra_filters:
+            for key, value in extra_filters.items():
+                query = query.eq(key, value)
+        result = query.execute()
+        return (result.data or [None])[0]
+
+    try:
+        return run()
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        return run()
 
 
 def list_discover_jobs(
@@ -158,10 +184,6 @@ def enqueue_discover_job(
             if str(row.get("dedupe_key") or "") == dedupe_key
         ]
     if existing:
-        print(
-            f"[Discover] job deduped user={user_id} job_type={job_type} dedupe_key={dedupe_key!r} existing_job_id={existing[0].get('id')} existing_status={existing[0].get('status')}",
-            flush=True,
-        )
         return existing[0]
 
     now = _now_iso()
@@ -184,10 +206,6 @@ def enqueue_discover_job(
         "updated_at": now,
     }
     inserted = _insert_row(TABLE_DISCOVER_JOBS, row)
-    print(
-        f"[Discover] job enqueued user={user_id} job_id={inserted.get('id')} job_type={job_type} priority={priority} dedupe_key={dedupe_key!r} payload={payload or {}}",
-        flush=True,
-    )
     return inserted
 
 
@@ -230,10 +248,6 @@ def claim_next_discover_job(worker_id: Optional[str] = None) -> Optional[dict]:
             extra_filters={"status": JOB_STATUS_QUEUED},
         )
         if claimed:
-            print(
-                f"[Discover] job claimed worker={worker_name} job_id={claimed.get('id')} job_type={claimed.get('job_type')} user={claimed.get('user_id')} attempts={claimed.get('attempts')}",
-                flush=True,
-            )
             return claimed
     return None
 
@@ -251,7 +265,6 @@ def complete_discover_job(job_id: str, result: Optional[Dict[str, Any]] = None) 
             "updated_at": _now_iso(),
         },
     )
-    print(f"[Discover] job completed job_id={job_id} result={result or {}}", flush=True)
     return completed
 
 
@@ -270,17 +283,12 @@ def fail_discover_job(job: dict, error_message: str) -> Optional[dict]:
             "updated_at": _now_iso(),
         },
     )
-    print(
-        f"[Discover] job failed job_id={job.get('id')} job_type={job.get('job_type')} terminal={terminal} attempts={attempts} max_attempts={max_attempts} error={error_message!r}",
-        flush=True,
-    )
     return failed
 
 
 def process_discover_job(job: dict) -> Dict[str, Any]:
     job_type = str(job.get("job_type") or "")
     user_id = str(job.get("user_id") or "")
-    print(f"[Discover] job processing job_id={job.get('id')} job_type={job_type} user={user_id}", flush=True)
     if job_type == JOB_REFRESH_STYLE_PREFERENCES:
         return refresh_user_style_preferences(user_id)
     if job_type == JOB_SEED_DISCOVER_CANDIDATES:
@@ -300,9 +308,7 @@ def work_once(worker_id: Optional[str] = None) -> Optional[dict]:
     try:
         result = process_discover_job(job)
         complete_discover_job(str(job["id"]), result=result)
-        print(f"[Discover] worker completed job_id={job['id']} job_type={job.get('job_type')}", flush=True)
         return result
     except Exception as exc:
         fail_discover_job(job, str(exc))
-        print(f"[Discover] worker exception job_id={job.get('id')} error={exc!r}", flush=True)
         raise

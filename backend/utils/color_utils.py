@@ -260,3 +260,48 @@ def normalize_color(value: Optional[str]) -> Optional[str]:
     if not value:
         return value
     return hex_to_color_name(value)
+
+
+def color_family(value: Optional[str]) -> Optional[str]:
+    """
+    Map a normalized colour name to a broader colour family.
+
+    This is intentionally conservative and is mainly used for duplicate
+    detection, where we want nearby shades to count as the same range
+    (e.g. navy / blue, blush / pink) without collapsing obviously different
+    colours together.
+    """
+    normalized = normalize_color(value)
+    if not normalized:
+        return normalized
+
+    name = normalized.lower().strip()
+
+    family_keywords: list[tuple[str, tuple[str, ...]]] = [
+        ("black", ("black", "charcoal", "onyx", "jet")),
+        ("white", ("white", "ivory", "cream", "off white", "snow")),
+        ("grey", ("grey", "gray", "silver", "slate")),
+        ("blue", ("blue", "navy", "indigo", "teal", "cyan", "aqua")),
+        ("green", ("green", "olive", "mint", "sage", "lime")),
+        ("red", ("red", "crimson", "scarlet", "maroon", "burgundy", "wine")),
+        ("pink", ("pink", "rose", "blush")),
+        ("orange", ("orange", "coral", "peach", "apricot", "rust", "terracotta", "burnt orange")),
+        ("yellow", ("yellow", "gold", "khaki", "mustard")),
+        ("brown", ("brown", "tan", "beige", "camel", "taupe", "sienna", "wheat", "sand", "stone", "mocha", "chocolate")),
+        ("purple", ("purple", "violet", "lavender", "plum", "orchid", "magenta")),
+    ]
+
+    for family, keywords in family_keywords:
+        if any(keyword in name for keyword in keywords):
+            return family
+
+    return name
+
+
+def same_color_family(a: Optional[str], b: Optional[str]) -> bool:
+    """Return True when two colour values belong to the same broad colour range."""
+    family_a = color_family(a)
+    family_b = color_family(b)
+    if not family_a or not family_b:
+        return False
+    return family_a == family_b

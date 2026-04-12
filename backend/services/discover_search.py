@@ -105,10 +105,7 @@ def _pexels_search(query: str, limit: int = 12) -> List[Dict[str, Any]]:
     settings = get_settings()
     key = getattr(settings, "pexels_api_key", "")
     if not key:
-        print("[Discover] search pexels-config-missing -> falling back to mock results", flush=True)
         return _mock_search_results(query, limit=limit)
-
-    print(f"[Discover] search pexels start query={query!r} limit={limit}", flush=True)
     params = {
         "query": query,
         "per_page": min(max(limit, 1), 80),
@@ -127,10 +124,6 @@ def _pexels_search(query: str, limit: int = 12) -> List[Dict[str, Any]]:
             data = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         detail = _extract_http_error_detail(exc)
-        print(
-            f"[Discover] search pexels http-error status={exc.code} reason={exc.reason!r} detail={detail!r}",
-            flush=True,
-        )
         if detail:
             raise RuntimeError(f"Pexels {exc.code}: {detail}") from exc
         raise RuntimeError(f"Pexels {exc.code}: {exc.reason}") from exc
@@ -168,8 +161,6 @@ def _pexels_search(query: str, limit: int = 12) -> List[Dict[str, Any]]:
             "source_note": source_note,
             "source_domain": urlsplit(photo_url).netloc or "pexels.com",
         })
-
-    print(f"[Discover] search pexels complete query={query!r} returned={len(results)}", flush=True)
     return results
 
 
@@ -184,15 +175,11 @@ def resolve_discover_search_provider() -> str:
         return provider
     if provider == "mock":
         return provider
-    print(f"[Discover] search unknown-provider={provider!r} -> falling back to mock", flush=True)
     return "mock"
 
 
 def search_discover_images(query: str, limit: int = 12) -> Tuple[str, List[Dict[str, Any]]]:
     provider = resolve_discover_search_provider()
-    print(f"[Discover] search dispatch provider={provider} query={query!r} limit={limit}", flush=True)
     if provider == "pexels":
         return provider, _pexels_search(query, limit=limit)
-    results = _mock_search_results(query, limit=limit)
-    print(f"[Discover] search mock complete query={query!r} returned={len(results)}", flush=True)
-    return "mock", results
+    return "mock", _mock_search_results(query, limit=limit)

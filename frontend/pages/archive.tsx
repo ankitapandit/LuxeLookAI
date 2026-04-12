@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
+import Link from "next/link";
 import Navbar from "@/components/layout/Navbar";
 import {
   generateOutfits, rateOutfit, getWardrobeItems, getEvents, getSuggestions,
@@ -14,6 +15,125 @@ import {
 import OutfitSuggestionCard from "@/components/OutfitSuggestionCard";
 import { Sparkles } from "lucide-react";
 import toast from "react-hot-toast";
+
+function getSuggestionComboKey(suggestion: OutfitSuggestion): string {
+  return [
+    ...(suggestion.item_ids || []),
+    ...(suggestion.accessory_ids || []),
+  ]
+    .map(String)
+    .sort()
+    .join("|");
+}
+
+function mergeSuggestionsRecentFirst(
+  fresh: OutfitSuggestion[],
+  existing: OutfitSuggestion[],
+): OutfitSuggestion[] {
+  const merged: OutfitSuggestion[] = [];
+  const seen = new Set<string>();
+
+  for (const suggestion of [...fresh, ...existing]) {
+    const comboKey = getSuggestionComboKey(suggestion);
+    const fallbackKey = suggestion.id;
+    const key = comboKey || fallbackKey;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(suggestion);
+  }
+
+  return merged;
+}
+
+function summarizeArchiveEvent(rawText: string, rawTextJson?: Record<string, unknown> | null): string {
+  const structured = rawTextJson || {};
+  if (Object.keys(structured).length > 0) {
+    const collectValues = (value: unknown): string[] => {
+      if (Array.isArray(value)) {
+        return value.map((entry) => String(entry).trim()).filter(Boolean);
+      }
+      const text = String(value || "").trim();
+      return text ? [text] : [];
+    };
+
+    const joinSlash = (...values: unknown[]): string =>
+      values
+        .flatMap((value) => collectValues(value))
+        .filter(Boolean)
+        .join(" / ");
+
+    const lowerText = (value: string): string => value.toLowerCase();
+
+    const normalizeLocation = (value: unknown): string => {
+      const location = collectValues(value)[0] || "";
+      if (!location) return "";
+      if (location.toLowerCase() === "both") return "indoor/outdoor";
+      return location.toLowerCase();
+    };
+
+    const comfortPhrase = (value: unknown): string => {
+      const raw = (collectValues(value)[0] || "").toLowerCase();
+      if (raw === "comfort") return "comfortable";
+      if (raw === "fashion") return "fashionable";
+      if (raw === "balanced") return "fashionably comfortable";
+      return "";
+    };
+
+    const dressCode = lowerText(joinSlash(structured.dressCode, structured.dressCodeOther));
+    const venue = lowerText(joinSlash(structured.venue, structured.venueOther));
+    const timeOfDay = lowerText(collectValues(structured.timeOfDay)[0] || "");
+    const weather = lowerText(collectValues(structured.weather)[0] || "");
+    const location = normalizeLocation(structured.location);
+    const comfort = comfortPhrase(structured.comfortOrFashion);
+    const purpose = lowerText(joinSlash(structured.purpose, structured.purposeOther));
+    const audience = lowerText(collectValues(structured.audience)[0] || "");
+    const duration = lowerText(collectValues(structured.duration)[0] || "");
+    const styleMood = lowerText(joinSlash(structured.styleMood, structured.styleMoodOther));
+    const notes = collectValues(structured.notes)[0] || "";
+
+    const openingSegments = [
+      venue ? `for ${venue}` : "",
+      purpose ? `for ${purpose}` : "",
+      timeOfDay ? `during ${timeOfDay}` : "",
+      weather ? `with ${weather} weather` : "",
+      location || comfort
+        ? `with ${[
+            location ? `${location}` : "",
+            comfort ? `${comfort}` : "",
+          ].filter(Boolean).join(", ")} approach`
+        : "",
+    ].filter(Boolean);
+
+    const followupSegments = [
+      audience ? `With ${audience}` : "",
+      duration ? `for about ${duration}` : "",
+      styleMood ? `keep the look ${styleMood}` : "",
+    ].filter(Boolean);
+
+    const sentenceSegments: string[] = [];
+    if (openingSegments.length > 0) {
+      const openingPrefix = dressCode ? `${dressCode} outfit` : "Outfit";
+      const opening = `${openingPrefix} ${openingSegments.join(" ")}`.replace(/\s+/g, " ").trim();
+      sentenceSegments.push(opening);
+    }
+
+    if (followupSegments.length > 0) {
+      sentenceSegments.push(followupSegments.join(", ").replace(/\s+/g, " ").trim());
+    }
+
+    if (notes) {
+      sentenceSegments.push(`.On a side note: ${notes}`);
+    }
+
+    if (sentenceSegments.length > 0) {
+      const sentence = sentenceSegments.join(", ").replace(/\s+/g, " ").trim();
+      return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+    }
+  }
+
+  const text = (rawText || "").trim();
+  return text || "Event styling request";
+}
 
 export default function OutfitsPage() {
   const router = useRouter();
@@ -33,7 +153,15 @@ export default function OutfitsPage() {
   const loadPage = useCallback(async () => {
     setPageLoading(true);
     try {
-      const [eventsData, items] = await Promise.all([getEvents(), getWardrobeItems()]);
+      const loadBaseData = async () => Promise.all([getEvents(), getWardrobeItems()]);
+      let eventsData: Event[] = [];
+      let items: ClothingItem[] = [];
+      try {
+        [eventsData, items] = await loadBaseData();
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        [eventsData, items] = await loadBaseData();
+      }
       const map: Record<string, ClothingItem> = {};
       items.forEach(i => { map[i.id] = i; });
       setWardrobeMap(map);
@@ -76,11 +204,13 @@ export default function OutfitsPage() {
         }, 300);
       }
     } catch {
-      toast.error("Failed to load archive");
+      if (events.length === 0) {
+        toast.error("Failed to load archive");
+      }
     } finally {
       setPageLoading(false);
     }
-  }, [eventId]);
+  }, [eventId, events.length]);
 
   useEffect(() => {
     void loadPage();
@@ -111,7 +241,10 @@ export default function OutfitsPage() {
       const map: Record<string, ClothingItem> = {};
       items.forEach(i => { map[i.id] = i; });
       setWardrobeMap(map);
-      setSuggestionsMap(prev => ({ ...prev, [evId]: outfitData.suggestions }));
+      setSuggestionsMap(prev => ({
+        ...prev,
+        [evId]: mergeSuggestionsRecentFirst(outfitData.suggestions, prev[evId] || []),
+      }));
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string } } };
       toast.error(e?.response?.data?.detail || "Failed to generate looks");
@@ -162,11 +295,33 @@ export default function OutfitsPage() {
         </div>
 
         {events.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "80px", color: "var(--muted)" }}>
-            <p className="type-body" style={{ fontSize: "16px" }}>No saved looks yet.</p>
-            <p className="type-helper" style={{ fontSize: "14px", marginTop: "8px" }}>
-              Go to <strong>Event</strong> to describe an event first.
+          <div
+            style={{
+              textAlign: "center",
+              padding: "92px 28px",
+              color: "var(--muted)",
+              borderRadius: "28px",
+              border: "1px solid var(--border)",
+              background: "linear-gradient(180deg, rgba(33,27,22,0.92), rgba(18,14,11,0.98))",
+            }}
+          >
+            <p className="type-kicker" style={{ margin: 0, fontSize: "11px", letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,247,237,0.56)" }}>
+              Archive
             </p>
+            <h2 style={{ margin: "10px 0 0", fontFamily: "Playfair Display, serif", fontSize: "32px", color: "#FFF7ED" }}>
+              No looks saved yet
+            </h2>
+            <p className="type-body" style={{ fontSize: "16px", marginTop: "12px", color: "rgba(255,247,237,0.72)", lineHeight: 1.65 }}>
+              Generate your first outfit inspo at <strong>Style Item</strong> or from the <strong>Event</strong> page.
+            </p>
+            <div style={{ display: "flex", justifyContent: "center", gap: "10px", flexWrap: "wrap", marginTop: "22px" }}>
+              <Link href="/style-item" style={{ textDecoration: "none" }}>
+                <span className="btn-primary">Style Item</span>
+              </Link>
+              <Link href="/event" style={{ textDecoration: "none" }}>
+                <span className="btn-secondary">Event</span>
+              </Link>
+            </div>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "48px" }}>
@@ -208,7 +363,7 @@ export default function OutfitsPage() {
                     </div>
                     {/* Title */}
                     <h2 className="type-section-title" style={{ fontSize: "20px", fontFamily: "Playfair Display, serif", marginBottom: "8px" }}>
-                      {ev.raw_text}
+                      {summarizeArchiveEvent(ev.raw_text, ev.raw_text_json)}
                     </h2>
                     {/* Tags */}
                     <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>

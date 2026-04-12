@@ -92,9 +92,9 @@ class AIProfilePhotoUploadResponse(BaseModel):
 
 class ClothingItemCreate(BaseModel):
     """Payload sent when uploading a new item (image handled separately)."""
-    category: str                         # e.g. "tops", "bottoms", "shoes"
+    category: str                         # e.g. "tops", "bottoms", "shoes", "jewelry"
     item_type: str                        # "core_garment" | "footwear" | "outerwear" | "accessory"
-    accessory_subtype: Optional[str] = None  # jewelry | bag | belt | scarf | other
+    accessory_subtype: Optional[str] = None  # necklace | earrings | bracelet | ring | watch | bag | belt | scarf | hat | sunglasses | other
     color: Optional[str] = None
     pattern: Optional[str] = None         # stripes | plaid | floral | polka_dots | animal_print | geometric | abstract
     season: Optional[str] = None          # spring | summer | fall | winter | all
@@ -127,14 +127,16 @@ class ClothingItem(ClothingItemCreate):
 # ── Events ────────────────────────────────────────────────────────────────────
 
 class EventCreate(BaseModel):
-    """User submits free-text occasion description."""
-    raw_text: str  # e.g. "Black-tie dinner at the Met this Friday"
+    """User submits a human-readable event summary with optional structured context."""
+    raw_text: str
+    raw_text_json: Optional[dict] = None
 
 
 class Event(BaseModel):
     id: UUID
     user_id: UUID
     raw_text: str
+    raw_text_json: Optional[dict] = None
     occasion_type: str       # formal | casual | party | business | etc.
     formality_level: float   # 0.0 → 1.0
     temperature_context: Optional[str] = None
@@ -312,8 +314,8 @@ class OutfitCard(BaseModel):
     # Optional risk flag — only present when dress-code rules are stretched
     risk_flag: Optional[str] = None
 
-    # Stylist verdict — 2-3 sentence punchy copy in Zara/TikTok language
-    verdict: str
+    # Legacy field retained for compatibility; no longer shown in the UI.
+    verdict: str = ""
 
 
 class OutfitSuggestion(BaseModel):
@@ -321,9 +323,9 @@ class OutfitSuggestion(BaseModel):
     user_id: UUID
     event_id: UUID
     item_ids: List[UUID]                    # core garments (top + bottom or dress, shoes)
-    accessory_ids: Optional[List[UUID]] = []  # max 2 accessories
+    accessory_ids: Optional[List[UUID]] = []  # max 2 finishing pieces (accessories/jewelry)
     score: float                            # 0.0 → 1.0 composite ranking score
-    explanation: Optional[str] = None      # legacy field — now holds the short stylist verdict
+    explanation: Optional[str] = None      # legacy field retained for compatibility
     card: Optional[OutfitCard] = None      # structured quick-glance card (v2.0+)
     user_rating: Optional[int] = None      # 1–5 star rating from user feedback
     generated_at: datetime

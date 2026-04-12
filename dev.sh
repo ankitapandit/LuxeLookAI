@@ -275,6 +275,10 @@ start_frontend() {
   mkdir -p "$LOG_DIR"
   cd "$FRONTEND_DIR"
   > "$FRONTEND_LOG"
+
+  # Avoid stale build/dev artifacts causing manifest mismatches between
+  # production builds and the Turbopack dev server.
+  node -e "require('fs').rmSync('.next', { recursive: true, force: true })" 2>/dev/null || true
  
   log "Launching frontend..."
   NODE_OPTIONS=--max-old-space-size=4096 npm run dev >> "$FRONTEND_LOG" 2>&1 &
@@ -337,7 +341,10 @@ cmd_start() {
   header "LuxeLook AI — Starting dev environment"
 
   rm -f "$PID_FILE"
- 
+
+  # Auto-refresh trend calendar if older than one season (~85 days)
+  _refresh_trend_calendar
+
   start_backend
   start_frontend
  
@@ -380,6 +387,62 @@ cmd_start() {
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# _refresh_trend_calendar — called by cmd_start automatically
+#
+# Refreshes trend_calendar.json when it is older than 85 days (one season).
+# Skips silently when:
+#   - calendar is fresh (< 85 days old)
+#   - KAGGLE_USERNAME / KAGGLE_KEY are not set in backend/.env
+# Warns (but does not fail) when Kaggle download errors out.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_refresh_trend_calendar() {
+  CALENDAR="$BACKEND_DIR/data/trend_calendar.json"
+
+  # Age check — how many days since last refresh?
+  DAYS_OLD=$(cd "$BACKEND_DIR" && venv/bin/python -c "
+import os, time
+f='data/trend_calendar.json'
+print(int((time.time()-os.path.getmtime(f))/86400) if os.path.exists(f) else 999)
+" 2>/dev/null || echo 999)
+
+  if [ "$DAYS_OLD" -lt 85 ]; then
+    ok "Trend calendar is current ($DAYS_OLD days old) — skipping refresh"
+    return
+  fi
+
+  # Credential check — read from .env via config.py
+  cd "$BACKEND_DIR"
+  KAGGLE_USER=$(venv/bin/python -c "
+from config import get_settings; s=get_settings(); print(s.kaggle_username)
+" 2>/dev/null || echo "")
+  KAGGLE_API_KEY=$(venv/bin/python -c "
+from config import get_settings; s=get_settings(); print(s.kaggle_key)
+" 2>/dev/null || echo "")
+
+  if [ -z "$KAGGLE_USER" ] || [ "$KAGGLE_USER" = "your-kaggle-username" ] \
+     || [ -z "$KAGGLE_API_KEY" ] || [ "$KAGGLE_API_KEY" = "your-kaggle-api-key" ]; then
+    warn "Trend calendar is $DAYS_OLD days old but KAGGLE_USERNAME/KAGGLE_KEY not set in backend/.env — skipping refresh"
+    return
+  fi
+
+  log "Trend calendar is $DAYS_OLD days old — refreshing for new season..."
+  export KAGGLE_USERNAME="$KAGGLE_USER"
+  export KAGGLE_KEY="$KAGGLE_API_KEY"
+
+  if venv/bin/python -m kaggle datasets download \
+       paramaggarwal/fashion-product-images-dataset \
+       -f styles.csv --unzip -p data/ -q 2>/dev/null; then
+    venv/bin/python scripts/build_trend_calendar.py data/styles.csv \
+      && ok "Trend calendar refreshed"  \
+      || warn "build_trend_calendar.py failed — using existing calendar"
+  else
+    warn "Kaggle download failed — using existing trend_calendar.json"
+  fi
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Entry point
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -390,7 +453,7 @@ case "$CMD" in
   start)   cmd_start ;;
   stop)    cmd_stop  ;;
   logs)    cmd_logs  ;;
- 
+
   backend)
     rm -f "$PID_FILE"
     start_backend
@@ -410,7 +473,8 @@ case "$CMD" in
     echo -e "Usage: ${BOLD}./dev.sh${RESET} [setup|start|backend|frontend|stop|logs]"
     echo ""
     echo "  setup     — first-time install: venv, npm install, copy .env files"
-    echo "  start     — start backend + frontend (default)"
+    echo "  start     — start backend + frontend (default); auto-refreshes trend"
+    echo "              calendar from Kaggle when older than one season (~85 days)"
     echo "  backend   — start backend only, tail its log"
     echo "  frontend  — start frontend only, tail its log"
     echo "  stop      — stop all running services"

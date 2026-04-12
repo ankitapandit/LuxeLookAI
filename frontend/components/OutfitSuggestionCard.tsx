@@ -28,6 +28,7 @@ export default function OutfitSuggestionCard({
   wardrobeMap,
   onRate,
   compact = false,
+  showMetricsWhenCompact = false,
   imageMode = "cutout",
 }: {
   suggestion: OutfitSuggestion;
@@ -35,6 +36,7 @@ export default function OutfitSuggestionCard({
   wardrobeMap: Record<string, ClothingItem>;
   onRate: (rating: number) => void;
   compact?: boolean;
+  showMetricsWhenCompact?: boolean;
   imageMode?: "cutout" | "upload";
 }) {
   const [hover, setHover] = useState(0);
@@ -71,7 +73,7 @@ export default function OutfitSuggestionCard({
             imageMode={imageMode}
           />
 
-          {!compact && isCurrentCardSchema(suggestion.card) ? (
+          {(!compact || showMetricsWhenCompact) && isCurrentCardSchema(suggestion.card) ? (
             <div style={{ marginTop: "20px", marginBottom: "16px" }}>
               <OutfitMetricCard card={suggestion.card} />
             </div>
