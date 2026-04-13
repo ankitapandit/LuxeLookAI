@@ -1,0 +1,161 @@
+{
+  "_meta": {
+    "description": "Seasonal fashion trend scores mapped to LuxeLook AI attribute vocabulary.",
+    "source": "Editorial curation + Myntra Fashion Dataset (MIT license, paramaggarwal/fashion-product-images-dataset)",
+    "refresh_script": "scripts/build_trend_calendar.py",
+    "built_at": "2026-04",
+    "note": "Re-run build_trend_calendar.py each season with updated Myntra CSV to refresh scores."
+  },
+
+  "spring": {
+    "colors": {
+      "white":    0.94, "pink":     0.90, "lavender": 0.87, "cream":    0.84,
+      "green":    0.82, "yellow":   0.80, "blue":     0.76, "orange":   0.73,
+      "coral":    0.73, "beige":    0.70, "purple":   0.62, "tan":      0.58,
+      "red":      0.55, "silver":   0.50, "black":    0.48, "brown":    0.45,
+      "grey":     0.42, "gray":     0.42, "navy":     0.40, "olive":    0.38,
+      "burgundy": 0.32, "camel":    0.30, "rust":     0.28, "gold":     0.50
+    },
+    "vibe": {
+      "Soft + Romantic":      0.92,
+      "Off-Duty + Effortless":0.87,
+      "Boho + Free":          0.83,
+      "Playful + Confident":  0.78,
+      "Minimalist + Clean":   0.72,
+      "Sporty + Chic":        0.60,
+      "Elegant + Confident":  0.55,
+      "Edgy + Bold":          0.42
+    },
+    "color_theory": {
+      "Analogous":          0.90,
+      "Neutral Base + Pop": 0.84,
+      "Monochrome":         0.72,
+      "Cool Tonal":         0.68,
+      "Contrast Pop":       0.62,
+      "Warm Tonal":         0.55,
+      "Earth Tones":        0.40
+    },
+    "fit_check": {
+      "Flowing":    0.92,
+      "Relaxed":    0.85,
+      "Tailored":   0.72,
+      "Snatched":   0.65,
+      "Bodycon":    0.55,
+      "Structured": 0.50
+    }
+  },
+
+  "summer": {
+    "colors": {
+      "white":    0.95, "coral":    0.90, "orange":   0.88, "yellow":   0.85,
+      "blue":     0.82, "pink":     0.80, "red":      0.76, "green":    0.70,
+      "beige":    0.65, "lavender": 0.60, "gold":     0.58, "tan":      0.55,
+      "silver":   0.52, "navy":     0.48, "purple":   0.45, "cream":    0.44,
+      "black":    0.42, "grey":     0.35, "gray":     0.35, "brown":    0.30,
+      "olive":    0.30, "burgundy": 0.25, "camel":    0.28, "rust":     0.30
+    },
+    "vibe": {
+      "Off-Duty + Effortless":0.92,
+      "Sporty + Chic":        0.87,
+      "Playful + Confident":  0.84,
+      "Soft + Romantic":      0.72,
+      "Boho + Free":          0.70,
+      "Minimalist + Clean":   0.65,
+      "Edgy + Bold":          0.55,
+      "Elegant + Confident":  0.45
+    },
+    "color_theory": {
+      "Monochrome":         0.88,
+      "Contrast Pop":       0.84,
+      "Neutral Base + Pop": 0.80,
+      "Warm Tonal":         0.74,
+      "Analogous":          0.68,
+      "Cool Tonal":         0.60,
+      "Earth Tones":        0.40
+    },
+    "fit_check": {
+      "Flowing":    0.90,
+      "Relaxed":    0.87,
+      "Snatched":   0.80,
+      "Bodycon":    0.75,
+      "Tailored":   0.55,
+      "Structured": 0.42
+    }
+  },
+
+  "fall": {
+    "colors": {
+      "burgundy": 0.93, "brown":    0.90, "camel":    0.88, "olive":    0.85,
+      "rust":     0.82, "orange":   0.78, "tan":      0.75, "green":    0.72,
+      "black":    0.70, "navy":     0.65, "grey":     0.62, "gray":     0.62,
+      "gold":     0.60, "purple":   0.55, "cream":    0.55, "red":      0.52,
+      "white":    0.40, "blue":     0.42, "silver":   0.48, "pink":     0.35,
+      "yellow":   0.30, "coral":    0.28, "lavender": 0.25, "beige":    0.50
+    },
+    "vibe": {
+      "Elegant + Confident":  0.90,
+      "Minimalist + Clean":   0.85,
+      "Edgy + Bold":          0.80,
+      "Playful + Confident":  0.72,
+      "Off-Duty + Effortless":0.65,
+      "Boho + Free":          0.60,
+      "Sporty + Chic":        0.50,
+      "Soft + Romantic":      0.42
+    },
+    "color_theory": {
+      "Earth Tones":        0.93,
+      "Warm Tonal":         0.88,
+      "Analogous":          0.82,
+      "Monochrome":         0.75,
+      "Neutral Base + Pop": 0.68,
+      "Contrast Pop":       0.55,
+      "Cool Tonal":         0.42
+    },
+    "fit_check": {
+      "Structured": 0.90,
+      "Tailored":   0.87,
+      "Relaxed":    0.72,
+      "Flowing":    0.60,
+      "Snatched":   0.52,
+      "Bodycon":    0.40
+    }
+  },
+
+  "winter": {
+    "colors": {
+      "black":    0.95, "navy":     0.88, "grey":     0.85, "gray":     0.85,
+      "white":    0.80, "burgundy": 0.78, "silver":   0.75, "gold":     0.72,
+      "brown":    0.68, "purple":   0.65, "cream":    0.62, "camel":    0.60,
+      "olive":    0.55, "red":      0.52, "blue":     0.48, "green":    0.45,
+      "beige":    0.42, "tan":      0.40, "rust":     0.45, "pink":     0.30,
+      "orange":   0.25, "yellow":   0.22, "lavender": 0.28, "coral":    0.22
+    },
+    "vibe": {
+      "Elegant + Confident":  0.93,
+      "Minimalist + Clean":   0.88,
+      "Edgy + Bold":          0.82,
+      "Playful + Confident":  0.65,
+      "Off-Duty + Effortless":0.60,
+      "Soft + Romantic":      0.52,
+      "Sporty + Chic":        0.48,
+      "Boho + Free":          0.38
+    },
+    "color_theory": {
+      "Monochrome":         0.93,
+      "Cool Tonal":         0.88,
+      "Neutral Base + Pop": 0.82,
+      "Contrast Pop":       0.72,
+      "Earth Tones":        0.65,
+      "Warm Tonal":         0.55,
+      "Analogous":          0.48
+    },
+    "fit_check": {
+      "Structured": 0.93,
+      "Tailored":   0.88,
+      "Relaxed":    0.70,
+      "Flowing":    0.52,
+      "Snatched":   0.48,
+      "Bodycon":    0.42
+    }
+  }
+}

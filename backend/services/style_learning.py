@@ -19,11 +19,12 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
+from httpx import RemoteProtocolError
+
 from config import get_settings
 from services.style_catalog import (
     get_style_lookup_by_id,
     get_style_ids_for_tags,
-    get_style_catalog,
     normalize_style_tag,
 )
 
@@ -62,79 +63,111 @@ def _canonical_url(url: str) -> str:
 
 
 def _table_load(table: str, filters: Optional[Dict[str, Any]] = None) -> List[dict]:
-    settings = get_settings()
-    if settings.use_mock_auth:
-        from utils.mock_db_store import select_all
-        return select_all(table, filters)
+    def run() -> List[dict]:
+        settings = get_settings()
+        if settings.use_mock_auth:
+            from utils.mock_db_store import select_all
+            return select_all(table, filters)
 
-    from utils.db import get_supabase
+        from utils.db import get_supabase
 
-    query = get_supabase().table(table).select("*")
-    if filters:
+        query = get_supabase().table(table).select("*")
+        if filters:
+            for key, value in filters.items():
+                if isinstance(value, list):
+                    query = query.in_(key, value)
+                else:
+                    query = query.eq(key, value)
+        result = query.execute()
+        return result.data or []
+
+    try:
+        return run()
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        return run()
+
+
+def _table_insert(table: str, row: dict) -> dict:
+    def run() -> dict:
+        settings = get_settings()
+        if settings.use_mock_auth:
+            from utils.mock_db_store import insert
+            return insert(table, row)
+
+        from utils.db import get_supabase
+
+        result = get_supabase().table(table).insert(row).execute()
+        return result.data[0]
+
+    try:
+        return run()
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        return run()
+
+
+def _table_upsert(table: str, row: dict, conflict: str) -> dict:
+    def run() -> dict:
+        settings = get_settings()
+        if settings.use_mock_auth:
+            from utils.mock_db_store import insert, select_one, update
+
+            if conflict == "normalized_url":
+                existing = select_one(table, {"user_id": row["user_id"], "normalized_url": row["normalized_url"]})
+            elif conflict == "user_id,normalized_url":
+                existing = select_one(table, {"user_id": row["user_id"], "normalized_url": row["normalized_url"]})
+            elif conflict == "user_id,style_id":
+                existing = select_one(table, {"user_id": row["user_id"], "style_id": row["style_id"]})
+            else:
+                existing = select_one(table, {"user_id": row["user_id"]})
+            if existing:
+                return update(table, str(existing["id"]), row, extra_filters={"user_id": row["user_id"]}) or existing
+            return insert(table, row)
+
+        from utils.db import get_supabase
+
+        result = get_supabase().table(table).upsert(row, on_conflict=conflict).execute()
+        return result.data[0]
+
+    try:
+        return run()
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        return run()
+
+
+def _table_delete(table: str, filters: Dict[str, Any]) -> None:
+    def run() -> None:
+        settings = get_settings()
+        if settings.use_mock_auth:
+            from utils.mock_db_store import select_all, delete as mock_delete
+
+            rows = select_all(table, filters)
+            for row in rows:
+                if row.get("id"):
+                    mock_delete(table, str(row["id"]))
+            return
+
+        from utils.db import get_supabase
+
+        query = get_supabase().table(table).delete()
         for key, value in filters.items():
             if isinstance(value, list):
                 query = query.in_(key, value)
             else:
                 query = query.eq(key, value)
-    result = query.execute()
-    return result.data or []
+        query.execute()
 
-
-def _table_insert(table: str, row: dict) -> dict:
-    settings = get_settings()
-    if settings.use_mock_auth:
-        from utils.mock_db_store import insert
-        return insert(table, row)
-
-    from utils.db import get_supabase
-
-    result = get_supabase().table(table).insert(row).execute()
-    return result.data[0]
-
-
-def _table_upsert(table: str, row: dict, conflict: str) -> dict:
-    settings = get_settings()
-    if settings.use_mock_auth:
-        from utils.mock_db_store import insert, select_one, update
-
-        if conflict == "normalized_url":
-            existing = select_one(table, {"user_id": row["user_id"], "normalized_url": row["normalized_url"]})
-        elif conflict == "user_id,normalized_url":
-            existing = select_one(table, {"user_id": row["user_id"], "normalized_url": row["normalized_url"]})
-        elif conflict == "user_id,style_id":
-            existing = select_one(table, {"user_id": row["user_id"], "style_id": row["style_id"]})
-        else:
-            existing = select_one(table, {"user_id": row["user_id"]})
-        if existing:
-            return update(table, str(existing["id"]), row, extra_filters={"user_id": row["user_id"]}) or existing
-        return insert(table, row)
-
-    from utils.db import get_supabase
-
-    result = get_supabase().table(table).upsert(row, on_conflict=conflict).execute()
-    return result.data[0]
-
-
-def _table_delete(table: str, filters: Dict[str, Any]) -> None:
-    settings = get_settings()
-    if settings.use_mock_auth:
-        from utils.mock_db_store import select_all, delete as mock_delete
-
-        rows = select_all(table, filters)
-        for row in rows:
-            if row.get("id"):
-                mock_delete(table, str(row["id"]))
-        return
-
-    from utils.db import get_supabase
-
-    query = get_supabase().table(table).delete()
-    for key, value in filters.items():
-        if isinstance(value, list):
-            query = query.in_(key, value)
-        else:
-            query = query.eq(key, value)
-    query.execute()
+    try:
+        return run()
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        return run()
 
 
 def upsert_ignored_url(user_id: str, payload: Dict[str, Any]) -> dict:
@@ -170,6 +203,22 @@ def _style_row_from_id(style_id: str) -> Optional[dict]:
 
 def load_style_preferences(user_id: str) -> List[dict]:
     return _table_load(TABLE_PREFERENCES, {"user_id": user_id})
+
+
+def load_or_refresh_style_preferences(user_id: str) -> List[dict]:
+    rows = load_style_preferences(user_id)
+    if rows:
+        return rows
+
+    total_interactions = count_discover_interactions(user_id)
+    if total_interactions < 10:
+        return rows
+
+    summary = refresh_user_style_preferences(user_id)
+    refreshed_rows = summary.get("updated_rows") or []
+    if refreshed_rows:
+        return refreshed_rows
+    return load_style_preferences(user_id)
 
 
 def load_ignored_urls(user_id: str) -> List[str]:
@@ -220,7 +269,17 @@ def get_top_style_terms(user_id: str, limit: int = 2) -> Tuple[List[str], List[s
     Terms are returned as user-friendly labels so they can be dropped directly
     into a Google search query.
     """
-    rows = load_style_preferences(user_id)
+    try:
+        rows = load_style_preferences(user_id)
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        try:
+            rows = load_style_preferences(user_id)
+        except Exception:
+            return [], []
+    except Exception:
+        return [], []
     if not rows:
         return [], []
 
@@ -306,9 +365,9 @@ def _interaction_gate(total_interactions: int) -> float:
     if total_interactions < 10:
         return 0.0
     if total_interactions < 20:
-        return 0.45
+        return 0.65
     if total_interactions < 30:
-        return 0.75
+        return 0.85
     return 1.0
 
 
@@ -329,8 +388,7 @@ def refresh_user_style_preferences(user_id: str) -> Dict[str, Any]:
             "message": "Need at least 10 interactions before preferences are refreshed.",
         }
 
-    style_rows = get_style_catalog()
-    style_lookup = {str(row.get("id") or row["style_key"]): row for row in style_rows}
+    style_lookup = get_style_lookup_by_id()
 
     aggregate: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
         "style_id": None,
@@ -371,6 +429,15 @@ def refresh_user_style_preferences(user_id: str) -> Dict[str, Any]:
                 entry["dislike_count"] += 1
             entry["last_seen_at"] = interaction.get("created_at") or _now_iso()
 
+    if not aggregate:
+        return {
+            "total_interactions": total_interactions,
+            "gate": gate,
+            "updated": 0,
+            "updated_rows": [],
+            "message": "Interactions recorded, but no recognized style signals found yet. Keep swiping!",
+        }
+
     updated_rows: List[dict] = []
     _table_delete(TABLE_PREFERENCES, {"user_id": user_id})
     for style_id, entry in aggregate.items():
@@ -383,11 +450,17 @@ def refresh_user_style_preferences(user_id: str) -> Dict[str, Any]:
 
         positive_ratio = positive_count / exposure_count
         negative_ratio = negative_count / exposure_count
-        if exposure_count < 5:
+        # Thresholds scale with gate so they're reachable at every confidence level.
+        # These are intentionally a bit softer so the preference rails start to
+        # populate earlier once a user has a few consistent signals.
+        preferred_threshold = round(0.3 * gate, 3)
+        disliked_threshold  = round(-0.3 * gate, 3)
+
+        if exposure_count < 2:
             status = "emerging"
-        elif score >= 0.4 and positive_ratio >= 0.7 and positive_count >= 3:
+        elif score >= preferred_threshold and positive_ratio >= 0.67 and positive_count >= 2:
             status = "preferred"
-        elif score <= -0.4 and negative_ratio >= 0.7 and negative_count >= 2:
+        elif score <= disliked_threshold and negative_ratio >= 0.67 and negative_count >= 2:
             status = "disliked"
         else:
             status = "neutral"
@@ -423,7 +496,10 @@ def refresh_user_style_preferences(user_id: str) -> Dict[str, Any]:
 
 
 def build_profile_style_seed(user_id: str) -> Dict[str, List[str]]:
-    preferred, disliked = get_top_style_terms(user_id, limit=2)
+    try:
+        preferred, disliked = get_top_style_terms(user_id, limit=2)
+    except Exception:
+        preferred, disliked = [], []
     return {
         "preferred": preferred,
         "disliked": disliked,

@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     # ── Pexels ───────────────────────────────────────────────────────────────
     pexels_api_key: str = ""
 
+    # ── Kaggle (used by scripts/build_trend_calendar.py — not needed at runtime) ──
+    kaggle_username: str = ""
+    kaggle_key: str = ""
+
     # ── Discover search provider ─────────────────────────────────────────────
     # auto: prefers a configured real provider, else falls back to mock
     # pexels: uses the Pexels search API if the key exists

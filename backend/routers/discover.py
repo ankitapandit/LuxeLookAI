@@ -9,6 +9,7 @@ POST /discover/recompute    — force a preference aggregation pass
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from httpx import RemoteProtocolError
 
 from models.schemas import (
     DiscoverFeedResponse,
@@ -22,7 +23,7 @@ from models.schemas import (
 from services.discover_candidates import load_ready_discover_candidates
 from services.discover_jobs import enqueue_refresh_preferences_job, enqueue_seed_candidates_job, get_discover_job, get_discover_status_summary
 from services.discover_service import build_discover_feed, get_discover_seed_context
-from services.style_learning import count_discover_interactions, load_ignored_urls, load_style_preferences, record_discover_interaction, refresh_user_style_preferences
+from services.style_learning import count_discover_interactions, load_ignored_urls, load_or_refresh_style_preferences, record_discover_interaction, refresh_user_style_preferences
 from services.style_learning import DAILY_DISCOVER_LIMIT, count_discover_interactions_for_day
 from utils.auth import get_current_user_id
 
@@ -44,7 +45,14 @@ def discover_prewarm(
     if not query:
         raise HTTPException(status_code=400, detail="Could not build Discover seed query")
 
-    ready_rows = load_ready_discover_candidates(user_id, exclude_urls=set(load_ignored_urls(user_id)))
+    try:
+        ignored_urls = set(load_ignored_urls(user_id))
+        ready_rows = load_ready_discover_candidates(user_id, exclude_urls=ignored_urls)
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        ignored_urls = set(load_ignored_urls(user_id))
+        ready_rows = load_ready_discover_candidates(user_id, exclude_urls=ignored_urls)
     ready_count = len(ready_rows)
     if ready_count >= minimum_ready:
         return DiscoverPrewarmResponse(
@@ -103,15 +111,12 @@ def discover_interaction(
     summary = None
     updated_preferences = []
     commit_triggered = False
-    queued_job_id = None
-    queued_job_status = None
 
     if payload.commit_preferences or (
         payload.interaction_index is not None and payload.interaction_index > 0 and payload.interaction_index % 10 == 0
     ):
-        job = enqueue_refresh_preferences_job(user_id, interaction_index=payload.interaction_index)
-        queued_job_id = str(job.get("id") or "")
-        queued_job_status = str(job.get("status") or "queued")
+        summary = refresh_user_style_preferences(user_id)
+        updated_preferences = summary.get("updated_rows", []) or []
         commit_triggered = True
 
     return DiscoverInteractionResponse(
@@ -123,8 +128,6 @@ def discover_interaction(
         daily_limit=DAILY_DISCOVER_LIMIT,
         preference_summary=summary,
         updated_preferences=updated_preferences,
-        queued_job_id=queued_job_id,
-        queued_job_status=queued_job_status,
     )
 
 
@@ -186,12 +189,38 @@ def _serialize_job(job: dict | None) -> DiscoverJobResponse | None:
 
 @router.get("/status", response_model=DiscoverStatusResponse)
 def discover_status(request: Request, user_id: str = Depends(get_current_user_id)):
-    summary = get_discover_status_summary(user_id)
+    try:
+        summary = get_discover_status_summary(user_id)
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        summary = get_discover_status_summary(user_id)
+    try:
+        total_interactions = count_discover_interactions(user_id)
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        total_interactions = count_discover_interactions(user_id)
+
+    try:
+        daily_interactions = count_discover_interactions_for_day(user_id, _client_timezone(request))
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        daily_interactions = count_discover_interactions_for_day(user_id, _client_timezone(request))
+
+    try:
+        preference_rows = load_or_refresh_style_preferences(user_id)
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        preference_rows = load_or_refresh_style_preferences(user_id)
+
     return DiscoverStatusResponse(
-        total_interactions=count_discover_interactions(user_id),
-        daily_interactions=count_discover_interactions_for_day(user_id, _client_timezone(request)),
+        total_interactions=total_interactions,
+        daily_interactions=daily_interactions,
         daily_limit=DAILY_DISCOVER_LIMIT,
-        preference_rows=load_style_preferences(user_id),
+        preference_rows=preference_rows,
         queued_count=int(summary.get("queued_count") or 0),
         running_count=int(summary.get("running_count") or 0),
         failed_count=int(summary.get("failed_count") or 0),

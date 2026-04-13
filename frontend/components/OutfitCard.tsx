@@ -2,24 +2,11 @@
  * components/OutfitCard.tsx — Shared outfit metric card component
  *
  * Renders the 5-row at-a-glance card (Trend-o-meter, Vibe Check, Color Theory,
- * Fit Check, Weather Sync) and the Stylist Verdict. Used on both the Events
- * page (inline) and the Archive page (history feed).
+ * Fit Check, Weather Sync). Used on both the Events page (inline) and the
+ * Archive page (history feed).
  */
 
-import React from "react";
 import { OutfitCard as OutfitCardType } from "@/services/api";
-
-function splitVerdict(text?: string | null) {
-  const clean = (text || "")
-    .replace(/[“”„‟"]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const firstBreak = clean.search(/(?<=[.!?])\s+/);
-  return {
-    headline: firstBreak > -1 ? clean.slice(0, firstBreak).trim() : clean,
-    body: firstBreak > -1 ? clean.slice(firstBreak).trim() : "",
-  };
-}
 
 /**
  * Returns true when the card has the current v2.0 schema (trend_stars present).
@@ -70,8 +57,6 @@ export default function OutfitMetricCard({ card }: { card: OutfitCardType }) {
       value: card.weather_sync,
     },
   ];
-
-  const { body: verdictBody } = splitVerdict(card.verdict);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
@@ -126,24 +111,6 @@ export default function OutfitMetricCard({ card }: { card: OutfitCardType }) {
           <span style={{ fontSize: "12px", color: "var(--muted)" }}>
             {card.risk_flag} — statement look. Own it or dial it back.
           </span>
-        </div>
-      )}
-
-      {/* ── Stylist Verdict ──────────────────────────────────────────── */}
-      {verdictBody && (
-        <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "5px" }}>
-          <span className="type-micro" style={{
-            fontSize: "9px", fontWeight: 700, color: "var(--muted)",
-            textTransform: "uppercase", letterSpacing: "0.1em",
-          }}>
-            ✦ Stylist Verdict
-          </span>
-          <p className="type-helper" style={{
-            fontSize: "13px", color: "var(--muted)",
-            lineHeight: 1.65, fontStyle: "italic", margin: 0,
-          }}>
-            {verdictBody}
-          </p>
         </div>
       )}
 

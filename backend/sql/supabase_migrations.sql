@@ -557,6 +557,7 @@ create trigger clothing_items_updated_at
 
 -- 1. Event semantic tokens (for occasion-scoped feedback)
 ALTER TABLE events ADD COLUMN event_tokens jsonb DEFAULT '[]';
+ALTER TABLE events ADD COLUMN IF NOT EXISTS raw_text_json jsonb NOT NULL DEFAULT '{}'::jsonb;
 
 -- 2. Ensure updated_at fires on rating updates (for temporal decay later)
 -- (only if the existing trigger doesn't already cover outfit_suggestions)
@@ -665,7 +666,8 @@ VALUES
   ('descriptor', 'tops', 'fabric_type', 'mesh', '{}', 11),
   ('descriptor', 'tops', 'fabric_type', 'lace', '{}', 12),
   ('descriptor', 'tops', 'fabric_type', 'knit', '{}', 13),
-  ('descriptor', 'tops', 'fabric_type', 'wool', '{}', 14),
+  ('descriptor', 'tops', 'fabric_type', 'ribbed', '{}', 14),
+  ('descriptor', 'tops', 'fabric_type', 'wool', '{}', 15),
   ('descriptor', 'tops', 'neckline', 'crew', '{}', 1),
   ('descriptor', 'tops', 'neckline', 'round', '{}', 2),
   ('descriptor', 'tops', 'neckline', 'V-neck', '{}', 3),
@@ -770,7 +772,8 @@ VALUES
   ('descriptor', 'dresses', 'fabric_type', 'mesh', '{}', 11),
   ('descriptor', 'dresses', 'fabric_type', 'lace', '{}', 12),
   ('descriptor', 'dresses', 'fabric_type', 'knit', '{}', 13),
-  ('descriptor', 'dresses', 'fabric_type', 'wool', '{}', 14),
+  ('descriptor', 'dresses', 'fabric_type', 'ribbed', '{}', 14),
+  ('descriptor', 'dresses', 'fabric_type', 'wool', '{}', 15),
   ('descriptor', 'dresses', 'neckline', 'crew', '{}', 1),
   ('descriptor', 'dresses', 'neckline', 'round', '{}', 2),
   ('descriptor', 'dresses', 'neckline', 'V-neck', '{}', 3),
@@ -1010,7 +1013,8 @@ VALUES
   ('descriptor', 'outerwear', 'fabric_type', 'mesh', '{}', 11),
   ('descriptor', 'outerwear', 'fabric_type', 'lace', '{}', 12),
   ('descriptor', 'outerwear', 'fabric_type', 'knit', '{}', 13),
-  ('descriptor', 'outerwear', 'fabric_type', 'wool', '{}', 14),
+  ('descriptor', 'outerwear', 'fabric_type', 'ribbed', '{}', 14),
+  ('descriptor', 'outerwear', 'fabric_type', 'wool', '{}', 15),
   ('descriptor', 'outerwear', 'neckline', 'crew', '{}', 1),
   ('descriptor', 'outerwear', 'neckline', 'round', '{}', 2),
   ('descriptor', 'outerwear', 'neckline', 'V-neck', '{}', 3),
@@ -1108,7 +1112,8 @@ VALUES
   ('descriptor', 'bottoms', 'fabric_type', 'polyester', '{}', 3),
   ('descriptor', 'bottoms', 'fabric_type', 'linen', '{}', 4),
   ('descriptor', 'bottoms', 'fabric_type', 'knit', '{}', 5),
-  ('descriptor', 'bottoms', 'fabric_type', 'leather', '{}', 6),
+  ('descriptor', 'bottoms', 'fabric_type', 'ribbed', '{}', 6),
+  ('descriptor', 'bottoms', 'fabric_type', 'leather', '{}', 7),
   ('descriptor', 'bottoms', 'waist_position', 'high', '{}', 1),
   ('descriptor', 'bottoms', 'waist_position', 'mid', '{}', 2),
   ('descriptor', 'bottoms', 'waist_position', 'low', '{}', 3),
@@ -1200,6 +1205,15 @@ VALUES
   ('descriptor', 'shoes', 'pattern', 'animal print', '{}', 2),
   ('descriptor', 'shoes', 'pattern', 'textured', '{}', 3),
   ('descriptor', 'shoes', 'pattern', 'colorblock', '{}', 4),
+  ('descriptor', 'jewelry', 'jewelry_type', 'necklace', '{}', 1),
+  ('descriptor', 'jewelry', 'jewelry_type', 'earrings', '{}', 2),
+  ('descriptor', 'jewelry', 'jewelry_type', 'bracelet', '{}', 3),
+  ('descriptor', 'jewelry', 'jewelry_type', 'ring', '{}', 4),
+  ('descriptor', 'jewelry', 'jewelry_type', 'watch', '{}', 5),
+  ('descriptor', 'jewelry', 'jewelry_type', 'anklet', '{}', 6),
+  ('descriptor', 'jewelry', 'jewelry_type', 'brooch', '{}', 7),
+  ('descriptor', 'jewelry', 'jewelry_type', 'cuff', '{}', 8),
+  ('descriptor', 'jewelry', 'jewelry_type', 'other', '{}', 9),
   ('descriptor', 'accessories', 'accessory_type', 'handbag', '{}', 1),
   ('descriptor', 'accessories', 'accessory_type', 'tote', '{}', 2),
   ('descriptor', 'accessories', 'accessory_type', 'clutch', '{}', 3),
@@ -1209,8 +1223,6 @@ VALUES
   ('descriptor', 'accessories', 'accessory_type', 'scarf', '{}', 7),
   ('descriptor', 'accessories', 'accessory_type', 'hat', '{}', 8),
   ('descriptor', 'accessories', 'accessory_type', 'sunglasses', '{}', 9),
-  ('descriptor', 'accessories', 'accessory_type', 'jewelry', '{}', 10),
-  ('descriptor', 'accessories', 'accessory_type', 'watch', '{}', 11),
   ('descriptor', 'accessories', 'size', 'mini', '{}', 1),
   ('descriptor', 'accessories', 'size', 'small', '{}', 2),
   ('descriptor', 'accessories', 'size', 'medium', '{}', 3),
@@ -1276,6 +1288,23 @@ VALUES
 ON CONFLICT DO NOTHING;
 
 -- CLIP zero-shot classification labels — tagger.py
+-- Existing rows are kept in sync with the code taxonomy via UPDATEs so older databases
+-- stop treating jewelry as a generic accessory.
+UPDATE public.style_taxonomy
+SET category = 'jewelry',
+    attribute = 'jewelry_type'
+WHERE domain = 'descriptor'
+  AND category = 'accessories'
+  AND attribute = 'accessory_type'
+  AND value IN ('jewelry', 'watch');
+
+UPDATE public.style_taxonomy
+SET meta = '{"clip_prompt": "a photo of a non-jewelry accessory such as a handbag, belt, scarf, hat, or sunglasses"}'
+WHERE domain = 'clip_label'
+  AND category = ''
+  AND attribute = 'category'
+  AND value = 'accessories';
+
 INSERT INTO public.style_taxonomy (domain, category, attribute, value, meta, sort_order)
 VALUES
   ('clip_label', '', 'category', 'tops', '{"clip_prompt": "a photo of a top, t-shirt, blouse, shirt, or sweater worn on the upper body"}', 1),
@@ -1284,18 +1313,28 @@ VALUES
   ('clip_label', '', 'category', 'jumpsuits', '{"clip_prompt": "a photo of a jumpsuit, romper, or playsuit that covers the torso and either full legs or shorts"}', 4),
   ('clip_label', '', 'category', 'shoes', '{"clip_prompt": "a photo of shoes, boots, heels, sneakers, sandals, or footwear"}', 5),
   ('clip_label', '', 'category', 'outerwear', '{"clip_prompt": "a photo of a coat, jacket, blazer, or cardigan worn as an outer layer"}', 6),
-  ('clip_label', '', 'category', 'accessories', '{"clip_prompt": "a photo of an accessory such as a handbag, jewelry, belt, scarf, or hat"}', 7),
+  ('clip_label', '', 'category', 'accessories', '{"clip_prompt": "a photo of an accessory such as a handbag, belt, scarf, hat, or sunglasses"}', 7),
+  ('clip_label', '', 'category', 'jewelry', '{"clip_prompt": "a photo of jewelry such as a necklace, earrings, bracelet, ring, or watch"}', 8),
   ('clip_label', '', 'season', 'summer', '{"clip_prompt": "lightweight summer clothing \u2014 thin fabric, sleeveless, breathable, for hot weather"}', 1),
   ('clip_label', '', 'season', 'winter', '{"clip_prompt": "heavy winter clothing \u2014 thick fabric, warm, insulating, for cold weather"}', 2),
   ('clip_label', '', 'season', 'spring', '{"clip_prompt": "light layering piece for mild spring or autumn weather"}', 3),
   ('clip_label', '', 'season', 'fall', '{"clip_prompt": "medium weight clothing suitable for cool autumn or fall weather"}', 4),
   ('clip_label', '', 'season', 'all', '{"clip_prompt": "a versatile, all-season clothing item suitable for any time of year"}', 5),
   ('clip_label', '', 'accessory_type', 'bag', '{"clip_prompt": "a handbag, purse, tote bag, clutch, or backpack"}', 1),
-  ('clip_label', '', 'accessory_type', 'jewelry', '{"clip_prompt": "jewelry such as a necklace, earrings, bracelet, ring, or watch"}', 2),
-  ('clip_label', '', 'accessory_type', 'belt', '{"clip_prompt": "a belt worn around the waist"}', 3),
-  ('clip_label', '', 'accessory_type', 'scarf', '{"clip_prompt": "a scarf, wrap, or shawl worn around the neck or shoulders"}', 4),
-  ('clip_label', '', 'accessory_type', 'hat', '{"clip_prompt": "a hat, cap, or headwear"}', 5),
-  ('clip_label', '', 'accessory_type', 'other', '{"clip_prompt": "another type of accessory or fashion item"}', 6)
+  ('clip_label', '', 'accessory_type', 'belt', '{"clip_prompt": "a belt worn around the waist"}', 2),
+  ('clip_label', '', 'accessory_type', 'scarf', '{"clip_prompt": "a scarf, wrap, or shawl worn around the neck or shoulders"}', 3),
+  ('clip_label', '', 'accessory_type', 'hat', '{"clip_prompt": "a hat, cap, or headwear"}', 4),
+  ('clip_label', '', 'accessory_type', 'sunglasses', '{"clip_prompt": "sunglasses or dark glasses worn on the face"}', 5),
+  ('clip_label', '', 'accessory_type', 'other', '{"clip_prompt": "another type of accessory or fashion item"}', 6),
+  ('clip_label', '', 'jewelry_type', 'necklace', '{"clip_prompt": "a necklace worn around the neck"}', 1),
+  ('clip_label', '', 'jewelry_type', 'earrings', '{"clip_prompt": "earrings worn on the ears"}', 2),
+  ('clip_label', '', 'jewelry_type', 'bracelet', '{"clip_prompt": "a bracelet or bangle worn on the wrist"}', 3),
+  ('clip_label', '', 'jewelry_type', 'ring', '{"clip_prompt": "a ring worn on the finger"}', 4),
+  ('clip_label', '', 'jewelry_type', 'watch', '{"clip_prompt": "a wristwatch worn on the wrist"}', 5),
+  ('clip_label', '', 'jewelry_type', 'anklet', '{"clip_prompt": "an anklet worn around the ankle"}', 6),
+  ('clip_label', '', 'jewelry_type', 'brooch', '{"clip_prompt": "a brooch or pin worn on clothing"}', 7),
+  ('clip_label', '', 'jewelry_type', 'cuff', '{"clip_prompt": "a cuff bracelet or cuff-style jewelry"}', 8),
+  ('clip_label', '', 'jewelry_type', 'other', '{"clip_prompt": "another type of jewelry"}', 9)
 ON CONFLICT DO NOTHING;
 
 -- Body-type silhouette preferences — BODY_TYPE_PREFERENCES in recommender.py
@@ -2032,6 +2071,42 @@ BEGIN
 END;
 $$;
 
+-- 4. Log user correction feedback on wardrobe edits.
+CREATE TABLE IF NOT EXISTS public.clothing_tag_feedback (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid not null references public.users(id) on delete cascade,
+  item_id         uuid references public.clothing_items(id) on delete set null,
+  field_name      text not null,
+  old_value       text,
+  new_value       text not null,
+  item_category_snapshot text,
+  item_color_snapshot text,
+  item_season_snapshot text,
+  item_formality_score_snapshot float,
+  item_descriptors_snapshot jsonb default '{}'::jsonb,
+  feedback_source text not null default 'user_edit',
+  created_at      timestamptz default now()
+);
+
+ALTER TABLE public.clothing_tag_feedback
+  ADD COLUMN IF NOT EXISTS item_category_snapshot text,
+  ADD COLUMN IF NOT EXISTS item_color_snapshot text,
+  ADD COLUMN IF NOT EXISTS item_season_snapshot text,
+  ADD COLUMN IF NOT EXISTS item_formality_score_snapshot float,
+  ADD COLUMN IF NOT EXISTS item_descriptors_snapshot jsonb default '{}'::jsonb;
+
+CREATE INDEX IF NOT EXISTS idx_clothing_tag_feedback_user
+  ON public.clothing_tag_feedback (user_id);
+
+CREATE INDEX IF NOT EXISTS idx_clothing_tag_feedback_item
+  ON public.clothing_tag_feedback (item_id);
+
+CREATE INDEX IF NOT EXISTS idx_clothing_tag_feedback_field
+  ON public.clothing_tag_feedback (field_name);
+
+COMMENT ON TABLE public.clothing_tag_feedback IS
+'Wardrobe correction feedback log. Stores per-field before/after edits plus a frozen snapshot of the item context at correction time, so the app can analyze correction patterns and build future prompt-tuning or retraining datasets.';
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- v2.1.1 — unify shared fabric taxonomy across garment categories
 -- Keeps style_taxonomy in sync with the shared fabric vocabulary used in code.
@@ -2109,3 +2184,169 @@ COMMENT ON COLUMN outfit_suggestions.card IS
 
 ALTER TABLE public.users
   ADD COLUMN IF NOT EXISTS age_range text;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v2.3.1 — Table comments for core product and Discover tables
+-- Documents table intent directly in Postgres / Supabase.
+-- Safe to re-run.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+COMMENT ON TABLE public.users IS
+  'Application user profile table. Extends Supabase auth.users with styling context, demographic preferences, profile photos, and AI-derived profile analysis used across Wardrobe, Discover, Event, and Style Item flows.';
+
+COMMENT ON TABLE public.clothing_items IS
+  'User-owned wardrobe inventory. Stores each clothing item''s category, color, season, formality score, descriptors, source image, derived media assets, and archive/delete lifecycle state.';
+
+COMMENT ON TABLE public.events IS
+  'User-created event or styling context. Stores a human-readable event summary plus structured JSON input used to derive occasion type, formality, temperature context, setting, and recommendation prompts.';
+
+COMMENT ON TABLE public.outfit_suggestions IS
+  'Generated outfit recommendation results for an event or styling request. Stores selected item IDs, computed scores, prompt context, and output metadata used for results display and archive history.';
+
+COMMENT ON TABLE public.discover_candidates IS
+  'Cached Discover feed candidates for a user. Stores source URLs, normalized URLs, analysis state, extracted style tags, single-person filtering results, and readiness status before cards are shown in Discover.';
+
+COMMENT ON TABLE public.discover_ignored_urls IS
+  'Per-user exclusion list for Discover. Tracks URLs the user has already acted on or should no longer see, preventing repeat cards from re-entering the feed pool.';
+
+COMMENT ON TABLE public.discover_jobs IS
+  'Durable background job queue for Discover warm-up and candidate seeding. Stores queued/running/failed job state, payloads, dedupe keys, retry counters, and job results.';
+
+COMMENT ON TABLE public.discover_style_interactions IS
+  'Per-card Discover interaction log. Records like, love, and dislike actions together with style tags, card metadata, and analysis context used for preference learning.';
+
+COMMENT ON TABLE public.style_catalog IS
+  'Canonical Discover style vocabulary. Stores normalized style signals such as silhouette, fabric, pattern, vibe, styling detail, garment type, season, and occasion for tag resolution and preference learning.';
+
+COMMENT ON TABLE public.style_taxonomy IS
+  'Shared classification taxonomy for wardrobe tagging and model alignment. Stores descriptor vocabularies, CLIP prompt labels, category attributes, and other structured styling metadata used by AI tagging and manual correction flows.';
+
+COMMENT ON TABLE public.user_style_preferences IS
+  'Derived per-user style preference summary for Discover. Aggregates interaction history into scored style signals with confidence, exposure, positive and negative counts, and preference status such as emerging, preferred, or disliked.';
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v2.3.2 — Warmth descriptor for seasonal wearability
+-- Adds a shared warmth descriptor to apparel categories so season editing and
+-- season reasoning can use direct wearability hints, not only fabric names.
+-- Safe to re-run.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+WITH warmth_categories(category) AS (
+  VALUES
+    ('tops'),
+    ('bottoms'),
+    ('dresses'),
+    ('jumpsuits'),
+    ('outerwear'),
+    ('set'),
+    ('loungewear')
+),
+warmth_values(value, sort_order) AS (
+  VALUES
+    ('airy', 1),
+    ('light', 2),
+    ('medium', 3),
+    ('warm', 4),
+    ('thermal', 5)
+)
+INSERT INTO public.style_taxonomy (domain, category, attribute, value, meta, sort_order)
+SELECT
+  'descriptor',
+  warmth_categories.category,
+  'warmth',
+  warmth_values.value,
+  '{}'::jsonb,
+  warmth_values.sort_order
+FROM warmth_categories
+CROSS JOIN warmth_values
+ON CONFLICT DO NOTHING;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v2.3.3 — Simplify swimwear descriptors
+-- Replaces stitched-together top/bottom swimwear attributes with a true
+-- swimwear schema: style, coverage level, cut, and swim-specific fabric.
+-- Safe to re-run.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+DELETE FROM public.style_taxonomy
+WHERE domain = 'descriptor'
+  AND category = 'swimwear';
+
+INSERT INTO public.style_taxonomy (domain, category, attribute, value, meta, sort_order)
+VALUES
+  ('descriptor','swimwear','swimwear_style','bikini','{}',1),
+  ('descriptor','swimwear','swimwear_style','one-piece','{}',2),
+  ('descriptor','swimwear','swimwear_style','tankini','{}',3),
+  ('descriptor','swimwear','swimwear_style','monokini','{}',4),
+  ('descriptor','swimwear','swimwear_style','swim dress','{}',5),
+  ('descriptor','swimwear','swimwear_style','rash guard','{}',6),
+  ('descriptor','swimwear','swimwear_style','swim shorts','{}',7),
+  ('descriptor','swimwear','swimwear_style','boardshorts','{}',8),
+  ('descriptor','swimwear','swimwear_style','bandeau','{}',9),
+  ('descriptor','swimwear','swimwear_style','triangle','{}',10),
+  ('descriptor','swimwear','swimwear_style','halter','{}',11),
+  ('descriptor','swimwear','swimwear_style','balconette','{}',12),
+  ('descriptor','swimwear','swimwear_style','sporty','{}',13),
+  ('descriptor','swimwear','coverage_level','minimal','{}',1),
+  ('descriptor','swimwear','coverage_level','moderate','{}',2),
+  ('descriptor','swimwear','coverage_level','full','{}',3),
+  ('descriptor','swimwear','cut','high-leg','{}',1),
+  ('descriptor','swimwear','cut','cheeky','{}',2),
+  ('descriptor','swimwear','cut','high-waist','{}',3),
+  ('descriptor','swimwear','cut','boyshort','{}',4),
+  ('descriptor','swimwear','cut','brief','{}',5),
+  ('descriptor','swimwear','cut','thong','{}',6),
+  ('descriptor','swimwear','cut','string','{}',7),
+  ('descriptor','swimwear','cut','skirted','{}',8),
+  ('descriptor','swimwear','fabric_type','nylon','{}',1),
+  ('descriptor','swimwear','fabric_type','polyester','{}',2),
+  ('descriptor','swimwear','fabric_type','spandex','{}',3),
+  ('descriptor','swimwear','fabric_type','elastane','{}',4),
+  ('descriptor','swimwear','fabric_type','lycra','{}',5),
+  ('descriptor','swimwear','fabric_type','recycled nylon','{}',6),
+  ('descriptor','swimwear','fabric_type','ribbed swim knit','{}',7),
+  ('descriptor','swimwear','fabric_type','textured jacquard','{}',8),
+  ('descriptor','swimwear','fabric_type','neoprene','{}',9)
+ON CONFLICT DO NOTHING;
+
+DELETE FROM public.style_taxonomy
+WHERE domain = 'body_type'
+  AND attribute LIKE 'swimwear_%';
+
+INSERT INTO public.style_taxonomy (domain, category, attribute, value, meta, sort_order)
+VALUES
+  ('body_type','hourglass','swimwear_swimwear_style','bikini','{}',1),
+  ('body_type','hourglass','swimwear_swimwear_style','one-piece','{}',2),
+  ('body_type','hourglass','swimwear_coverage_level','moderate','{}',1),
+
+  ('body_type','rectangle','swimwear_swimwear_style','bikini','{}',1),
+  ('body_type','rectangle','swimwear_swimwear_style','monokini','{}',2),
+  ('body_type','rectangle','swimwear_swimwear_style','bandeau','{}',3),
+  ('body_type','rectangle','swimwear_swimwear_style','triangle','{}',4),
+
+  ('body_type','pear','swimwear_swimwear_style','tankini','{}',1),
+  ('body_type','pear','swimwear_swimwear_style','one-piece','{}',2),
+  ('body_type','pear','swimwear_swimwear_style','swim dress','{}',3),
+  ('body_type','pear','swimwear_coverage_level','moderate','{}',1),
+  ('body_type','pear','swimwear_coverage_level','full','{}',2),
+
+  ('body_type','apple','swimwear_swimwear_style','one-piece','{}',1),
+  ('body_type','apple','swimwear_swimwear_style','tankini','{}',2),
+  ('body_type','apple','swimwear_swimwear_style','swim dress','{}',3),
+  ('body_type','apple','swimwear_coverage_level','moderate','{}',1),
+  ('body_type','apple','swimwear_coverage_level','full','{}',2),
+
+  ('body_type','inverted triangle','swimwear_swimwear_style','bikini','{}',1),
+  ('body_type','inverted triangle','swimwear_swimwear_style','one-piece','{}',2),
+  ('body_type','inverted triangle','swimwear_swimwear_style','bandeau','{}',3),
+  ('body_type','inverted triangle','swimwear_swimwear_style','sporty','{}',4),
+  ('body_type','inverted triangle','swimwear_swimwear_style','balconette','{}',5),
+
+  ('body_type','petite','swimwear_swimwear_style','bikini','{}',1),
+  ('body_type','petite','swimwear_swimwear_style','monokini','{}',2),
+  ('body_type','petite','swimwear_coverage_level','minimal','{}',1),
+  ('body_type','petite','swimwear_coverage_level','moderate','{}',2)
+ON CONFLICT DO NOTHING;

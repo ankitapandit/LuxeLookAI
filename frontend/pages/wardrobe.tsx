@@ -14,17 +14,17 @@
  *   - Dropdown with pattern name + inline SVG swatch preview
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import Head from "next/head";
 import Image from "next/image";
 import Navbar from "@/components/layout/Navbar";
 import {
   tagPreview, uploadClothingItem, getTagOptions, correctItem,
-  deleteClothingItem, getWardrobeItemsPage, getDeletedItems, restoreClothingItem,
+  deleteClothingItem, purgeArchivedClothingItem, getWardrobeItemsPage, getDeletedItems, restoreClothingItem,
   getWardrobeMediaStatus, TagPreview, TagOptions, ClothingItem,
 } from "@/services/api";
-import { AlertCircle, Upload, Archive, ShirtIcon, Loader, CheckCircle, Pencil, X, Pipette, RotateCcw } from "lucide-react";
+import { AlertCircle, Upload, Archive, ShirtIcon, Loader, CheckCircle, Pencil, X, Pipette, RotateCcw, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 
 // Maps any color value → a human-readable name.
@@ -141,95 +141,6 @@ const COLOR_HEX: Record<string, string> = Object.fromEntries(
   SOLID_COLORS.map(c => [c.key, c.hex])
 );
 
-// ── Pattern definitions with inline SVG renders ───────────────────────────────
-const PATTERNS: { key: string; label: string; svg: string }[] = [
-  {
-    key: "stripes",
-    label: "Stripes",
-    svg: `<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg">
-      <rect width="40" height="40" fill="#f0ece4"/>
-      <line x1="0" y1="8"  x2="40" y2="8"  stroke="#333" stroke-width="4"/>
-      <line x1="0" y1="20" x2="40" y2="20" stroke="#333" stroke-width="4"/>
-      <line x1="0" y1="32" x2="40" y2="32" stroke="#333" stroke-width="4"/>
-    </svg>`,
-  },
-  {
-    key: "plaid",
-    label: "Plaid / Tartan",
-    svg: `<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg">
-      <rect width="40" height="40" fill="#e8d5c4"/>
-      <line x1="0" y1="10" x2="40" y2="10" stroke="#8B3A3A" stroke-width="3"/>
-      <line x1="0" y1="30" x2="40" y2="30" stroke="#8B3A3A" stroke-width="3"/>
-      <line x1="10" y1="0" x2="10" y2="40" stroke="#8B3A3A" stroke-width="3"/>
-      <line x1="30" y1="0" x2="30" y2="40" stroke="#8B3A3A" stroke-width="3"/>
-      <line x1="0" y1="20" x2="40" y2="20" stroke="#3A5C8B" stroke-width="1.5"/>
-      <line x1="20" y1="0" x2="20" y2="40" stroke="#3A5C8B" stroke-width="1.5"/>
-    </svg>`,
-  },
-  {
-    key: "floral",
-    label: "Floral",
-    svg: `<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg">
-      <rect width="40" height="40" fill="#f5e8f0"/>
-      <circle cx="10" cy="10" r="4" fill="#e07090" opacity="0.8"/>
-      <circle cx="10" cy="10" r="2" fill="#fff"/>
-      <circle cx="30" cy="10" r="3" fill="#c060a0" opacity="0.8"/>
-      <circle cx="30" cy="10" r="1.5" fill="#fff"/>
-      <circle cx="20" cy="25" r="5" fill="#e07090" opacity="0.7"/>
-      <circle cx="20" cy="25" r="2.5" fill="#fff"/>
-      <circle cx="8"  cy="32" r="3" fill="#d07898" opacity="0.6"/>
-      <circle cx="35" cy="32" r="4" fill="#c060a0" opacity="0.8"/>
-      <circle cx="35" cy="32" r="2" fill="#fff"/>
-    </svg>`,
-  },
-  {
-    key: "polka_dots",
-    label: "Polka Dots",
-    svg: `<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg">
-      <rect width="40" height="40" fill="#f0ece4"/>
-      <circle cx="10" cy="10" r="4" fill="#333"/>
-      <circle cx="30" cy="10" r="4" fill="#333"/>
-      <circle cx="20" cy="22" r="4" fill="#333"/>
-      <circle cx="10" cy="34" r="4" fill="#333"/>
-      <circle cx="30" cy="34" r="4" fill="#333"/>
-    </svg>`,
-  },
-  {
-    key: "animal_print",
-    label: "Animal Print",
-    svg: `<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg">
-      <rect width="40" height="40" fill="#e8c87a"/>
-      <ellipse cx="10" cy="10" rx="5" ry="3" fill="#6b4c11" opacity="0.7"/>
-      <ellipse cx="25" cy="7"  rx="4" ry="2.5" fill="#6b4c11" opacity="0.7"/>
-      <ellipse cx="35" cy="18" rx="3" ry="5" fill="#6b4c11" opacity="0.7"/>
-      <ellipse cx="15" cy="26" rx="5" ry="3" fill="#6b4c11" opacity="0.7"/>
-      <ellipse cx="32" cy="33" rx="4" ry="3" fill="#6b4c11" opacity="0.7"/>
-      <ellipse cx="6"  cy="34" rx="3" ry="4" fill="#6b4c11" opacity="0.7"/>
-    </svg>`,
-  },
-  {
-    key: "geometric",
-    label: "Geometric",
-    svg: `<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg">
-      <rect width="40" height="40" fill="#e8e4dc"/>
-      <polygon points="20,2 38,38 2,38" fill="none" stroke="#333" stroke-width="2"/>
-      <rect x="8" y="8" width="12" height="12" fill="none" stroke="#999" stroke-width="1.5" transform="rotate(15,14,14)"/>
-      <polygon points="26,14 38,14 32,26" fill="#ccc" opacity="0.6"/>
-    </svg>`,
-  },
-  {
-    key: "abstract",
-    label: "Abstract / Other print",
-    svg: `<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg">
-      <rect width="40" height="40" fill="#e4eaf0"/>
-      <path d="M5 20 Q15 5 25 20 Q35 35 40 15" stroke="#4a7cb0" stroke-width="3" fill="none"/>
-      <path d="M0 30 Q10 15 20 28 Q30 42 40 25" stroke="#b06a4a" stroke-width="2.5" fill="none"/>
-      <circle cx="8" cy="8" r="3" fill="#7cb04a" opacity="0.7"/>
-      <circle cx="32" cy="32" r="4" fill="#b04a7c" opacity="0.6"/>
-    </svg>`,
-  },
-];
-
 const FABRIC_OPTIONS = [
   "cotton",
   "polyester",
@@ -245,6 +156,7 @@ const FABRIC_OPTIONS = [
   "mesh",
   "lace",
   "knit",
+  "ribbed",
   "wool",
   "leather",
   "suede",
@@ -264,10 +176,10 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
   // ── Tops ────────────────────────────────────────────────────────────────────
   tops: {
     fabric_type:   [...FABRIC_OPTIONS],
+    warmth:        ["airy","light","medium","warm","thermal"],
     neckline:      ["crew","round","V-neck","square","scoop","sweetheart","off-shoulder",
                     "halter","high neck","turtleneck","collar","cowl","asymmetrical"],
     sleeve_length: ["sleeveless","cap","short","3/4","long"],
-    sleeve_style:  ["puff","bishop","balloon","bell","raglan","batwing","cold shoulder","flutter"],
     fit:           ["slim","regular","relaxed","loose","oversized","bodycon",
                     "tailored","A-line","fit & flare","wrap"],
     length:        ["crop","regular","longline"],
@@ -284,10 +196,10 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
   // ── Dresses ─────────────────────────────────────────────────────────────────
   dresses: {
     fabric_type:   [...FABRIC_OPTIONS],
+    warmth:        ["airy","light","medium","warm","thermal"],
     neckline:      ["crew","round","V-neck","square","scoop","sweetheart","off-shoulder",
                     "halter","high neck","turtleneck","collar","cowl","asymmetrical"],
     sleeve_length: ["sleeveless","cap","short","3/4","long"],
-    sleeve_style:  ["puff","bishop","balloon","bell","raglan","batwing","cold shoulder","flutter"],
     fit:           ["slim","regular","relaxed","loose","oversized","bodycon",
                     "tailored","A-line","fit & flare","wrap"],
     length:        ["crop","regular","longline","mini","midi","maxi"],
@@ -304,11 +216,11 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
   // ── Jumpsuits / Rompers ───────────────────────────────────────────────────
   jumpsuits: {
     fabric_type:    [...FABRIC_OPTIONS],
+    warmth:         ["airy","light","medium","warm","thermal"],
     jumpsuit_style: ["tailored","utility","romper","playsuit","halter","strapless","boiler","evening","boho","wide-leg","straight-leg","tapered"],
     neckline:       ["crew","round","V-neck","square","scoop","sweetheart","off-shoulder",
                      "halter","high neck","turtleneck","collar","cowl","asymmetrical"],
     sleeve_length:  ["sleeveless","cap","short","3/4","long"],
-    sleeve_style:   ["puff","bishop","balloon","bell","raglan","batwing","cold shoulder","flutter"],
     strap_type:     ["strapless","spaghetti","wide","adjustable","racerback","cross-back","halter"],
     fit:            ["slim","regular","relaxed","loose","oversized","bodycon",
                      "tailored","A-line","fit & flare","wrap","belted"],
@@ -326,9 +238,9 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
   outerwear: {
     outerwear_type:     ["blazer","jacket","coat","trench","cardigan","bomber","puffer","shacket","cape","vest"],
     fabric_type:        [...FABRIC_OPTIONS],
+    warmth:             ["airy","light","medium","warm","thermal"],
     collar_style:       ["notched","shawl","mandarin","spread","stand","funnel","hooded","lapel-free"],
     sleeve_length:      ["sleeveless","cap","short","3/4","long"],
-    sleeve_style:       ["raglan","drop shoulder","set-in","batwing","cuffed","quilted"],
     fit:                ["tailored","slim","regular","relaxed","boxy","oversized"],
     length:             ["cropped","waist","hip","thigh","knee","midi","longline"],
     closure:            ["open front","single-breasted","double-breasted","zip-up","toggle","belted","snap"],
@@ -341,6 +253,7 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
   // ── Bottoms ─────────────────────────────────────────────────────────────────
   bottoms: {
     fabric_type:     [...FABRIC_OPTIONS],
+    warmth:          ["airy","light","medium","warm","thermal"],
     waist_position:  ["high","mid","low","drop","empire"],
     waist_structure: ["elastic","drawstring","belted","paperbag","corset"],
     fit:             ["slim","straight","relaxed","loose","wide-leg","flared"],
@@ -363,15 +276,46 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
     material:    ["leather","suede","canvas","synthetic","fabric"],
     pattern:     ["solid","animal print","textured","colorblock"],
   },
+  // ── Jewelry ────────────────────────────────────────────────────────────────
+  jewelry: {
+    jewelry_type: ["necklace","earrings","bracelet","ring","watch","anklet","brooch","cuff"],
+    metal:        ["gold","silver","rose gold","platinum","mixed metal"],
+    stone:        ["none","pearl","diamond","gemstone","crystal","beaded"],
+    style:        ["delicate","minimal","statement","sculptural","classic","vintage","embellished"],
+    finish:       ["polished","matte","textured","hammered","glossy"],
+    length:       ["choker","short","princess","matinee","opera","long"],
+  },
   // ── Accessories ─────────────────────────────────────────────────────────────
   accessories: {
     accessory_type: ["handbag","tote","clutch","backpack","crossbody","belt",
-                     "scarf","hat","sunglasses","jewelry","watch"],
+                     "scarf","hat","sunglasses"],
     size:           ["mini","small","medium","large","oversized"],
     material:       ["leather","fabric","straw","metal","synthetic"],
     style:          ["structured","slouchy","minimalist","embellished","logo"],
     closure:        ["zipper","magnetic","snap","drawstring"],
     strap_type:     ["top handle","crossbody","shoulder","chain"],
+  },
+  // ── Set (co-ord / two-piece matching sets) ────────────────────────────────
+  set: {
+    fabric_type:    [...FABRIC_OPTIONS],
+    warmth:         ["airy","light","medium","warm","thermal"],
+    top_style:      ["crop","halter","bandeau","off-shoulder","bralette","corset",
+                     "blazer","shirt","camisole","waistcoat","longline"],
+    bottom_style:   ["shorts","mini skirt","midi skirt","maxi skirt","trousers",
+                     "wide-leg trousers","straight trousers","skirt","leggings","flared trousers"],
+    fit:            ["slim","regular","relaxed","oversized","tailored","wrap","bodycon","A-line"],
+    pattern:        ["solid","floral","striped","plaid","abstract","animal print",
+                     "geometric","tie-dye","color-block"],
+  },
+  // ── Swimwear ──────────────────────────────────────────────────────────────
+  swimwear: {
+    swimwear_style:  ["bikini","one-piece","tankini","monokini","swim dress",
+                      "rash guard","swim shorts","boardshorts","bandeau",
+                      "triangle","halter","balconette","sporty"],
+    coverage_level:  ["minimal","moderate","full"],
+    cut:             ["high-leg","cheeky","high-waist","boyshort","brief","thong","string","skirted"],
+    fabric_type:     ["nylon","polyester","spandex","elastane","lycra","recycled nylon",
+                      "ribbed swim knit","textured jacquard","neoprene"],
   },
 };
 
@@ -385,6 +329,7 @@ const CATEGORY_FILTER_OPTIONS = [
   "outerwear",
   "shoes",
   "accessories",
+  "jewelry",
   "set",
   "swimwear",
   "loungewear",
@@ -404,15 +349,6 @@ function mergeDescriptorGroups(...groups: Array<Record<string, string[]>>): Reco
   return merged;
 }
 
-function prefixDescriptorGroups(
-  groups: Record<string, string[]>,
-  prefix: string
-): Record<string, string[]> {
-  return Object.fromEntries(
-    Object.entries(groups).map(([key, values]) => [`${prefix}_${key}`, values])
-  );
-}
-
 function formatDescriptorLabel(key: string): string {
   return key.replace(/_/g, " ");
 }
@@ -420,7 +356,34 @@ function formatDescriptorLabel(key: string): string {
 function getDescriptorGroupLabel(key: string): string {
   if (key.startsWith("top_")) return `Top ${formatDescriptorLabel(key.slice(4))}`;
   if (key.startsWith("bottom_")) return `Bottom ${formatDescriptorLabel(key.slice(7))}`;
+  if (key.startsWith("jewelry_")) return `Jewelry ${formatDescriptorLabel(key.slice(8))}`;
   return formatDescriptorLabel(key);
+}
+
+function normalizeDescriptorToken(value: string): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, " ");
+}
+
+function getDisplayDescriptorValues(descriptors: Record<string, string> = {}): string[] {
+  const seen = new Set<string>();
+  const output: string[] = [];
+
+  for (const value of Object.values(descriptors)) {
+    const trimmed = String(value || "").trim();
+    if (!trimmed) continue;
+    if (trimmed.toLowerCase() === "none") continue;
+
+    const dedupeKey = trimmed.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    output.push(trimmed);
+  }
+
+  return output;
 }
 
 function getDescriptorOptionsForCategory(
@@ -428,38 +391,43 @@ function getDescriptorOptionsForCategory(
   existingDescriptors: Record<string, string> = {}
 ): Record<string, string[]> {
   const catKey = category.toLowerCase().replace(/\s+/g, "");
-  if (catKey === "set") {
-    const merged = mergeDescriptorGroups(
-      prefixDescriptorGroups(CATEGORY_DESCRIPTORS.tops || {}, "top"),
-      prefixDescriptorGroups(CATEGORY_DESCRIPTORS.bottoms || {}, "bottom"),
-      COMMON_DESCRIPTORS
-    );
-
-    for (const [key, value] of Object.entries(existingDescriptors)) {
-      if (!value) continue;
-      merged[key] = Array.from(new Set([...(merged[key] || []), value]));
-    }
-
-    return merged;
-  }
 
   const aliasMap: Record<string, string[]> = {
     loungewear: ["tops", "bottoms"],
-    swimwear: ["tops", "bottoms", "dresses"],
   };
 
   const categoryGroups = aliasMap[catKey]?.length
-    ? aliasMap[catKey].map(key => CATEGORY_DESCRIPTORS[key] || {})
+    ? [CATEGORY_DESCRIPTORS[catKey] || {}, ...aliasMap[catKey].map(key => CATEGORY_DESCRIPTORS[key] || {})]
     : [CATEGORY_DESCRIPTORS[catKey] || {}];
 
   const merged = mergeDescriptorGroups(...categoryGroups, COMMON_DESCRIPTORS);
 
   for (const [key, value] of Object.entries(existingDescriptors)) {
     if (!value) continue;
+    if (!merged[key]) continue;
     merged[key] = Array.from(new Set([...(merged[key] || []), value]));
   }
 
   return merged;
+}
+
+function sanitizeDescriptorsForCategory(
+  category: string,
+  descriptors: Record<string, string> = {}
+): Record<string, string> {
+  const allowed = getDescriptorOptionsForCategory(category, {});
+  const next: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(descriptors)) {
+    if (!value) continue;
+    const options = allowed[key];
+    if (!options) continue;
+    const normalizedValue = normalizeDescriptorToken(value);
+    const matched = options.find((option) => normalizeDescriptorToken(option) === normalizedValue);
+    next[key] = matched ?? value;
+  }
+
+  return next;
 }
 
 function mergeUniqueIds(current: string[], incoming: string[]): string[] {
@@ -478,7 +446,7 @@ function getMediaStatusLabel(item: ClothingItem): string {
   if (item.media_status === "failed") {
     return item.media_error ? `Processing failed: ${item.media_error}` : "Processing failed";
   }
-  if (item.media_status === "pending") return "Queued for processing";
+  if (item.media_status === "pending") return "Processing preview";
   if (item.media_stage === "thumbnail") return "Generating quick preview";
   if (item.media_stage === "cutout") return "Extracting subject";
   return "Processing media";
@@ -486,11 +454,20 @@ function getMediaStatusLabel(item: ClothingItem): string {
 
 function getMediaBadgeLabel(item: ClothingItem): string | null {
   if (item.media_status === "failed") return "Processing failed";
-  if (item.media_status === "pending") return "Queued";
+  if (item.media_status === "pending") return "Processing";
   if (item.media_status === "processing") {
     return item.media_stage === "cutout" ? "Extracting subject" : "Processing";
   }
   return null;
+}
+
+function getFormalityEditLabel(score: number | undefined): string {
+  if (score === undefined || score === null) return "";
+  if (score >= 0.85) return "Black tie";
+  if (score >= 0.65) return "Business formal";
+  if (score >= 0.42) return "Smart casual";
+  if (score >= 0.20) return "Casual";
+  return "Loungewear";
 }
 
 
@@ -528,6 +505,7 @@ export default function WardrobePage() {
   const [duplicate, setDuplicate] = useState<TagPreview["duplicate"]>(null);
   const [editingItem, setEditingItem] = useState<ClothingItem | null>(null);
   const [deletingItem, setDeletingItem] = useState<ClothingItem | null>(null);
+  const [permanentlyDeletingItem, setPermanentlyDeletingItem] = useState<ClothingItem | null>(null);
   const [archiveAfterSave, setArchiveAfterSave] = useState(false);
   const [trackedMediaIds, setTrackedMediaIds] = useState<string[]>([]);
   const [mediaActivity, setMediaActivity] = useState<Record<string, ClothingItem>>({});
@@ -609,7 +587,7 @@ export default function WardrobePage() {
     setTotalCount((prev) => prev + 1);
     const matchesFilters =
       (filterCat === "all" || item.category === filterCat) &&
-      (filterSeason === "all" || item.season === filterSeason || item.season === "all") &&
+      (filterSeason === "all" || item.season === filterSeason) &&
       (filterFormality === "all" || formalityBucket(item.formality_score) === filterFormality);
     if (matchesFilters) {
       setItems((prev) => [item, ...prev]);
@@ -728,7 +706,7 @@ export default function WardrobePage() {
       setAiTags(tags);
       setCorrectedCat(tags.category);
       setCorrectedColor(tags.color);
-      setDescriptors(tags.descriptors || {});
+      setDescriptors(sanitizeDescriptorsForCategory(tags.category, tags.descriptors || {}));
       setDuplicate(tags.duplicate || null);
       setStep("review");
     } catch {
@@ -780,12 +758,27 @@ export default function WardrobePage() {
     } finally { resetWizard(); }
   }
 
-  async function handleCorrect(itemId: string, category: string, color: string, pattern: string, descriptors: Record<string, string>) {
+  async function handleCorrect(
+    itemId: string,
+    category: string,
+    color: string,
+    pattern: string,
+    season: string,
+    formalityLabel: string,
+    descriptors: Record<string, string>
+  ) {
     try {
-      const updated = await correctItem(itemId, { category, color, pattern: pattern || undefined, descriptors: Object.keys(descriptors).length > 0 ? descriptors : undefined });
+      const updated = await correctItem(itemId, {
+        category,
+        color,
+        pattern: pattern || undefined,
+        season: season || undefined,
+        formality_label: formalityLabel || undefined,
+        descriptors: Object.keys(descriptors).length > 0 ? descriptors : undefined,
+      });
       const matchesFilters =
         (filterCat === "all" || updated.category === filterCat) &&
-        (filterSeason === "all" || updated.season === filterSeason || updated.season === "all") &&
+        (filterSeason === "all" || updated.season === filterSeason) &&
         (filterFormality === "all" || formalityBucket(updated.formality_score) === filterFormality);
       setItems(prev => {
         if (!matchesFilters) return prev.filter(i => i.id !== itemId);
@@ -849,6 +842,21 @@ export default function WardrobePage() {
     }
   }
 
+  async function handlePermanentDelete(itemId: string) {
+    try {
+      await purgeArchivedClothingItem(itemId);
+      setDeletedItems(prev => prev.filter(i => i.id !== itemId));
+      toast.success("Item permanently deleted");
+    } catch (err: unknown) {
+      const e = err as { response?: { status?: number } };
+      if (e?.response?.status === 404) {
+        toast.error("Item is no longer in the archive");
+      } else {
+        toast.error("Could not permanently delete item");
+      }
+    }
+  }
+
   const categoryFilters = CATEGORY_FILTER_OPTIONS;
 
   // Helper: map formality_score to the same bucket label used in the filter
@@ -871,6 +879,16 @@ export default function WardrobePage() {
     filterSeason !== "all" ? `Season: ${filterSeason}` : null,
     filterFormality !== "all" ? `Dress code: ${filterFormality}` : null,
   ].filter(Boolean).join(" · ");
+
+  const displayedItems = useMemo(() => {
+    const next = [...items];
+    next.sort((a, b) => {
+      const aStamp = a.media_updated_at || a.created_at || "";
+      const bStamp = b.media_updated_at || b.created_at || "";
+      return bStamp.localeCompare(aStamp);
+    });
+    return next;
+  }, [items]);
 
   function openEditModal(item: ClothingItem) {
     setEditingItem(item);
@@ -978,7 +996,12 @@ export default function WardrobePage() {
               setDuplicate(null);
               handleConfirm();
             }}
-            onKeepBoth={() => setDuplicate(null)}
+            onUnarchiveExisting={async () => {
+              if (!duplicate) return;
+              await handleRestore(duplicate.id);
+              resetWizard();
+            }}
+            onForceAdd={() => setDuplicate(null)}
             onArchiveAfterSaveChange={setArchiveAfterSave}
             onConfirm={handleConfirm}
             onCancel={resetWizard}
@@ -1033,9 +1056,21 @@ export default function WardrobePage() {
                         gap: "6px", padding: "7px 0", borderRadius: "6px",
                         border: "1px solid var(--gold)", background: "transparent",
                         color: "var(--gold)", fontSize: "13px", fontWeight: 500, cursor: "pointer",
+                        marginBottom: "8px",
                       }}
                     >
                       <RotateCcw size={13} /> Restore
+                    </button>
+                    <button
+                      onClick={() => setPermanentlyDeletingItem(item)}
+                      style={{
+                        width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+                        gap: "6px", padding: "7px 0", borderRadius: "6px",
+                        border: "1px solid rgba(220,38,38,0.35)", background: "rgba(220,38,38,0.10)",
+                        color: "#FCA5A5", fontSize: "13px", fontWeight: 500, cursor: "pointer",
+                      }}
+                    >
+                      <Trash2 size={13} /> Delete forever
                     </button>
                   </div>
                 </div>
@@ -1152,7 +1187,7 @@ export default function WardrobePage() {
             ) : (
               <>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "20px" }}>
-                  {items.map((item, index) => (
+                  {displayedItems.map((item, index) => (
                     <ItemCard key={item.id} item={item} priority={index < 4}
                       onEdit={() => openEditModal(item)}
                       onRequestDelete={() => openDeleteDialog(item)}
@@ -1183,8 +1218,8 @@ export default function WardrobePage() {
           tagOptionsLoading={loadingTagOptions}
           onRequestTagOptions={ensureTagOptions}
           onClose={() => setEditingItem(null)}
-          onSave={(cat, color, pattern, nextDescriptors) => {
-            void handleCorrect(editingItem.id, cat, color, pattern, nextDescriptors);
+          onSave={(cat, color, pattern, season, formalityLabel, nextDescriptors) => {
+            void handleCorrect(editingItem.id, cat, color, pattern, season, formalityLabel, nextDescriptors);
             setEditingItem(null);
           }}
         />
@@ -1196,6 +1231,16 @@ export default function WardrobePage() {
           onConfirm={() => {
             void handleDelete(deletingItem.id);
             setDeletingItem(null);
+          }}
+        />
+      )}
+      {permanentlyDeletingItem && (
+        <PermanentDeleteDialog
+          item={permanentlyDeletingItem}
+          onClose={() => setPermanentlyDeletingItem(null)}
+          onConfirm={() => {
+            void handlePermanentDelete(permanentlyDeletingItem.id);
+            setPermanentlyDeletingItem(null);
           }}
         />
       )}
@@ -1375,7 +1420,7 @@ function ReviewPanel({
   descriptors, duplicate,
   seasonWarning, archiveAfterSave,
   onCatChange, onColorChange,
-  onDescriptorChange, onReplaceExisting, onKeepBoth,
+  onDescriptorChange, onReplaceExisting, onUnarchiveExisting, onForceAdd,
   onArchiveAfterSaveChange,
   onConfirm, onCancel,
 }: {
@@ -1394,7 +1439,8 @@ function ReviewPanel({
   archiveAfterSave: boolean;
   onArchiveAfterSaveChange: (value: boolean) => void;
   onReplaceExisting: () => void;
-  onKeepBoth: () => void;
+  onUnarchiveExisting: () => void;
+  onForceAdd: () => void;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -1444,7 +1490,9 @@ function ReviewPanel({
               borderRadius: "8px", padding: "14px", marginBottom: "16px",
             }}>
                 <p className="type-helper" style={{ fontSize: "13px", fontWeight: 600, color: "var(--gold-light)", marginBottom: "12px" }}>
-                  This item looks like a duplicate ({Math.round(duplicate.score * 100)}% similar)
+                  {duplicate.is_archived
+                    ? `This item already exists in Archived (${Math.round(duplicate.score * 100)}% similar)`
+                    : `This item already exists in your wardrobe (${Math.round(duplicate.score * 100)}% similar)`}
                 </p>
 
               {/* Side-by-side comparison */}
@@ -1471,7 +1519,7 @@ function ReviewPanel({
                 <div style={{ textAlign: "center" }}>
                   <p style={{ fontSize: "11px", color: "var(--muted)", marginBottom: "6px",
                     textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>
-                    Existing
+                    {duplicate.is_archived ? "Archived" : "Existing"}
                   </p>
                   <div style={{ width: "100%", aspectRatio: "3/4", position: "relative" }}>
                     <ManagedImage
@@ -1492,17 +1540,18 @@ function ReviewPanel({
 
               {/* Actions */}
               <div style={{ display: "flex", gap: "8px" }}>
-                <button onClick={onReplaceExisting}
+                <button
+                  onClick={duplicate.is_archived ? onUnarchiveExisting : onReplaceExisting}
                   style={{ flex: 1, fontSize: "12px", fontWeight: 600, padding: "7px 12px",
                     borderRadius: "6px", border: "none", background: "var(--gold)",
                     color: "white", cursor: "pointer" }}>
-                  Replace existing
+                  {duplicate.is_archived ? "Unarchive existing" : "Replace existing"}
                 </button>
-                <button onClick={onKeepBoth}
+                <button onClick={onForceAdd}
                   style={{ flex: 1, fontSize: "12px", padding: "7px 12px",
                     borderRadius: "6px", border: "1px solid var(--border)",
                     background: "var(--surface)", color: "var(--muted)", cursor: "pointer" }}>
-                  Keep both
+                  Force add
                 </button>
               </div>
             </div>
@@ -2005,19 +2054,15 @@ function ItemCard({ item, priority = false, onEdit, onRequestDelete }: {
           )}
         </div>
 
-        {item.descriptors && Object.keys(item.descriptors).length > 0 && (
+        {item.descriptors && getDisplayDescriptorValues(item.descriptors as Record<string, string>).length > 0 && (
           <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
-            {Object.entries(item.descriptors as Record<string, string>)
-              .filter(([, val]) => Boolean(val))
-              .map(([key, val], i) => (
+            {getDisplayDescriptorValues(item.descriptors as Record<string, string>).map((val, i) => (
                 <span key={i} style={{
                   fontSize: "10px", padding: "2px 8px", borderRadius: "20px",
                   background: "var(--surface)", border: "1px solid var(--border)",
                   color: "var(--muted)", textTransform: "capitalize",
                 }}>
-                  {key.startsWith("top_") || key.startsWith("bottom_")
-                    ? `${getDescriptorGroupLabel(key)}: ${val}`
-                    : val}
+                  {val}
                 </span>
               ))}
           </div>
@@ -2042,19 +2087,35 @@ function ItemEditModal({
   tagOptionsLoading: boolean;
   onRequestTagOptions: () => Promise<void> | void;
   onClose: () => void;
-  onSave: (cat: string, color: string, pattern: string, descriptors: Record<string, string>) => void;
+  onSave: (
+    cat: string,
+    color: string,
+    pattern: string,
+    season: string,
+    formalityLabel: string,
+    descriptors: Record<string, string>
+  ) => void;
 }) {
   const [editCat, setEditCat] = useState(item.category);
   const [editColor, setEditColor] = useState(item.color || "");
-  const [editPattern, setEditPattern] = useState(item.pattern || "");
-  const [editDescriptors, setEditDescriptors] = useState<Record<string, string>>(item.descriptors || {});
+  const [editSeason, setEditSeason] = useState(item.season || "");
+  const [editFormalityLabel, setEditFormalityLabel] = useState(getFormalityEditLabel(item.formality_score));
+  const [editDescriptors, setEditDescriptors] = useState<Record<string, string>>(
+    sanitizeDescriptorsForCategory(item.category, item.descriptors || {})
+  );
+  const editPattern = item.pattern || "";
 
   useEffect(() => {
     setEditCat(item.category);
     setEditColor(item.color || "");
-    setEditPattern(item.pattern || "");
-    setEditDescriptors(item.descriptors || {});
+    setEditSeason(item.season || "");
+    setEditFormalityLabel(getFormalityEditLabel(item.formality_score));
+    setEditDescriptors(sanitizeDescriptorsForCategory(item.category, item.descriptors || {}));
   }, [item]);
+
+  useEffect(() => {
+    setEditDescriptors((prev) => sanitizeDescriptorsForCategory(editCat, prev));
+  }, [editCat]);
 
   useEffect(() => {
     void onRequestTagOptions();
@@ -2067,6 +2128,12 @@ function ItemEditModal({
   const editCategoryOptions = tagOptions.categories.length > 0
     ? tagOptions.categories
     : [editCat].filter(Boolean);
+  const editSeasonOptions = tagOptions.seasons.length > 0
+    ? tagOptions.seasons
+    : [{ value: editSeason || "all", label: editSeason || "All seasons" }];
+  const editFormalityOptions = tagOptions.formality_levels.length > 0
+    ? tagOptions.formality_levels
+    : [{ label: editFormalityLabel || "Casual", score: 0.3, description: "" }];
 
   return (
     <>
@@ -2111,7 +2178,7 @@ function ItemEditModal({
                   />
                 </div>
                 <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "10px", lineHeight: 1.4 }}>
-                  Reference image for category, colour, and pattern edits.
+                  Reference image for category, colour, and style detail edits.
                 </p>
               </div>
             </div>
@@ -2126,6 +2193,44 @@ function ItemEditModal({
               {tagOptionsLoading && tagOptions.categories.length === 0 && (
                 <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "-14px", marginBottom: "16px" }}>Loading category options…</p>
               )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px", marginBottom: "20px" }}>
+                <div>
+                  <label htmlFor="edit-item-season" style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "6px" }}>Season</label>
+                  <select
+                    id="edit-item-season"
+                    name="edit_item_season"
+                    value={editSeason}
+                    onChange={e => setEditSeason(e.target.value)}
+                    className="input"
+                    style={{ padding: "8px 12px", fontSize: "14px", textTransform: "capitalize" }}
+                  >
+                    {editSeasonOptions.map((option) => (
+                      <option key={option.value} value={option.value} style={{ textTransform: "capitalize" }}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="edit-item-formality" style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "6px" }}>Dress Code</label>
+                  <select
+                    id="edit-item-formality"
+                    name="edit_item_formality"
+                    value={editFormalityLabel}
+                    onChange={e => setEditFormalityLabel(e.target.value)}
+                    className="input"
+                    style={{ padding: "8px 12px", fontSize: "14px" }}
+                  >
+                    {editFormalityOptions.map((option) => (
+                      <option key={option.label} value={option.label}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
               <label htmlFor="edit-item-colour-custom" style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "8px" }}>Colour</label>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
@@ -2147,41 +2252,18 @@ function ItemEditModal({
                 <span style={{ fontSize: "12px", color: "var(--muted)" }}>or pick custom</span>
               </div>
 
-              <label style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "8px" }}>Pattern</label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "20px" }}>
-                {PATTERNS.map(p => (
-                  <button key={p.key} title={p.label} onClick={() => setEditPattern(editPattern === p.key ? "" : p.key)}
-                    style={{ padding: "4px 12px", borderRadius: "20px", fontSize: "12px", cursor: "pointer",
-                      border: editPattern === p.key ? "2px solid var(--charcoal)" : "1px solid var(--border)",
-                      background: editPattern === p.key ? "var(--gold)" : "var(--surface)",
-                      color: editPattern === p.key ? "#0A0908" : "var(--muted)", textTransform: "capitalize" }}>
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-
               {(() => {
                 const allDescriptors = getDescriptorOptionsForCategory(editCat, editDescriptors);
                 if (!Object.keys(allDescriptors).length) return null;
                 return (
                   <div>
-                    <label style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "10px" }}>Style Details</label>
-                    {Object.entries(allDescriptors).map(([key, opts]) => (
-                      <div key={key} style={{ marginBottom: "12px" }}>
-                        <p style={{ fontSize: "11px", color: "var(--muted)", textTransform: "capitalize", marginBottom: "6px" }}>{getDescriptorGroupLabel(key)}</p>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
-                          {(opts as string[]).map(opt => (
-                            <button key={opt} onClick={() => setEditDescriptors(prev => ({ ...prev, [key]: prev[key] === opt ? "" : opt }))}
-                              style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "11px", cursor: "pointer",
-                                border: editDescriptors[key] === opt ? "2px solid var(--charcoal)" : "1px solid var(--border)",
-                                background: editDescriptors[key] === opt ? "var(--gold)" : "var(--surface)",
-                                color: editDescriptors[key] === opt ? "#0A0908" : "var(--muted)", textTransform: "capitalize" }}>
-                              {opt}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+                    <StyleDetailsSection
+                      allDescriptors={allDescriptors}
+                      descriptors={editDescriptors}
+                      onDescriptorChange={(key, val) =>
+                        setEditDescriptors((prev) => ({ ...prev, [key]: val }))
+                      }
+                    />
                   </div>
                 );
               })()}
@@ -2191,7 +2273,7 @@ function ItemEditModal({
 
         <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: "8px", flexShrink: 0, background: "var(--surface)" }}>
           <button
-            onClick={() => onSave(editCat, editColor, editPattern, editDescriptors)}
+            onClick={() => onSave(editCat, editColor, editPattern, editSeason, editFormalityLabel, editDescriptors)}
             className="btn-primary" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <CheckCircle size={14} /> Save
           </button>
@@ -2237,6 +2319,51 @@ function DeleteItemDialog({
             style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: "var(--gold)", color: "#0A0908", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
           >
             Archive
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function PermanentDeleteDialog({
+  item,
+  onClose,
+  onConfirm,
+}: {
+  item: ClothingItem;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000 }}
+      />
+      <div style={{
+        position: "fixed", top: "50%", left: "50%",
+        transform: "translate(-50%, -50%)",
+        zIndex: 1001, background: "var(--surface)", borderRadius: "12px",
+        width: "min(380px, 92vw)", padding: "22px",
+        boxShadow: "0 24px 64px rgba(0,0,0,0.25)",
+      }}>
+        <p style={{ fontWeight: 600, fontSize: "16px", color: "var(--charcoal)", marginBottom: "8px" }}>
+          Delete this archived item forever?
+        </p>
+        <p style={{ color: "var(--muted)", fontSize: "13px", marginBottom: "18px", textTransform: "capitalize" }}>
+          {item.category} · {resolveColorName(item.color || "")}
+        </p>
+        <p style={{ color: "var(--muted)", fontSize: "13px", lineHeight: 1.5, marginBottom: "18px" }}>
+          This will remove the record and associated media permanently. You will not be able to restore it.
+        </p>
+        <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+          <button onClick={onClose} className="btn-secondary">Cancel</button>
+          <button
+            onClick={onConfirm}
+            style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: "#B91C1C", color: "#FFF7ED", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+          >
+            Delete forever
           </button>
         </div>
       </div>

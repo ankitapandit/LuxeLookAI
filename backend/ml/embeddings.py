@@ -31,10 +31,8 @@ def _load_clip():
     if _clip_model is None:
         try:
             from transformers import CLIPModel, CLIPProcessor
-            logger.info("Loading CLIP model from HuggingFace...")
             _clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
             _clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-            logger.info("CLIP model loaded successfully.")
         except Exception as e:
             logger.error(f"Failed to load CLIP model: {e}")
             raise
@@ -89,7 +87,6 @@ def generate_embedding(image_url: str, image_bytes: bytes = None) -> List[float]
     settings = get_settings()
 
     if settings.use_mock_ai:
-        logger.debug(f"[MOCK] Generating embedding for {image_url}")
         return _mock_embedding(image_url)
     else:
         if image_bytes is None:

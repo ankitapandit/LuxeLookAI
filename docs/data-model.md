@@ -1,6 +1,8 @@
 # LuxeLook AI Data Model
 
 This document is the conceptual reference for LuxeLook AI's current product data.
+For the full system view, including access control, activity flow, and architecture diagrams, see:
+- [`/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/docs/system-architecture.md`](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/docs/system-architecture.md)
 
 It is intended to be read alongside:
 - [`/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/schema.sql`](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/schema.sql)
@@ -344,7 +346,7 @@ outfit_suggestions:
 Notes:
 - `card` is a migration-added structured summary used by Event, Archive, and Style Item
 - `item_ids` contains the core garments
-- `accessory_ids` contains attached accessories
+- `accessory_ids` contains attached finishing pieces, including accessories and jewelry
 - rating is combo-level feedback, not per-item feedback
 
 ### 6. `public.style_taxonomy`

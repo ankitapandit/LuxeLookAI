@@ -10,15 +10,13 @@ Switch off by setting USE_MOCK_AUTH=false in .env once Supabase is ready.
 """
 
 from __future__ import annotations
-import logging
 from typing import Any, Dict, List, Optional
-
-logger = logging.getLogger(__name__)
 
 # ── In-memory tables ─────────────────────────────────────────────────────────
 # Each table is a dict of { id -> row_dict }
 _tables: Dict[str, Dict[str, dict]] = {
     "clothing_items":    {},
+    "clothing_tag_feedback": {},
     "events":            {},
     "outfit_suggestions": {},
     "style_catalog":     {},
@@ -41,7 +39,6 @@ def _table(name: str) -> Dict[str, dict]:
 def insert(table: str, row: dict) -> dict:
     """Insert a row. Row must have an 'id' field."""
     _table(table)[row["id"]] = row
-    logger.debug(f"[MockDB] INSERT into {table}: id={row['id']}")
     return row
 
 
@@ -71,7 +68,6 @@ def update(table: str, row_id: str, updates: dict, extra_filters: Optional[Dict[
             if row.get(key) != val:
                 return None
     row.update(updates)
-    logger.debug(f"[MockDB] UPDATE {table} id={row_id}: {updates}")
     return row
 
 
@@ -85,7 +81,6 @@ def delete(table: str, row_id: str, extra_filters: Optional[Dict[str, Any]] = No
             if row.get(key) != val:
                 return False
     del _table(table)[row_id]
-    logger.debug(f"[MockDB] DELETE from {table} id={row_id}")
     return True
 
 
@@ -108,7 +103,6 @@ def soft_delete(table: str, row_id: str, extra_filters: Optional[Dict[str, Any]]
     row["is_archived"]  = True
     row["deleted_at"]   = archived_on
     row["archived_on"]  = archived_on
-    logger.debug(f"[MockDB] SOFT-DELETE from {table} id={row_id}")
     return True
 
 

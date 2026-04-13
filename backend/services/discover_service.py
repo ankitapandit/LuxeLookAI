@@ -10,6 +10,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from httpx import RemoteProtocolError
+
 from config import get_settings
 from services.discover_candidates import (
     build_card_from_candidate,
@@ -22,7 +24,7 @@ from services.style_learning import (
     count_discover_interactions_for_day,
     DAILY_DISCOVER_LIMIT,
     load_ignored_urls,
-    load_style_preferences,
+    load_or_refresh_style_preferences,
 )
 from utils.auth import get_current_user_id  # noqa: F401  # imported for router docs
 
@@ -95,13 +97,23 @@ def build_discover_feed(user_id: str, limit: int = 6, timezone_name: Optional[st
     seed_context = get_discover_seed_context(user_id)
     style_seed = seed_context["style_seed"]
     query = seed_context["seed_query"]
-    ignore_urls = set(load_ignored_urls(user_id))
+    try:
+        ignore_urls = set(load_ignored_urls(user_id))
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        ignore_urls = set(load_ignored_urls(user_id))
     ignored_count = len(ignore_urls)
     warming_up = False
     queued_job_id = None
     cards: List[Dict[str, Any]] = []
 
-    ready_rows = load_ready_discover_candidates(user_id, exclude_urls=ignore_urls)
+    try:
+        ready_rows = load_ready_discover_candidates(user_id, exclude_urls=ignore_urls)
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        ready_rows = load_ready_discover_candidates(user_id, exclude_urls=ignore_urls)
     for row in ready_rows[:limit]:
         card = build_card_from_candidate(row)
         cards.append(card)
@@ -127,10 +139,10 @@ def build_discover_feed(user_id: str, limit: int = 6, timezone_name: Optional[st
         "profile_context": seed_context["profile_context"],
         "cards": cards[:limit],
         "ignored_url_count": ignored_count,
-        "total_interactions": count_discover_interactions(user_id),
-        "daily_interactions": count_discover_interactions_for_day(user_id, timezone_name),
+        "total_interactions": _safe_count_interactions(user_id),
+        "daily_interactions": _safe_count_interactions_today(user_id, timezone_name),
         "daily_limit": DAILY_DISCOVER_LIMIT,
-        "preference_rows": load_style_preferences(user_id),
+        "preference_rows": _safe_load_style_preferences(user_id),
         "style_seed": style_seed,
         "warming_up": warming_up and len(cards) == 0,
         "queued_job_id": queued_job_id,
@@ -150,5 +162,38 @@ def _load_user_profile(user_id: str) -> Dict[str, Any]:
 
     from utils.db import get_supabase
 
-    result = get_supabase().table("users").select("*").eq("id", user_id).single().execute()
-    return result.data or {}
+    try:
+        result = get_supabase().table("users").select("*").eq("id", user_id).single().execute()
+        return result.data or {}
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        result = get_supabase().table("users").select("*").eq("id", user_id).single().execute()
+        return result.data or {}
+
+
+def _safe_count_interactions(user_id: str) -> int:
+    try:
+        return count_discover_interactions(user_id)
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        return count_discover_interactions(user_id)
+
+
+def _safe_count_interactions_today(user_id: str, timezone_name: Optional[str]) -> int:
+    try:
+        return count_discover_interactions_for_day(user_id, timezone_name)
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        return count_discover_interactions_for_day(user_id, timezone_name)
+
+
+def _safe_load_style_preferences(user_id: str) -> List[dict]:
+    try:
+        return load_or_refresh_style_preferences(user_id)
+    except RemoteProtocolError:
+        from utils.db import reset_supabase_client
+        reset_supabase_client()
+        return load_or_refresh_style_preferences(user_id)

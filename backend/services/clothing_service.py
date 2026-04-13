@@ -11,6 +11,7 @@ import base64
 import io
 import logging
 import uuid
+from datetime import datetime, timezone, timedelta
 from collections import deque
 from functools import lru_cache
 from typing import List, Dict, Any, Optional, Literal
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 TABLE = "clothing_items"
 STORAGE_BUCKET = "clothing-images"
 DUPLICATE_THRESHOLD = 0.95
+MEDIA_PROCESSING_TIMEOUT = timedelta(minutes=15)
 
 ITEM_LIST_FIELDS = (
     "id, user_id, category, item_type, accessory_subtype, color, pattern, "
@@ -33,6 +35,72 @@ ITEM_LIST_FIELDS = (
     "media_status, media_stage, media_error, media_updated_at, "
     "is_active, is_archived, archived_on, deleted_at, descriptors, created_at"
 )
+
+
+def _stringify_feedback_value(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _build_correction_feedback_rows(
+    *,
+    existing: Dict[str, Any],
+    corrections: Dict[str, Any],
+    item_id: str,
+    user_id: str,
+) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+
+    tracked_fields = ("category", "color", "season", "formality_score")
+    for field in tracked_fields:
+        if field not in corrections:
+            continue
+        old_value = _stringify_feedback_value(existing.get(field))
+        new_value = _stringify_feedback_value(corrections.get(field))
+        if old_value == new_value or new_value is None:
+            continue
+        rows.append({
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "item_id": item_id,
+            "field_name": field,
+            "old_value": old_value,
+            "new_value": new_value,
+            "item_category_snapshot": existing.get("category"),
+            "item_color_snapshot": existing.get("color"),
+            "item_season_snapshot": existing.get("season"),
+            "item_formality_score_snapshot": existing.get("formality_score"),
+            "item_descriptors_snapshot": existing.get("descriptors") or {},
+            "feedback_source": "user_edit",
+        })
+
+    if "descriptors" in corrections:
+        existing_descriptors = existing.get("descriptors") or {}
+        next_descriptors = corrections.get("descriptors") or {}
+        for key, value in next_descriptors.items():
+            old_value = _stringify_feedback_value(existing_descriptors.get(key))
+            new_value = _stringify_feedback_value(value)
+            if old_value == new_value or new_value is None:
+                continue
+            rows.append({
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "item_id": item_id,
+                "field_name": f"descriptor:{key}",
+                "old_value": old_value,
+                "new_value": new_value,
+                "item_category_snapshot": existing.get("category"),
+                "item_color_snapshot": existing.get("color"),
+                "item_season_snapshot": existing.get("season"),
+                "item_formality_score_snapshot": existing.get("formality_score"),
+                "item_descriptors_snapshot": existing.get("descriptors") or {},
+                "feedback_source": "user_edit",
+            })
+
+    return rows
 
 
 def _make_thumbnail_bytes(image_bytes: bytes, max_size: int = 360) -> bytes:
@@ -216,6 +284,48 @@ def _extract_storage_paths(image_url: str = "", thumbnail_url: str = "", cutout_
     return paths
 
 
+def _hard_delete_item_mock(item_id: str, user_id: str) -> bool:
+    from utils.mock_db_store import select_one, delete as hard_delete
+
+    row = select_one(TABLE, {"id": item_id, "user_id": user_id})
+    if not row or row.get("is_active", True):
+        return False
+    hard_delete(TABLE, item_id, extra_filters={"user_id": user_id})
+    return True
+
+
+def _hard_delete_item_real(item_id: str, user_id: str) -> bool:
+    from utils.db import get_supabase
+
+    db = get_supabase()
+    row = (
+        db.table(TABLE)
+        .select("id, image_url, thumbnail_url, cutout_url, is_active")
+        .eq("id", item_id)
+        .eq("user_id", user_id)
+        .eq("is_active", False)
+        .maybe_single()
+        .execute()
+        .data
+    )
+    if not row:
+        return False
+
+    paths = _extract_storage_paths(
+        row.get("image_url", ""),
+        row.get("thumbnail_url", ""),
+        row.get("cutout_url", ""),
+    )
+    if paths:
+        try:
+            db.storage.from_("clothing-images").remove(paths)
+        except Exception as e:
+            logger.warning("Hard-delete storage cleanup failed for %s: %s", item_id, e)
+
+    db.table(TABLE).delete().eq("id", item_id).eq("user_id", user_id).eq("is_active", False).execute()
+    return True
+
+
 def _media_timestamp() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat()
@@ -299,7 +409,7 @@ def _apply_item_filters_mock(
             return False
         if season:
             item_season = item.get("season")
-            if not item_season or (item_season != season and item_season != "all"):
+            if not item_season or item_season != season:
                 return False
         if formality:
             score = item.get("formality_score")
@@ -473,6 +583,7 @@ def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
 def _get_items_real(user_id: str) -> List[Dict]:
     from utils.db import get_supabase
     db = get_supabase()
+    _reconcile_stale_media_items_real(user_id)
     items = (
         db.table(TABLE)
         .select(ITEM_LIST_FIELDS)
@@ -491,6 +602,7 @@ def _get_items_by_ids_real(user_id: str, item_ids: List[str]) -> List[Dict[str, 
         return []
 
     db = get_supabase()
+    _reconcile_stale_media_items_real(user_id)
     items = (
         db.table(TABLE)
         .select(ITEM_LIST_FIELDS)
@@ -514,6 +626,7 @@ def _get_items_page_real(
     from utils.db import get_supabase
 
     db = get_supabase()
+    _reconcile_stale_media_items_real(user_id)
     query = (
         db.table(TABLE)
         .select(ITEM_LIST_FIELDS)
@@ -530,7 +643,7 @@ def _get_items_page_real(
     if category:
         query = query.eq("category", category)
     if season:
-        query = query.or_(f"season.eq.{season},season.eq.all")
+        query = query.eq("season", season)
     if formality == "Formal":
         query = query.gte("formality_score", 0.75)
     elif formality == "Smart casual":
@@ -774,6 +887,76 @@ def _update_media_status_real(
     db.table(TABLE).update(updates).eq("id", item_id).eq("user_id", user_id).execute()
 
 
+def _parse_media_timestamp(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _execute_supabase_request(factory):
+    from httpx import RemoteProtocolError
+    from utils.db import reset_supabase_client
+
+    last_error: Optional[BaseException] = None
+    for attempt in range(2):
+        try:
+            return factory().execute()
+        except (RemoteProtocolError, KeyError) as exc:
+            last_error = exc
+            reset_supabase_client()
+    if last_error is not None:
+        raise last_error
+    return None
+
+
+def _reconcile_stale_media_items_real(user_id: str) -> int:
+    from utils.db import get_supabase
+
+    result = _execute_supabase_request(lambda: (
+        get_supabase().table(TABLE)
+        .select("id, media_status, media_stage, media_updated_at")
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+        .in_("media_status", ["pending", "processing"])
+    ))
+    rows = (getattr(result, "data", None) or []) if result is not None else []
+
+    if not rows:
+        return 0
+
+    now = datetime.now(timezone.utc)
+    stale_count = 0
+    for row in rows:
+        updated_at = _parse_media_timestamp(row.get("media_updated_at"))
+        if not updated_at:
+            continue
+        if now - updated_at <= MEDIA_PROCESSING_TIMEOUT:
+            continue
+        error = "Media processing timed out — please upload again."
+        _execute_supabase_request(lambda: (
+            get_supabase().table(TABLE).update({
+                "media_status": "failed",
+                "media_stage": "complete",
+                "media_error": error,
+                "media_updated_at": _media_timestamp(),
+            }).eq("id", row["id"]).eq("user_id", user_id)
+        ))
+        stale_count += 1
+    return stale_count
+
+
 def update_media_status(
     item_id: str,
     user_id: str,
@@ -939,6 +1122,14 @@ def delete_item(item_id: str, user_id: str) -> bool:
     return _delete_item_real(item_id, user_id)
 
 
+def delete_archived_item(item_id: str, user_id: str) -> bool:
+    """Permanently delete an item from the archive/trash view."""
+    settings = get_settings()
+    if settings.use_mock_auth:
+        return _hard_delete_item_mock(item_id, user_id)
+    return _hard_delete_item_real(item_id, user_id)
+
+
 def restore_item(item_id: str, user_id: str) -> RestoreResult:
     """
     Attempt to restore a soft-deleted item.
@@ -1032,7 +1223,6 @@ def _purge_old_deleted_real(user_id: str, days: int) -> int:
     # Hard-delete DB rows
     ids = [row["id"] for row in rows]
     db.table(TABLE).delete().in_("id", ids).execute()
-    logger.info("Purged %d items older than %d days for user %s", len(ids), days, user_id)
     return len(ids)
 
 
@@ -1048,7 +1238,7 @@ def correct_item_tags(item_id: str, user_id: str, corrections: Dict) -> Optional
     if "category" in corrections:
         cat = corrections["category"]
         corrections["item_type"] = (
-            "accessory"    if cat == "accessories" else
+            "accessory"    if cat in {"accessories", "jewelry"} else
             "footwear"     if cat == "shoes"       else
             "outerwear"    if cat == "outerwear"   else
             "core_garment"
@@ -1056,20 +1246,42 @@ def correct_item_tags(item_id: str, user_id: str, corrections: Dict) -> Optional
 
     settings = get_settings()
     if settings.use_mock_auth:
-        from utils.mock_db_store import select_one, update as mock_update
+        from utils.mock_db_store import insert_many, select_one, update as mock_update
 
         # Descriptor update: merge incoming keys with existing ones (add or modify)
+        existing = select_one(TABLE, {"id": item_id, "user_id": user_id})
         if "descriptors" in corrections:
-            existing = select_one(TABLE, {"id": item_id, "user_id": user_id})
             if existing:
                 merged = {**existing.get("descriptors", {}), **corrections["descriptors"]}
                 corrections = {**corrections, "descriptors": merged}
 
-        return mock_update(TABLE, item_id, corrections, extra_filters={"user_id": user_id})
+        updated = mock_update(TABLE, item_id, corrections, extra_filters={"user_id": user_id})
+        if updated and existing:
+            feedback_rows = _build_correction_feedback_rows(
+                existing=existing,
+                corrections=corrections,
+                item_id=item_id,
+                user_id=user_id,
+            )
+            if feedback_rows:
+                insert_many("clothing_tag_feedback", feedback_rows)
+        return updated
     else:
         from utils.db import get_supabase
         import json as _json
         db = get_supabase()
+
+        existing = (
+            db.table(TABLE)
+            .select("id, category, color, season, formality_score, descriptors")
+            .eq("id", item_id)
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+            .data
+        )
+        if not existing:
+            return None
 
         # Use SECURITY DEFINER RPC — PostgREST table UPDATE is unreliable for this project.
         # The RPC merges p_descriptors into existing descriptors via JSONB || operator,
@@ -1086,7 +1298,19 @@ def correct_item_tags(item_id: str, user_id: str, corrections: Dict) -> Optional
             "p_descriptors":     _json.dumps(desc) if desc else None,
         }
         result = db.rpc("update_clothing_item_tags", rpc_args).execute()
-        return result.data if result.data else None
+        updated = result.data if result.data else None
+        if not updated:
+            return None
+
+        feedback_rows = _build_correction_feedback_rows(
+            existing=existing,
+            corrections=corrections,
+            item_id=item_id,
+            user_id=user_id,
+        )
+        if feedback_rows:
+            db.table("clothing_tag_feedback").insert(feedback_rows).execute()
+        return updated
 
 
 def find_duplicate(user_id: str, image_bytes: bytes, new_color: Optional[str] = None) -> Optional[dict]:
@@ -1094,14 +1318,16 @@ def find_duplicate(user_id: str, image_bytes: bytes, new_color: Optional[str] = 
     Compare new image embedding against all existing user items.
     Returns the most similar item if similarity >= DUPLICATE_THRESHOLD, else None.
 
-    new_color: the AI-detected colour of the incoming item.  When supplied,
-    candidates whose stored colour differs are skipped — same cut in a
-    different colour is NOT a duplicate (e.g. blue jeans vs black jeans).
+    new_color: the AI-detected colour of the incoming item. When supplied,
+    candidates must be in the same broad colour family to count as duplicates,
+    so nearby shades can still match while clearly different colours remain
+    distinct wardrobe items.
     """
     settings = get_settings()
     if not settings.use_mock_ai:
         from ml.embeddings import generate_embedding, cosine_similarity
         from utils.db import get_supabase
+        from utils.color_utils import same_color_family
         import json
 
         new_embedding = generate_embedding("", image_bytes)
@@ -1109,7 +1335,7 @@ def find_duplicate(user_id: str, image_bytes: bytes, new_color: Optional[str] = 
         # Query embedding vectors directly via rpc/raw — pgvector excluded from select("*")
         db = get_supabase()
         result = db.table("clothing_items").select(
-            "id, category, color, image_url, embedding_vector"
+            "id, category, color, image_url, embedding_vector, is_active, is_archived"
         ).eq("user_id", user_id).execute()
 
         existing = result.data
@@ -1118,11 +1344,6 @@ def find_duplicate(user_id: str, image_bytes: bytes, new_color: Optional[str] = 
         best_score = 0.0
 
         for item in existing:
-            # Skip items that differ in colour — same style in a different
-            # colour is intentionally a distinct wardrobe piece.
-            if new_color and item.get("color") and item["color"].lower() != new_color.lower():
-                continue
-
             ev = item.get("embedding_vector")
             if not ev:
                 continue
@@ -1135,16 +1356,21 @@ def find_duplicate(user_id: str, image_bytes: bytes, new_color: Optional[str] = 
             if not isinstance(ev, list) or len(ev) == 0:
                 continue
             score = cosine_similarity(new_embedding, ev)
-            if score > best_score:
+            color_matches = True
+            if new_color and item.get("color"):
+                color_matches = same_color_family(item.get("color"), new_color)
+            if score >= DUPLICATE_THRESHOLD and color_matches and score > best_score:
                 best_score = score
                 best_match = item
 
-        if best_score >= DUPLICATE_THRESHOLD and best_match:
+        if best_match:
             return {
                 "id": best_match["id"],
                 "category": best_match["category"],
                 "color": best_match.get("color", ""),
                 "image_url": best_match.get("image_url", ""),
+                "is_active": bool(best_match.get("is_active", True)),
+                "is_archived": bool(best_match.get("is_archived", False)),
                 "score": round(best_score, 3),
             }
     return None

@@ -163,15 +163,17 @@ def get_clip_labels() -> Dict[str, List[Tuple[str, str]]]:
         "category":      [("tops", "a photo of..."), ...],
         "season":        [("summer", "..."), ...],
         "accessory_type": [("bag", "..."), ...],
+        "jewelry_type":  [("necklace", "..."), ...],
       }
     """
     from config import get_settings
     if get_settings().use_mock_ai:
-        from ml.tagger import CATEGORY_LABELS, SEASON_LABELS, ACCESSORY_LABELS
+        from ml.tagger import CATEGORY_LABELS, SEASON_LABELS, ACCESSORY_LABELS, JEWELRY_LABELS
         return {
             "category":       CATEGORY_LABELS,
             "season":         SEASON_LABELS,
             "accessory_type": ACCESSORY_LABELS,
+            "jewelry_type":   JEWELRY_LABELS,
         }
 
     try:
@@ -183,29 +185,32 @@ def get_clip_labels() -> Dict[str, List[Tuple[str, str]]]:
             prompt = meta.get("clip_prompt", val)
             out.setdefault(attr, []).append((val, prompt))
         if out:
-            from ml.tagger import CATEGORY_LABELS, SEASON_LABELS, ACCESSORY_LABELS
+            from ml.tagger import CATEGORY_LABELS, SEASON_LABELS, ACCESSORY_LABELS, JEWELRY_LABELS
             return _merge_missing_labels(
                 out,
                 {
                     "category":       CATEGORY_LABELS,
                     "season":         SEASON_LABELS,
                     "accessory_type": ACCESSORY_LABELS,
+                    "jewelry_type":   JEWELRY_LABELS,
                 },
             )
     except Exception as exc:
         logger.warning("taxonomy: clip_label load failed (%s) — using hardcoded fallback", exc)
 
-    from ml.tagger import CATEGORY_LABELS, SEASON_LABELS, ACCESSORY_LABELS
+    from ml.tagger import CATEGORY_LABELS, SEASON_LABELS, ACCESSORY_LABELS, JEWELRY_LABELS
     return _merge_missing_labels(
         {
             "category":       CATEGORY_LABELS,
             "season":         SEASON_LABELS,
             "accessory_type": ACCESSORY_LABELS,
+            "jewelry_type":   JEWELRY_LABELS,
         },
         {
             "category":       CATEGORY_LABELS,
             "season":         SEASON_LABELS,
             "accessory_type": ACCESSORY_LABELS,
+            "jewelry_type":   JEWELRY_LABELS,
         },
     )
 
@@ -290,4 +295,3 @@ def invalidate_cache() -> None:
     get_clip_labels.cache_clear()
     get_body_type_prefs.cache_clear()
     get_event_tokens.cache_clear()
-    logger.info("taxonomy: cache cleared — next call will reload from DB")

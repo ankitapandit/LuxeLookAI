@@ -6,6 +6,10 @@ venv/
 .env
 *.egg-info/
 
+# Kaggle raw datasets (large, not committed — only trend_calendar.json is committed)
+backend/data/styles.csv
+backend/data/*.zip
+
 # Node
 node_modules/
 .next/

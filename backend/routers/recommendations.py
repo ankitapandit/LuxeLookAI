@@ -536,7 +536,7 @@ def _load_user_profile(user_id: str) -> dict:
             from utils.db import get_supabase
             result = (
                 get_supabase().table(PROFILES_TABLE)
-                .select("body_type, height_cm, style_preferences")
+                .select("body_type, height_cm, style_preferences, complexion, face_shape")
                 .eq("id", user_id)
                 .single()
                 .execute()
@@ -546,45 +546,41 @@ def _load_user_profile(user_id: str) -> dict:
         return {}
 
 
-def _style_item_note(anchor_item: dict, event: dict) -> str:
-    """Write a short editorial note around the chosen anchor item."""
-    category = (anchor_item.get("category") or "").lower()
-    color = (anchor_item.get("color") or "").strip()
-    occasion = (event.get("occasion_type") or "occasion").replace("_", " ")
+def _build_style_direction(
+    anchor_item: dict,
+    event: dict,
+    user_profile: dict,
+    wardrobe_items: list,
+) -> dict:
+    """Call LLM to generate editorial outfit options built around the anchor item."""
+    from ml.llm import generate_style_direction
+    return generate_style_direction(
+        anchor_item=anchor_item,
+        event=event,
+        user_profile=user_profile,
+        wardrobe_items=wardrobe_items,
+    )
 
-    labels = {
-        "tops": "top",
-        "bottoms": "bottom",
-        "dresses": "dress",
-        "outerwear": "layer",
-        "shoes": "shoes",
-        "accessories": "accessory",
-        "set": "set",
-        "swimwear": "swim piece",
-        "loungewear": "lounge piece",
-    }
-    label = labels.get(category, category or "piece")
-    color_prefix = f"{color} " if color else ""
 
-    if category == "tops":
-        return f"Build around the {color_prefix}{label} with a clean lower half and one sharp layer for this {occasion}."
-    if category == "bottoms":
-        return f"Let the {color_prefix}{label} lead, then keep the top half refined and balanced for this {occasion}."
-    if category == "dresses":
-        return f"Let the {color_prefix}{label} stay central, then sharpen it with shoes and a layer that suits this {occasion}."
-    if category == "outerwear":
-        return f"Make the {color_prefix}{label} the statement and keep the base simple and proportional for this {occasion}."
-    if category == "shoes":
-        return f"Treat the {color_prefix}{label} as the finish point and keep the rest of the look aligned to this {occasion}."
-    if category == "accessories":
-        return f"Use the {color_prefix}{label} as the signature piece and keep the outfit around it quiet for this {occasion}."
-    if category == "set":
-        return f"Let the {color_prefix}{label} stay intact, then tune the shoes and layer to the energy of this {occasion}."
-    if category == "swimwear":
-        return f"Keep the {color_prefix}{label} as the anchor and add a light layer or cover-up that fits this {occasion}."
-    if category == "loungewear":
-        return f"Build a relaxed, intentional look around the {color_prefix}{label} for this {occasion}."
-    return f"Style the {color_prefix}{label} as the anchor and keep the rest of the look tailored to this {occasion}."
+def _pick_style_direction_anchor(suggestions: list, item_by_id: dict) -> Optional[dict]:
+    if not suggestions:
+        return None
+
+    first = suggestions[0]
+    core_items = [
+        item_by_id.get(str(item_id))
+        for item_id in first.get("item_ids", [])
+    ]
+    core_items = [item for item in core_items if item]
+    if not core_items:
+        return None
+
+    preferred_order = ["dresses", "tops", "set", "outerwear", "bottoms", "shoes"]
+    for category in preferred_order:
+        match = next((item for item in core_items if str(item.get("category")) == category), None)
+        if match:
+            return match
+    return core_items[0]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -676,7 +672,6 @@ def generate_outfits(
         anchor_item_id=str(payload.anchor_item_id) if payload.anchor_item_id else None,
     )
 
-    style_note = _style_item_note(anchor_item, event) if anchor_item else None
     if not suggestions and not anchor_item:
         raise HTTPException(
             status_code=400,
@@ -686,14 +681,14 @@ def generate_outfits(
     if not suggestions and anchor_item:
         coverage_hints = wardrobe_coverage_gaps(items)
         return {
-            "event":          event,
-            "suggestions":    [],
-            "all_seen":       all_seen,
-            "coverage_hints": coverage_hints,
-            "status":         "text_only",
-            "stylist_note":   style_note,
-            "missing_items":  coverage_hints,
-            "anchor_item":    anchor_item,
+            "event":           event,
+            "suggestions":     [],
+            "all_seen":        all_seen,
+            "coverage_hints":  coverage_hints,
+            "status":          "text_only",
+            "style_direction": style_direction,
+            "missing_items":   coverage_hints,
+            "anchor_item":     anchor_item,
         }
 
     existing_combo_ratings = _load_existing_combo_ratings(str(payload.event_id), user_id)
@@ -705,6 +700,12 @@ def generate_outfits(
                 suggestion["user_rating"] = existing_rating
 
     suggestions = _dedupe_suggestions_by_combo(suggestions)
+
+    style_direction_anchor = anchor_item or _pick_style_direction_anchor(suggestions, item_by_id)
+    style_direction = (
+        _build_style_direction(style_direction_anchor, event, user_profile, items)
+        if style_direction_anchor else None
+    )
 
     # ── Step 7-8: persist + return ─────────────────────────────────────────
     # Strip score_breakdown (not a DB column) before persisting.
@@ -720,11 +721,11 @@ def generate_outfits(
         "event":          event,
         "suggestions":    suggestions,
         "all_seen":       all_seen,
-        "coverage_hints": coverage_hints,   # [] when wardrobe is sufficient
-        "status":         "moodboard" if anchor_item else None,
-        "stylist_note":   style_note,
-        "missing_items":  None,
-        "anchor_item":    anchor_item,
+        "coverage_hints":  coverage_hints,   # [] when wardrobe is sufficient
+        "status":          "moodboard" if anchor_item else None,
+        "style_direction": style_direction,
+        "missing_items":   None,
+        "anchor_item":     anchor_item,
     }
 
 
@@ -834,5 +835,16 @@ def get_suggestions(event_id: str, user_id: str = Depends(get_current_user_id)):
             .execute()
             .data
         ) or []
+
+    def _generated_at_key(row: dict):
+        value = row.get("generated_at")
+        if not value:
+            return datetime.min.replace(tzinfo=timezone.utc)
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except Exception:
+            return datetime.min.replace(tzinfo=timezone.utc)
+
+    rows = sorted(rows, key=_generated_at_key, reverse=True)
 
     return _dedupe_suggestions_by_combo(_enrich_suggestions(rows, event, item_by_id))

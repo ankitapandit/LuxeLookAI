@@ -10,13 +10,14 @@ GET    /clothing/tag-options   — return valid category + color values for drop
 """
 
 import json
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, BackgroundTasks
+import threading
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from typing import List, Optional
 
 from services.clothing_service import (
     upload_clothing_item, get_user_items, get_user_items_by_ids, get_user_items_page, get_deleted_items,
-    delete_item, restore_item, correct_item_tags, purge_old_deleted_items,
-    backfill_missing_thumbnails, process_item_media,
+    delete_item, delete_archived_item, restore_item, correct_item_tags, purge_old_deleted_items,
+    backfill_missing_thumbnails, process_item_media, update_media_status,
 )
 from ml.tagger import tag_clothing_item, get_taggable_options
 from utils.auth import get_current_user_id
@@ -83,7 +84,6 @@ async def tag_preview(
 
 @router.post("/upload-item", status_code=201)
 async def upload_item(
-    background_tasks:  BackgroundTasks,
     file:              UploadFile = File(..., description="Clothing image (JPG/PNG)"),
     category:          Optional[str] = Form(None),
     color:             Optional[str] = Form(None),
@@ -136,7 +136,13 @@ async def upload_item(
         filename=file.filename,
         manual_tags=manual_tags or None,
     )
-    background_tasks.add_task(process_item_media, item["id"], user_id, image_bytes)
+    update_media_status(item["id"], user_id, "processing", stage="queued", error=None)
+    threading.Thread(
+        target=process_item_media,
+        args=(item["id"], user_id, image_bytes),
+        daemon=True,
+        name=f"clothing-media-{item['id']}",
+    ).start()
     return item
 
 
@@ -264,6 +270,18 @@ def restore_item_endpoint(item_id: str, user_id: str = Depends(get_current_user_
         )
     # "restored" or "auto_purged" — both are successful outcomes
     return {"status": result, "item_id": item_id}
+
+
+@router.delete("/item/{item_id}/purge", status_code=204)
+def purge_archived_item_endpoint(item_id: str, user_id: str = Depends(get_current_user_id)):
+    """
+    Permanently delete an archived item and its stored media.
+    The item must already be in the archive/trash view.
+    """
+    deleted = delete_archived_item(item_id, user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Item not in archive")
+    return None
 
 
 @router.post("/purge-deleted", response_model=dict)

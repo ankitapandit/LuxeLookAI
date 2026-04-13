@@ -7,7 +7,9 @@ Built with **Next.js · FastAPI · Supabase · CLIP · Pexels · OpenAI**.
 Current user-facing sections are: **Wardrobe · Discover · Event · Archive · Profile**.
 Supporting flows include **Style Item** (`/style-item`) and the dedicated AI profiling photo path inside Profile.
 Legacy frontend URLs `/events` and `/outfits` permanently redirect to `/event` and `/archive`.
-Sessions now restore on refresh, wardrobe uploads show live media-processing status, Discover learns from swipes, and refreshed outfit batches preserve saved ratings while avoiding exact duplicate looks.
+Sessions now restore on refresh, wardrobe uploads show live media-processing status, Discover learns from swipes without wiping learned rails, structured event briefs are stored as JSON + human summaries, and refreshed outfit batches preserve saved ratings while avoiding exact duplicate looks.
+
+For the current system reference, see [`docs/system-architecture.md`](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/docs/system-architecture.md).
 
 ---
 
@@ -184,10 +186,11 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    - AI auto-tags category, color, season, formality
    - GPT-4o Vision identifies style descriptors (neckline, silhouette, fabric etc.)
    - Duplicate detection flags items that are visually identical
+   - If a duplicate already exists, the review flow can now offer to replace the active copy, unarchive the archived copy, or force-add the new upload
    - Wardrobe uploads save immediately, then generate thumbnails / subject cutouts in the background
    - A compact activity tray shows per-item processing status while media is being generated
    - Wardrobe browsing uses infinite scroll and processed previews for better large-closet performance
-   - Supported core categories now include `jumpsuits` as a dedicated category alongside tops, bottoms, dresses, outerwear, shoes, accessories, sets, swimwear, and loungewear
+   - Supported core categories now include `jumpsuits` and a separate `jewelry` category alongside tops, bottoms, dresses, outerwear, shoes, accessories, sets, swimwear, and loungewear
 3. **Set up your profile** — body type, height, weight, complexion, face shape
    - Body type calculator from bust/waist/hip measurements
    - Complexion identifier from 3 questions
@@ -198,18 +201,20 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    - Candidate images are cached, filtered to single-person looks, and analyzed before being shown
    - `like`, `love`, and `dislike` interactions build learned preference rows over time
    - Daily swipe pacing is enforced on the user’s local day while timestamps remain stored in UTC
-5. **Create an event** — type e.g. _"Dinner party Friday evening, smart casual"_
-   - Click **Generate Outfit Suggestions** — occasion is parsed silently on the backend,
-     outfit generation begins immediately with no intermediate step
-6. **Get outfit suggestions** — AI builds complete looks across 7 outfit templates
+5. **Create an event** — fill the structured occasion brief (dress code, venue, weather, mood, audience, notes)
+   - The backend stores both a structured `raw_text_json` payload and a clean human-readable summary
+   - Occasion parsing uses the structured brief as prompt context, which improves edge cases such as beach BBQ vs. beach wedding
+   - If you choose `Other`, the UI keeps and displays your custom text directly instead of reverting to a generic placeholder label
+6. **Get outfit suggestions** — AI builds complete looks across 8 outfit templates
    (top+bottom+shoes, top+bottom+outerwear+shoes, dress+shoes, dress+outerwear+shoes,
-   set+shoes, set+outerwear+shoes, swimwear+shoes).
+   set+shoes, set+outerwear+shoes, swimwear+shoes, swimwear+outerwear+shoes).
    If the wardrobe is missing item types needed to unlock some templates, an
    **"Unlock more looks"** banner shows actionable hints below the suggestions. If
    a look reappears after refresh, its saved stars are preserved and shown again
    instead of resetting to unrated.
 7. **Style a specific item** — from the wardrobe, go to **Style Item** to build looks around one selected piece
-   - complete wardrobe-only outfits reuse the standard suggestion cards
+   - complete wardrobe-only outfits reuse the standard suggestion cards and the same structured brief editor as Event
+   - the same custom `Other` behavior carries across, so bespoke occasion details stay visible as entered
    - incomplete wardrobes fall back to editorial styling guidance and missing-piece direction
 8. **Rate outfits** — 1–5 stars to improve future suggestions
 9. **Regenerate** — "Show me more" for a neutral refresh; "None of these work" to
@@ -261,7 +266,7 @@ Full interactive docs at [http://localhost:8000/docs](http://localhost:8000/docs
 | POST | `/clothing/purge-deleted` | Hard-delete trash items older than 90 days |
 | POST | `/clothing/backfill-thumbnails` | Generate thumbnails / cutouts for older active wardrobe items missing them |
 | GET | `/clothing/tag-options` | Valid categories, colors for dropdowns |
-| POST | `/event/create-event` | Parse event text |
+| POST | `/event/create-event` | Create an event from the structured brief and readable summary |
 | GET | `/event/list` | List all user events |
 | POST | `/recommend/generate-outfits` | Generate outfit suggestions, preserving existing ratings for repeated combos |
 | GET | `/recommend/suggestions/{event_id}` | Fetch saved suggestions (de-duped by outfit combo) |
@@ -292,11 +297,12 @@ All routes except `/auth/*` require `Authorization: Bearer <token>` header.
 | **dresses** | Dresses | Core (full body — templates C, D) |
 | **jumpsuits** | Jumpsuits, rompers, playsuits | Core (full body styling piece) |
 | **set** | Co-ord two-pieces (matching top + bottom sold together) | Core (full look — templates E, F) |
-| **swimwear** | Bikinis, one-pieces, tankinis, monokinis, swim dresses | Core (beach/resort — template G) |
+| **swimwear** | Bikinis, one-pieces, tankinis, monokinis, swim dresses | Core (beach/resort — templates G, H) |
 | **loungewear** | Hoodies, joggers, pajama sets, robes, shorts sets | Casual/home only |
 | **outerwear** | Coats, jackets, blazers, cardigans | Layering (templates B, D, F) |
 | **shoes** | Heels, sneakers, boots, sandals, flats | Required in all templates |
-| **accessories** | Handbags, belts, scarves, hats, jewelry | Attached after core scoring (up to 2) |
+| **accessories** | Handbags, belts, scarves, hats | Attached after core scoring (up to 2) |
+| **jewelry** | Necklaces, earrings, bracelets, rings, watches, anklets, brooches, cuffs | Attached after core scoring (up to 2) |
 
 Each category has a dedicated descriptor vocabulary extracted at upload time by GPT-4o Vision
 and used for body-type matching and scoring. Descriptors can be edited per-item after upload
@@ -308,9 +314,9 @@ New uploads generate thumbnails automatically, and older items can be upgraded t
 
 | Category | Descriptor highlights |
 |---|---|
-| tops / bottoms / dresses | fabric, fit, neckline, sleeve length/style, strap type, back style, waist, hemline, pattern, detailing |
-| **set** | All of the above combined — top-half + bottom-half described together |
-| **swimwear** | Swimwear type, top style, support, structure, function, fit intent, bottom rise, back coverage, bottom fit style, bottom visibility |
+| tops / bottoms / dresses | fabric, warmth, fit, neckline, sleeve length, strap type, back style, waist, hemline, pattern, detailing |
+| **set** | fabric type, warmth, top style, bottom style, fit, pattern |
+| **swimwear** | swimwear style, coverage level, cut, swim-specific fabric type |
 | **loungewear** | Loungewear type, fabric, neckline, sleeve length, strap type, support, structure, waist structure, bottom length |
 | outerwear / shoes / accessories | Category-specific vocabularies |
 
@@ -330,7 +336,7 @@ Score(u, e, o) = 0.28·C + 0.24·A + 0.22·P + 0.10·T + 0.08·N + 0.05·D − 0
 | **C** | Compatibility | 0.28 | How well items work together as a look |
 | **A** | Appropriateness | 0.24 | How suitable the outfit is for the event |
 | **P** | Preference | 0.22 | Alignment with the user's personal style |
-| **T** | Trend | 0.10 | Trend relevance *(neutral 0.50 placeholder — pipeline v2.1)* |
+| **T** | Trend | 0.10 | Trend relevance blended from seasonal calendar signals and predicted outfit attributes |
 | **N** | Novelty | 0.08 | Freshness vs. recently shown outfit history |
 | **D** | Diversity | 0.05 | Completeness bonus for covering expected outfit slots |
 | **R** | Risk | 0.03 | Dress-code / confidence penalty (subtracted) |
@@ -419,6 +425,7 @@ Tolerance band = 0.25 (scores 1.0 within the band, decays linearly outside).
 - Athletic/loungewear (formality < 0.25) at formal events (wedding, gala, cocktail, black-tie, interview) → `× 0.55`
 - Swimwear outside beach/pool context → `× 0.30`
 - Loungewear at formal events or occasion formality > 0.55 → `× 0.40`
+- Beach / pool / resort context now also boosts swimwear, lighter fabrics, and beach-appropriate shoes while penalizing denim, heavy fabrics, closed-toe shoes, and overly structured silhouettes.
 
 ---
 
@@ -490,6 +497,12 @@ Penalty subtracted from the composite score (capped at 0.50):
 | Over-dressed (formality > 0.90) at casual occasion | +0.12 |
 | No descriptors and no color data | +0.04 |
 
+Beach-specific penalties also apply when the venue indicates beach / pool / resort:
+- Denim at the beach → `+0.12`
+- Heavy fabrics (leather, suede, wool) at the beach → `+0.10`
+- Closed-toe shoes at the beach → `+0.10`
+- Formal / structured silhouettes at the beach → `+0.15`
+
 ---
 
 ### Outfit Templates
@@ -507,9 +520,10 @@ remaining slots from the overflow pool:
 | E | set → shoes |
 | F | set → outerwear → shoes |
 | G | swimwear → shoes |
+| H | swimwear → outerwear → shoes |
 
 A **set** (co-ord two-piece) fills the top+bottom slot as a single item.
-Template G surfaces only when the occasion scores well for beach/pool context.
+Templates G and H surface only when the occasion scores well for beach / pool / resort context.
 
 Accessories (bags, belts, scarves etc.) are scored and attached after core
 outfit scoring — up to 2 per outfit, deduplicated by subtype (no two bags).
@@ -599,8 +613,15 @@ Run in order:
 1. `backend/schema.sql` — base tables, pgvector extension, RLS policies
 2. `backend/supabase_migrations.sql` — all migrations by version
 
-Key tables: `users`, `clothing_items`, `events`, `outfit_suggestions`, `outfit_feedback`
+Key tables: `users`, `clothing_items`, `events`, `outfit_suggestions`, `discover_candidates`, `discover_style_interactions`, `user_style_preferences`, `style_catalog`, `style_taxonomy`, `clothing_tag_feedback`
 Storage buckets: `clothing-images` (private), `profile-photos` (public)
+
+`events.raw_text_json` stores the structured event brief payload, while `events.raw_text`
+stores the readable summary used in archive displays and prompt context.
+
+`style_catalog` is the canonical Discover style vocabulary and can now be seeded from the
+same fallback catalog the app uses in code. `clothing_tag_feedback` stores user corrections
+to AI-assigned wardrobe fields together with a snapshot of the item context at correction time.
 
 ### SECURITY DEFINER helpers (v1.9.4)
 
@@ -633,7 +654,7 @@ After running the migration, reload the PostgREST schema cache: `NOTIFY pgrst, '
 
 **Item delete / update has no effect on the DB** — This project requires `SECURITY DEFINER` RPC functions for all clothing item writes (see Supabase Schema section). Run the v1.9.4 migration block from `supabase_migrations.sql` in the Supabase SQL editor, then run `NOTIFY pgrst, 'reload schema';`.
 
-**"No clothing items found"** — Upload at least a top + bottom + shoes, a dress + shoes, or a co-ord set + shoes before generating outfits. Adding outerwear unlocks layered templates; adding swimwear unlocks the beach/resort template. Once you have items, an **"Unlock more looks"** nudge appears after generation to guide you toward filling gaps.
+**"No clothing items found"** — Upload at least a top + bottom + shoes, a dress + shoes, or a co-ord set + shoes before generating outfits. Adding outerwear unlocks layered templates; adding swimwear unlocks the beach/resort templates. Once you have items, an **"Unlock more looks"** nudge appears after generation to guide you toward filling gaps.
 
 **Deleted an item by accident?** — Items are soft-deleted (moved to Trash, not permanently removed). Open the Trash via the button in the Wardrobe header and click **Restore** to bring an item back. If you've since uploaded a newer version of the same item, the old trash copy is auto-purged on restore attempt. Items in trash for 90+ days are permanently removed by the auto-purge cron (see `supabase_migrations.sql` for setup options).
 

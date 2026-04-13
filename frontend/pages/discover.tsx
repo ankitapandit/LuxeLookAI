@@ -1,11 +1,11 @@
 /**
  * pages/discover.tsx — Discover / The Edit
  *
- * A Google-backed fashion swipe feed that learns from like/love/dislike
+ * A Pexels-backed fashion swipe feed that learns from like/love/dislike
  * interactions and keeps a per-user ignore list so results do not repeat.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Head from "next/head";
 import Image from "next/image";
 import Link from "next/link";
@@ -15,13 +15,15 @@ import {
   DiscoverFeedResponse,
   DiscoverInteractionRequest,
   DiscoverPreferenceRow,
+  getProfile,
   getDiscoverJobStatus,
   getDiscoverFeed,
   getDiscoverStatus,
   recordDiscoverInteraction,
   recomputeDiscoverPreferences,
+  UserProfile,
 } from "@/services/api";
-import { ArrowRight, Heart, RefreshCw, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Heart, RefreshCw, Sparkles, ThumbsDown, ThumbsUp, User } from "lucide-react";
 import toast from "react-hot-toast";
 
 const DISCOVER_STATUS_POLL_MS = 60000;
@@ -42,6 +44,27 @@ function shouldBypassImageOptimization(src: string): boolean {
 
 function getCardImage(card: DiscoverCard): string {
   return card.display_image_url || card.thumbnail_url || card.image_url;
+}
+
+function getClientDayKey(): string {
+  const timezone = typeof window !== "undefined"
+    ? Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+    : "UTC";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const getPart = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || "";
+  return `${getPart("year")}-${getPart("month")}-${getPart("day")}`;
+}
+
+function getProfileGap(profile: UserProfile | null): string[] {
+  if (!profile) return ["profile details"];
+  const gaps: string[] = [];
+  if (!profile.complexion) gaps.push("complexion");
+  return gaps;
 }
 
 function PreferenceRail({
@@ -184,7 +207,7 @@ function StackPreview({
   }
 
   return (
-    <div style={{ position: "relative", minHeight: "clamp(540px, 78svh, 820px)" }}>
+    <div style={{ position: "relative" }}>
       {third ? (
         <div
           style={{
@@ -240,14 +263,14 @@ function StackPreview({
           onTouchEnd={handleTouchEnd}
           onTouchCancel={resetDrag}
         >
-          <div style={{ position: "relative", aspectRatio: "4 / 5", minHeight: "clamp(420px, 58svh, 620px)", background: "#1B1510" }}>
+          <div style={{ position: "relative", height: "clamp(280px, 42svh, 420px)", background: "#1B1510" }}>
             <Image
               src={getCardImage(topCard)}
               alt={topCard.title}
               fill
               unoptimized={shouldBypassImageOptimization(getCardImage(topCard))}
               sizes="(max-width: 1100px) 92vw, 600px"
-              style={{ objectFit: "cover" }}
+              style={{ objectFit: "contain" }}
             />
             <div
               style={{
@@ -256,14 +279,6 @@ function StackPreview({
                 background: "linear-gradient(180deg, rgba(13,10,8,0.06) 0%, rgba(13,10,8,0.16) 44%, rgba(13,10,8,0.82) 100%)",
               }}
             />
-            <div style={{ position: "absolute", left: "18px", right: "18px", top: "18px", display: "flex", justifyContent: "space-between", gap: "12px" }}>
-              <span className="type-chip" style={{ background: "rgba(17,15,12,0.74)", color: "#FFF7ED", border: "1px solid rgba(212,169,106,0.18)" }}>
-                Editorial result
-              </span>
-              <span className="type-chip" style={{ background: "rgba(17,15,12,0.74)", color: "#FFF7ED", border: "1px solid rgba(212,169,106,0.18)" }}>
-                Single person
-              </span>
-            </div>
             {actionPreview ? (
               <div
                 style={{
@@ -289,30 +304,15 @@ function StackPreview({
                 {actionPreview === "dislike" ? "Pass" : actionPreview === "love" ? "Love" : "Like"}
               </div>
             ) : null}
-            <div style={{ position: "absolute", left: "18px", right: "18px", bottom: "18px" }}>
+            <div style={{ position: "absolute", left: 0, right: 0, bottom: "18px", textAlign: "center" }}>
               <p className="type-kicker" style={{ margin: 0, fontSize: "11px", letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,247,237,0.70)" }}>
                 The Edit
-              </p>
-              <h2
-                style={{
-                  margin: "8px 0 0",
-                  fontFamily: "Playfair Display, serif",
-                  fontSize: "clamp(34px, 4vw, 46px)",
-                  lineHeight: 0.96,
-                  color: "#FFF7ED",
-                  maxWidth: "12ch",
-                }}
-              >
-                {topCard.title}
-              </h2>
-              <p style={{ margin: "10px 0 0", color: "rgba(255,247,237,0.76)", fontSize: "14px", lineHeight: 1.6, maxWidth: "34rem" }}>
-                {topCard.summary}
               </p>
             </div>
           </div>
 
-          <div style={{ padding: "18px" }}>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+          <div style={{ padding: "18px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center" }}>
               {topCard.style_tags.slice(0, 6).map((tag) => (
                 <span
                   key={tag}
@@ -328,41 +328,41 @@ function StackPreview({
               ))}
             </div>
 
-            <div style={{ marginTop: "18px", display: "grid", gap: "10px" }}>
-              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <div style={{ marginTop: "18px", display: "grid", gap: "10px", width: "100%" }}>
+              <div style={{ display: "flex", gap: "10px" }}>
                 <button
                   className="btn-secondary"
-                  style={{ minWidth: "140px", color: "#F2D8B2", borderColor: "rgba(212,169,106,0.16)", ...disabledButtonStyle }}
+                  style={{ flex: "1 1 0", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "#F2D8B2", borderColor: "rgba(212,169,106,0.16)", ...disabledButtonStyle }}
                   aria-label="Dislike this look"
                   onClick={() => onAction("dislike")}
                   disabled={buttonDisabled}
                 >
-                  <ThumbsDown size={16} style={{ marginRight: "8px", verticalAlign: "middle" }} />
+                  <ThumbsDown size={16} />
                   Dislike
                 </button>
                 <button
                   className="btn-secondary"
-                  style={{ minWidth: "140px", color: "#F2D8B2", borderColor: "rgba(212,169,106,0.16)", ...disabledButtonStyle }}
+                  style={{ flex: "1 1 0", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "#F2D8B2", borderColor: "rgba(212,169,106,0.16)", ...disabledButtonStyle }}
                   aria-label="Like this look"
                   onClick={() => onAction("like")}
                   disabled={buttonDisabled}
                 >
-                  <ThumbsUp size={16} style={{ marginRight: "8px", verticalAlign: "middle" }} />
+                  <ThumbsUp size={16} />
                   Like
                 </button>
                 <button
                   className="btn-secondary"
-                  style={{ minWidth: "140px", color: "#F2D8B2", borderColor: "rgba(212,169,106,0.16)", ...disabledButtonStyle }}
+                  style={{ flex: "1 1 0", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "#F2D8B2", borderColor: "rgba(212,169,106,0.16)", ...disabledButtonStyle }}
                   aria-label="Love this look"
                   onClick={() => onAction("love")}
                   disabled={buttonDisabled}
                 >
-                  <Heart size={16} style={{ marginRight: "8px", verticalAlign: "middle" }} />
+                  <Heart size={16} />
                   Love
                 </button>
               </div>
 
-              <p style={{ margin: 0, color: actionsDisabled ? "#F2D8B2" : "rgba(255,247,237,0.66)", fontSize: "12px", lineHeight: 1.6 }}>
+              <p style={{ margin: 0, color: actionsDisabled ? "#F2D8B2" : "rgba(255,247,237,0.66)", fontSize: "12px", lineHeight: 1.6, textAlign: "center" }}>
                 {actionsDisabled
                   ? disabledMessage || "You have reached your daily quota, please come back tomorrow for more inspiring ideas."
                   : "Every 10 interactions, the feed sharpens your style profile. The ignore list updates immediately so the same links do not circle back."}
@@ -376,7 +376,7 @@ function StackPreview({
             borderRadius: "34px",
             border: "1px solid rgba(255,255,255,0.08)",
             background: "linear-gradient(180deg, rgba(33,27,22,0.92), rgba(17,13,11,0.98))",
-            minHeight: "clamp(520px, 72svh, 760px)",
+            minHeight: "clamp(440px, 60svh, 680px)",
             display: "grid",
             placeItems: "center",
             textAlign: "center",
@@ -411,6 +411,9 @@ function StackPreview({
 }
 
 export default function DiscoverPage() {
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileLocked, setProfileLocked] = useState(false);
+  const [profileGap, setProfileGap] = useState<string[]>([]);
   const [feed, setFeed] = useState<DiscoverCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -427,39 +430,68 @@ export default function DiscoverPage() {
   const seenUrls = useRef<Set<string>>(new Set());
   const warmPollAttempts = useRef(0);
   const refreshPollAttempts = useRef(0);
+  const dailyCountDayKeyRef = useRef<string>(getClientDayKey());
+  const dailyCountMaxRef = useRef<number>(0);
 
   const currentCard = feed[0] || null;
+  const profileUnlocked = !profileLocked && !profileLoading;
   const nextMilestone = interactionCount <= 0 ? 10 : Math.ceil(interactionCount / 10) * 10;
   const milestoneStepCount = 10;
   const completedSteps = interactionCount > 0 && interactionCount % 10 === 0 ? 10 : interactionCount % 10;
   const dailyQuotaReached = dailyInteractions >= dailyLimit;
   const dailyQuotaMessage = "You have reached your daily quota, please come back tomorrow for more inspiring ideas.";
 
-  function syncFeedMeta(response: DiscoverFeedResponse) {
+  const syncDailyInteractions = useCallback((nextCount: number): void => {
+    const todayKey = getClientDayKey();
+    if (dailyCountDayKeyRef.current !== todayKey) {
+      dailyCountDayKeyRef.current = todayKey;
+      dailyCountMaxRef.current = 0;
+    }
+    const safeCount = Math.max(0, Math.floor(nextCount || 0));
+    dailyCountMaxRef.current = Math.max(dailyCountMaxRef.current, safeCount);
+    setDailyInteractions(dailyCountMaxRef.current);
+  }, []);
+
+  const syncFeedMeta = useCallback((response: DiscoverFeedResponse) => {
     setIgnoredCount(response.ignored_url_count);
     setInteractionCount(response.total_interactions || 0);
-    setDailyInteractions(response.daily_interactions || 0);
+    syncDailyInteractions(response.daily_interactions ?? 0);
     setDailyLimit(response.daily_limit || 10);
-    setPreferences(response.preference_rows || []);
+    // Only overwrite preferences when the server actually has data — avoids
+    // wiping locally-committed preference updates with a stale empty array.
+    if (response.preference_rows && response.preference_rows.length > 0) {
+      setPreferences(response.preference_rows);
+    }
     setWarmingUp(Boolean(response.warming_up));
     setWarmingJobId(response.queued_job_id || null);
-  }
+  }, [syncDailyInteractions]);
 
   useEffect(() => {
     let active = true;
 
-    async function loadFeed(initial: boolean = true) {
-      if (initial) setLoading(true);
-      else setLoadingMore(true);
-
+    async function loadProfileThenFeed() {
+      setProfileLoading(true);
+      setLoading(true);
       try {
-        const response = await getDiscoverFeed(initial ? 6 : 4);
+        const currentProfile = await getProfile();
+        if (!active) return;
+        const gaps = getProfileGap(currentProfile);
+        setProfileGap(gaps);
+        const locked = gaps.length > 0;
+        setProfileLocked(locked);
+        if (locked) {
+          setFeed([]);
+          return;
+        }
+
+        setProfileLocked(false);
+        const response = await getDiscoverFeed(6);
         if (!active) return;
         const status = await getDiscoverStatus();
         if (!active) return;
         syncFeedMeta(response);
         setInteractionCount(status.total_interactions || response.total_interactions || 0);
-        setDailyInteractions(status.daily_interactions || response.daily_interactions || 0);
+        syncDailyInteractions(status.daily_interactions ?? response.daily_interactions ?? 0);
         setDailyLimit(status.daily_limit || response.daily_limit || 10);
 
         const incoming = response.cards.filter((card) => {
@@ -468,22 +500,23 @@ export default function DiscoverPage() {
           return true;
         });
 
-        setFeed((prev) => (initial ? incoming : [...prev, ...incoming]));
+        setFeed(incoming);
       } catch {
-        toast.error("Could not load Discover");
+        if (active) toast.error("Could not load Discover");
       } finally {
         if (active) {
           setLoading(false);
           setLoadingMore(false);
+          setProfileLoading(false);
         }
       }
     }
 
-    void loadFeed(true);
+    void loadProfileThenFeed();
     return () => {
       active = false;
     };
-  }, []);
+  }, [syncDailyInteractions, syncFeedMeta]);
 
   useEffect(() => {
     let active = true;
@@ -493,9 +526,11 @@ export default function DiscoverPage() {
         const status = await getDiscoverStatus();
         if (!active) return;
         setInteractionCount(status.total_interactions || 0);
-        setDailyInteractions(status.daily_interactions || 0);
+        syncDailyInteractions(status.daily_interactions ?? 0);
         setDailyLimit(status.daily_limit || 10);
-        setPreferences(status.preference_rows || []);
+        if (status.preference_rows && status.preference_rows.length > 0) {
+          setPreferences(status.preference_rows);
+        }
       } catch {
         // Keep status quiet if the endpoint is temporarily unavailable.
       }
@@ -511,9 +546,10 @@ export default function DiscoverPage() {
       active = false;
       window.clearInterval(intervalId);
     };
-  }, [feed.length, refreshingPreferences, warmingUp]);
+  }, [feed.length, profileUnlocked, refreshingPreferences, syncDailyInteractions, warmingUp]);
 
   useEffect(() => {
+    if (!profileUnlocked) return;
     if (loading || !warmingUp || !warmingJobId) {
       warmPollAttempts.current = 0;
       return;
@@ -531,7 +567,7 @@ export default function DiscoverPage() {
           const status = await getDiscoverStatus();
           syncFeedMeta(response);
           setInteractionCount(status.total_interactions || response.total_interactions || 0);
-          setDailyInteractions(status.daily_interactions || response.daily_interactions || 0);
+          syncDailyInteractions(status.daily_interactions ?? response.daily_interactions ?? 0);
           setDailyLimit(status.daily_limit || response.daily_limit || 10);
 
           const incoming = response.cards.filter((card) => {
@@ -553,7 +589,7 @@ export default function DiscoverPage() {
           setWarmingUp(false);
           setWarmingJobId(null);
           const status = await getDiscoverStatus();
-          setDailyInteractions(status.daily_interactions || 0);
+          syncDailyInteractions(status.daily_interactions ?? 0);
           setDailyLimit(status.daily_limit || 10);
           setPreferences(status.preference_rows || []);
           toast.error("Could not prepare fresh edits");
@@ -566,9 +602,10 @@ export default function DiscoverPage() {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [feed.length, loading, warmingJobId, warmingUp]);
+  }, [feed.length, loading, profileUnlocked, syncDailyInteractions, syncFeedMeta, warmingJobId, warmingUp]);
 
   useEffect(() => {
+    if (!profileUnlocked) return;
     if (!refreshJobId) {
       refreshPollAttempts.current = 0;
       setRefreshingPreferences(false);
@@ -586,7 +623,7 @@ export default function DiscoverPage() {
         if (job.status === "succeeded") {
           const status = await getDiscoverStatus();
           setInteractionCount(status.total_interactions || 0);
-          setDailyInteractions(status.daily_interactions || 0);
+          syncDailyInteractions(status.daily_interactions ?? 0);
           setDailyLimit(status.daily_limit || 10);
           setPreferences(status.preference_rows || []);
           setRefreshJobId(null);
@@ -595,7 +632,7 @@ export default function DiscoverPage() {
           toast.success("Taste profile updated from your latest swipes");
         } else if (job.status === "failed") {
           const status = await getDiscoverStatus();
-          setDailyInteractions(status.daily_interactions || 0);
+          syncDailyInteractions(status.daily_interactions ?? 0);
           setDailyLimit(status.daily_limit || 10);
           setPreferences(status.preference_rows || []);
           setRefreshJobId(null);
@@ -612,17 +649,17 @@ export default function DiscoverPage() {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [refreshJobId]);
+  }, [profileUnlocked, refreshJobId, syncDailyInteractions]);
 
   async function topUpFeed() {
-    if (loadingMore) return;
+    if (loadingMore || !profileUnlocked) return;
     setLoadingMore(true);
     try {
       const response = await getDiscoverFeed(4);
       const status = await getDiscoverStatus();
       syncFeedMeta(response);
       setInteractionCount(status.total_interactions || response.total_interactions || 0);
-      setDailyInteractions(status.daily_interactions || response.daily_interactions || 0);
+      syncDailyInteractions(status.daily_interactions ?? response.daily_interactions ?? 0);
       setDailyLimit(status.daily_limit || response.daily_limit || 10);
       const incoming = response.cards.filter((card) => {
         if (seenUrls.current.has(card.normalized_url)) return false;
@@ -640,7 +677,7 @@ export default function DiscoverPage() {
   }
 
   async function handleAction(action: "love" | "like" | "dislike") {
-    if (!currentCard || activeAction || dailyQuotaReached) return;
+    if (!currentCard || activeAction || dailyQuotaReached || !profileUnlocked) return;
     const shouldTopUp = feed.length <= 4;
     const nextInteractionCount = interactionCount + 1;
     setActiveAction(action);
@@ -676,7 +713,7 @@ export default function DiscoverPage() {
       setTimeout(() => {
         setFeed((prev) => prev.slice(1));
         setInteractionCount(response.total_interactions || nextInteractionCount);
-        setDailyInteractions(response.daily_interactions || dailyInteractions + 1);
+        syncDailyInteractions(response.daily_interactions ?? dailyInteractions + 1);
         setDailyLimit(response.daily_limit || 10);
         setActiveAction(null);
         if (response.commit_triggered && response.updated_preferences.length > 0) {
@@ -703,10 +740,11 @@ export default function DiscoverPage() {
   }
 
   async function handleRefreshPreferences() {
+    if (!profileUnlocked) return;
     try {
       const response = await recomputeDiscoverPreferences();
       setInteractionCount(response.total_interactions || 0);
-      setDailyInteractions(response.daily_interactions || 0);
+      syncDailyInteractions(response.daily_interactions ?? 0);
       setDailyLimit(response.daily_limit || 10);
       if (response.updated_preferences.length > 0) {
         setPreferences(response.updated_preferences);
@@ -719,12 +757,37 @@ export default function DiscoverPage() {
     }
   }
 
-  const preferredRows = preferences
-    .filter((row) => row.status === "preferred")
-    .sort((a, b) => b.score - a.score);
-  const dislikedRows = preferences
-    .filter((row) => row.status === "disliked")
-    .sort((a, b) => a.score - b.score);
+  const visiblePreferenceRows = preferences.filter(
+    (row) => !["garment_type", "season", "occasion"].includes(String(row.dimension || "")),
+  );
+  const preferredRows = (() => {
+    const preferred = visiblePreferenceRows
+      .filter((row) => row.status === "preferred")
+      .sort((a, b) => b.score - a.score);
+    if (preferred.length > 0) return preferred;
+    return visiblePreferenceRows
+      .filter((row) => (row.score || 0) > 0)
+      .sort((a, b) => {
+        const scoreDelta = (b.score || 0) - (a.score || 0);
+        if (scoreDelta !== 0) return scoreDelta;
+        return (b.confidence || 0) - (a.confidence || 0);
+      })
+      .slice(0, 6);
+  })();
+  const dislikedRows = (() => {
+    const disliked = visiblePreferenceRows
+      .filter((row) => row.status === "disliked")
+      .sort((a, b) => a.score - b.score);
+    if (disliked.length > 0) return disliked;
+    return visiblePreferenceRows
+      .filter((row) => (row.score || 0) < 0)
+      .sort((a, b) => {
+        const scoreDelta = (a.score || 0) - (b.score || 0);
+        if (scoreDelta !== 0) return scoreDelta;
+        return (b.confidence || 0) - (a.confidence || 0);
+      })
+      .slice(0, 6);
+  })();
 
   return (
     <>
@@ -821,6 +884,109 @@ export default function DiscoverPage() {
         }
       `}</style>
 
+      {profileLoading ? (
+        <main
+          className="page-main"
+          style={{
+            minHeight: "calc(100vh - 64px)",
+            display: "grid",
+            placeItems: "center",
+            padding: "28px 24px 72px",
+            background:
+              "radial-gradient(circle at top right, rgba(212,169,106,0.16), transparent 28%), radial-gradient(circle at bottom left, rgba(136,98,65,0.18), transparent 26%), linear-gradient(180deg, #120E0B 0%, #17120E 36%, #15110D 100%)",
+          }}
+        >
+          <div style={{ textAlign: "center", color: "#FFF7ED" }}>
+            <div
+              style={{
+                width: "48px",
+                height: "48px",
+                margin: "0 auto 16px",
+                border: "3px solid rgba(255,255,255,0.14)",
+                borderTop: "3px solid var(--gold)",
+                borderRadius: "50%",
+                animation: "spin 0.8s linear infinite",
+              }}
+            />
+            <p style={{ margin: 0, fontSize: "15px", color: "rgba(255,247,237,0.72)" }}>
+              Checking your profile…
+            </p>
+          </div>
+        </main>
+      ) : profileLocked ? (
+        <main
+          className="page-main"
+          style={{
+            minHeight: "calc(100vh - 64px)",
+            display: "grid",
+            placeItems: "center",
+            padding: "28px 24px 72px",
+            background:
+              "radial-gradient(circle at top right, rgba(212,169,106,0.16), transparent 28%), radial-gradient(circle at bottom left, rgba(136,98,65,0.18), transparent 26%), linear-gradient(180deg, #120E0B 0%, #17120E 36%, #15110D 100%)",
+          }}
+        >
+          <div
+            style={{
+              width: "min(720px, 100%)",
+              borderRadius: "30px",
+              border: "1px solid rgba(255,255,255,0.08)",
+              background: "linear-gradient(180deg, rgba(33,27,22,0.98), rgba(18,14,11,0.98))",
+              padding: "28px",
+              color: "#FFF7ED",
+              boxShadow: "0 24px 60px rgba(0,0,0,0.22)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "18px" }}>
+              <div style={{
+                width: "44px",
+                height: "44px",
+                borderRadius: "14px",
+                background: "rgba(255,255,255,0.06)",
+                display: "grid",
+                placeItems: "center",
+              }}>
+                <User size={20} color="var(--gold)" />
+              </div>
+              <div>
+                <p className="type-kicker" style={{ margin: 0, fontSize: "11px", color: "rgba(255,247,237,0.66)", letterSpacing: "0.14em", textTransform: "uppercase" }}>
+                  Update profile first
+                </p>
+                <h1 style={{ margin: "6px 0 0", fontFamily: "Playfair Display, serif", fontSize: "clamp(30px, 4vw, 48px)", lineHeight: 0.98 }}>
+                  Unlock Discover with your style profile
+                </h1>
+              </div>
+            </div>
+            <p style={{ margin: 0, color: "rgba(255,247,237,0.74)", lineHeight: 1.7, fontSize: "15px" }}>
+              Discover needs a few profile details before it can seed your edit well. Please update your profile and add:
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "14px" }}>
+              {profileGap.map((field) => (
+                <span
+                  key={field}
+                  className="type-chip"
+                  style={{
+                    background: "rgba(212,169,106,0.08)",
+                    color: "#FFF7ED",
+                    border: "1px solid rgba(212,169,106,0.16)",
+                  }}
+                >
+                  {field}
+                </span>
+              ))}
+            </div>
+            <div style={{ marginTop: "20px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+              <Link href="/profile" style={{ textDecoration: "none" }}>
+                <span className="btn-primary" style={{ display: "inline-flex", alignItems: "center" }}>
+                  Update profile
+                </span>
+              </Link>
+              <span style={{ alignSelf: "center", color: "rgba(255,247,237,0.62)", fontSize: "13px" }}>
+                Complexion helps shape a better first edit, while gender and ethnicity can refine it further.
+              </span>
+            </div>
+          </div>
+        </main>
+      ) : (
       <main
         className="page-main"
         style={{
@@ -887,54 +1053,6 @@ export default function DiscoverPage() {
                   })}
                 </div>
 
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                    gap: "12px",
-                  }}
-                >
-                  <div
-                    style={{
-                      padding: "14px 16px",
-                      borderRadius: "20px",
-                      border: "1px solid rgba(255,255,255,0.06)",
-                      background: "rgba(255,255,255,0.03)",
-                    }}
-                  >
-                    <p className="type-kicker" style={{ margin: 0, fontSize: "10px", color: "rgba(255,247,237,0.54)", letterSpacing: "0.14em", textTransform: "uppercase" }}>
-                      Next Shift
-                    </p>
-                    <p style={{ margin: "6px 0 0", color: "#FFF7ED", fontSize: "14px", lineHeight: 1.55 }}>
-                      After every 10 swipes, Discover rebuilds your taste signals and sharpens the next search.
-                    </p>
-                  </div>
-
-                  <div
-                    style={{
-                      padding: "14px 16px",
-                      borderRadius: "20px",
-                      border: "1px solid rgba(255,255,255,0.06)",
-                      background: "rgba(255,255,255,0.03)",
-                    }}
-                  >
-                    <p className="type-kicker" style={{ margin: 0, fontSize: "10px", color: "rgba(255,247,237,0.54)", letterSpacing: "0.14em", textTransform: "uppercase" }}>
-                      Today
-                    </p>
-                    <p style={{ margin: "6px 0 0", color: "#FFF7ED", fontSize: "14px", lineHeight: 1.55 }}>
-                      {`${dailyInteractions} of ${dailyLimit} swipes used today.`}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="discover-utility-row">
-                <Link href="/wardrobe" style={{ textDecoration: "none" }}>
-                  <span className="btn-secondary" style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
-                    Back to wardrobe
-                    <ArrowRight size={14} />
-                  </span>
-                </Link>
               </div>
             </div>
 
@@ -942,13 +1060,13 @@ export default function DiscoverPage() {
               <div className="discover-stage-header">
                 <h1 className="discover-stage-title">The Edit</h1>
                 <p className="discover-stage-copy">
-                  Each swipe helps us understand what feels like you and what does not.
+                  We learn your likes and dislikes, one edit at a time, so each next look feels more like you.
                 </p>
               </div>
               {loading ? (
                 <div
                   style={{
-                    minHeight: "clamp(520px, 72svh, 840px)",
+                    minHeight: "clamp(420px, 58svh, 680px)",
                     borderRadius: "28px",
                     border: "1px solid rgba(255,255,255,0.08)",
                     background: "linear-gradient(180deg, rgba(33,27,22,0.96), rgba(18,14,11,0.98))",
@@ -983,7 +1101,7 @@ export default function DiscoverPage() {
               ) : dailyQuotaReached ? (
                 <div
                   style={{
-                    minHeight: "clamp(520px, 72svh, 840px)",
+                    minHeight: "clamp(420px, 58svh, 680px)",
                     borderRadius: "28px",
                     border: "1px solid rgba(255,255,255,0.08)",
                     background: "linear-gradient(180deg, rgba(33,27,22,0.96), rgba(18,14,11,0.98))",
@@ -1026,7 +1144,7 @@ export default function DiscoverPage() {
               ) : (
                 <div
                   style={{
-                    minHeight: "clamp(520px, 72svh, 840px)",
+                    minHeight: "clamp(420px, 58svh, 680px)",
                     borderRadius: "28px",
                     border: "1px solid rgba(255,255,255,0.08)",
                     background: "linear-gradient(180deg, rgba(33,27,22,0.96), rgba(18,14,11,0.98))",
@@ -1062,14 +1180,14 @@ export default function DiscoverPage() {
             }}
           >
             <PreferenceRail
-              title="Learned favorites"
+              title="Likes"
               rows={preferredRows}
-              emptyLabel="Your favorite signals will collect here once the swipe history reaches enough evidence."
+              emptyLabel="Styles you like will appear here as you swipe."
             />
             <PreferenceRail
-              title="Signals to avoid"
+              title="Dislikes"
               rows={dislikedRows}
-              emptyLabel="Disliked signals will appear here after repeated negative swipes."
+              emptyLabel="Styles you dislike will appear here as you swipe."
             />
           </section>
 
@@ -1126,6 +1244,7 @@ export default function DiscoverPage() {
           </section>
         </div>
       </main>
+      )}
     </>
   );
 }

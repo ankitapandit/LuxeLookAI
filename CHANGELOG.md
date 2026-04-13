@@ -28,8 +28,49 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | 2.1.0   | 2026-04-01 | Event/Archive rename, mobile-first frontend polish, and major wardrobe performance upgrades                                  |
 | 2.2.0   | 2026-04-02 | Session restore, wardrobe media activity/status, cutout extraction, and duplicate-safe outfit refreshes                    |
 | 2.3.0   | 2026-04-09 | Discover taste-learning, Style Item workflow, jumpsuits taxonomy, and current data-model documentation                      |
+| 2.4.0   | 2026-04-12 | Beach-aware scoring, structured event briefs, Discover preference reliability, and wardrobe taxonomy cleanup                |
 
 ---
+
+## [2.4.0] - 2026-04-12
+
+### Added
+- **Beach / resort recommendation lane** — beach, pool, resort, and swim-led occasions now actively surface swimwear through venue-aware scoring, explicit swimwear affinity bonuses, and a guaranteed swimwear slot in the final candidate set when the wardrobe supports it.
+- **Template H for beach layering** — outfit generation now supports both `swimwear + shoes` and `swimwear + outerwear + shoes`, giving resort and poolside events a lightweight layering path.
+- **Structured event brief payloads** — event creation now stores a machine-readable `raw_text_json` alongside a human-readable event summary, so occasion parsing and archive rendering both have access to the user’s structured inputs.
+- **Trend calendar scoring** — trend is no longer a flat placeholder; the recommender now blends a season-aware trend calendar with predicted outfit attributes to contribute a real trend signal.
+- **Wardrobe correction feedback snapshots** — user corrections to AI-tagged wardrobe items now log the edited field plus a frozen item snapshot, creating a usable dataset for later prompt tuning and analytics.
+- **`warmth` apparel descriptor** — apparel categories now support `warmth` (`airy`, `light`, `medium`, `warm`, `thermal`) so season-fit logic and manual editing can represent wearability more directly.
+- **`style_catalog` seed and table comments** — the previously empty Discover style catalog is now seedable from the live fallback vocabulary, and key product tables are documented with Postgres comments inside the migration path.
+
+### Changed
+- **Beach occasion scoring** — venue-fit and risk logic now penalize denim, leather/suede/wool, closed-toe shoes, and overly structured silhouettes at beach events while giving swimwear, beach shoes, and lighter fabrics stronger numeric priority.
+- **Season scoring blend** — season fit now combines the stored item season with descriptor-level rules rather than relying only on the top-level metadata label.
+- **Event prompt composition** — structured brief data is now expanded into a richer prompt block for occasion parsing, and the archive page renders those same JSON fields back into cleaner English summaries.
+- **Event + Style Item input UX** — both flows now use the same structured brief editor with mobile-friendly dropdown behavior, optional detail handling, and “Other” value support.
+- **Structured brief custom-value display** — when users choose `Other` in Event or Style Item, the selected control now displays the entered custom value directly instead of leaving a generic `Other` label or helper text behind.
+- **Outfit loading state** — generic spinners on Event and Style Item were replaced with a themed clothing-assembly loader that cycles through wardrobe-relevant icons.
+- **Moodboard presentation** — flat-lay boards now use a white stage on a neutral shell, tighter shadows, compact-aware placements, jewelry-capable accessory placement, reduced overflow, and equalized card heights in the carousel.
+- **Swimwear taxonomy** — swimwear no longer borrows `tops`/`bottoms` descriptors; it now uses a dedicated vocabulary centered on `swimwear_style`, `coverage_level`, `cut`, and swim-specific fabric materials.
+- **Set descriptor scope** — coordinated sets now expose a smaller, unified schema focused on `fabric_type`, `warmth`, `top_style`, `bottom_style`, `fit`, and `pattern` rather than mirroring full separate top and bottom editors.
+- **Wardrobe descriptor editing** — wardrobe edit now exposes category, season, and dress code corrections together, hides duplicate / `None` descriptor chips on cards, and removes `sleeve_style` from the UI while keeping backend compatibility.
+- **Jewelry split** — jewelry is now treated as its own category end-to-end rather than living under generic accessories, including recommendation surfaces and taxonomy handling.
+
+### Fixed
+- **Discover preference wipe bug** — learned preference rows are no longer deleted when a recompute pass produces no recognized aggregate; existing preferences stay intact instead of being wiped to empty.
+- **Discover preference state clobber** — feed refreshes and status polls no longer overwrite freshly computed preference state with empty arrays on the frontend.
+- **Discover style lookup drift** — preference recompute now resolves style rows against the shared style lookup rather than assuming one identifier shape.
+- **Discover preference population timing** — commit-time preference refreshes now return usable rows synchronously so the UI can update immediately instead of waiting for a later poll.
+- **Event summary prompt bug** — Python `filter(Boolean, ...)` misuse in event-summary composition was removed, preventing dropped dress-code strings from the generated prompt text.
+- **Wardrobe duplicate conflict recovery** — uploads that match items already in the wardrobe or archive once again present the right `replace`, `unarchive`, or `force add` options.
+- **Wardrobe duplicate color handling** — duplicate detection now respects broad color families instead of over-collapsing visually similar items that exist in legitimately different colorways.
+- **Archive preference and summary rendering regressions** — archive suggestions stay newest-first, event descriptions render in continuous sentence case, and the archive summary uses the structured event payload without awkward capitalization resets.
+- **Archive false-failure toast** — the Archive page now retries its initial load once before surfacing a failure toast, preventing transient startup hiccups from showing an error when the page ultimately loads successfully.
+- **Style Item anchor preview spacing** — the right-side anchor preview no longer stretches to the full height of the left column, removing the large empty block beneath shorter preview content.
+
+### Docs
+- **README refreshed for current product behavior** — the README now reflects structured event creation, beach/resort swimwear support, current descriptor vocabularies, and the active Discover / style-catalog architecture.
+- **Supabase migration documentation expanded** — changelog and migration docs now describe table comments, the `style_catalog` seed path, and the wardrobe correction feedback log.
 
 ## [2.3.0] - 2026-04-09
 

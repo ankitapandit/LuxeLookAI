@@ -89,15 +89,11 @@ def _update_profile_row(user_id: str, updates: dict) -> dict:
 
 async def _read_validated_photo(photo: UploadFile) -> tuple[bytes, str, str]:
     mime_type = photo.content_type or "image/jpeg"
-    print(f"[profile] validating photo filename={photo.filename!r} mime_type={mime_type!r}")
     if mime_type not in ALLOWED_MIME_TYPES:
-        print(f"[profile] rejected photo due to mime_type={mime_type!r}")
         raise HTTPException(status_code=400, detail="Only JPG, PNG and WEBP images are accepted")
 
     contents = await photo.read()
-    print(f"[profile] photo bytes read size={len(contents)}")
     if len(contents) > MAX_SIZE_BYTES:
-        print(f"[profile] rejected photo due to size={len(contents)} > {MAX_SIZE_BYTES}")
         raise HTTPException(status_code=400, detail="Image must be under 10MB")
 
     ext = (photo.filename or "photo").rsplit(".", 1)[-1].lower()
@@ -134,19 +130,14 @@ def _upload_user_image(bucket: str, user_id: str, prefix: str, contents: bytes, 
 
     db = get_supabase()
     path = f"{user_id}/{prefix}_{int(time.time())}.{ext}"
-    print(f"[profile] uploading image bucket={bucket!r} user_id={user_id!r} path={path!r} bytes={len(contents)}")
     _delete_existing_user_images(db, bucket, user_id, prefix)
 
     try:
         db.storage.from_(bucket).upload(path, contents)
-        print(f"[profile] storage upload complete bucket={bucket!r} path={path!r}")
     except Exception as exc:
-        print(f"[profile] storage upload failed bucket={bucket!r} path={path!r} error={exc}")
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Storage upload failed: {str(exc)}")
 
     url = db.storage.from_(bucket).get_public_url(path).rstrip("?")
-    print(f"[profile] storage public url generated bucket={bucket!r} path={path!r} url={url!r}")
     return url
 
 
@@ -185,24 +176,16 @@ async def upload_ai_profile_photo(
     photo: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
 ):
-    print(f"[profile] /profile/ai-photo start user_id={user_id!r}")
     try:
         contents, mime_type, ext = await _read_validated_photo(photo)
         settings = get_settings()
         analyzed_at = datetime.now(timezone.utc)
-        print(
-            f"[profile] ai-photo request prepared user_id={user_id!r} "
-            f"mime_type={mime_type!r} ext={ext!r} use_mock_auth={settings.use_mock_auth} use_mock_ai={settings.use_mock_ai}"
-        )
 
         raw_analysis = analyze_profile_traits(contents, mime_type)
-        print(f"[profile] ai-photo raw analysis={raw_analysis}")
         analysis = AIProfileAnalysis(**raw_analysis)
-        print(f"[profile] ai-photo normalized analysis={analysis.model_dump()}")
 
         if settings.use_mock_auth:
             url = _data_url(contents, mime_type)
-            print(f"[profile] ai-photo using mock data url length={len(url)}")
         else:
             url = _upload_user_image(AI_PROFILE_BUCKET, user_id, "ai_profile", contents, ext)
 
@@ -211,15 +194,11 @@ async def upload_ai_profile_photo(
             "ai_profile_analysis": analysis.model_dump(),
             "ai_profile_analyzed_at": analyzed_at.isoformat(),
         }
-        print(f"[profile] ai-photo updating profile row with keys={list(updates.keys())}")
         _update_profile_row(user_id, updates)
-        print(f"[profile] /profile/ai-photo success user_id={user_id!r}")
         return {
             "ai_profile_photo_url": url,
             "ai_profile_analysis": analysis.model_dump(),
             "ai_profile_analyzed_at": analyzed_at.isoformat(),
         }
     except Exception as exc:
-        print(f"[profile] /profile/ai-photo failed user_id={user_id!r} error={exc}")
-        traceback.print_exc()
         raise

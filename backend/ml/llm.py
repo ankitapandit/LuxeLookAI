@@ -36,6 +36,7 @@ _FABRIC_OPTIONS = [
     "mesh",
     "lace",
     "knit",
+    "ribbed",
     "wool",
     "leather",
     "suede",
@@ -400,6 +401,193 @@ def _real_generate_stylist_verdict(
     return response.choices[0].message.content.strip()
 
 
+# ── Style Direction ──────────────────────────────────────────────────────────
+
+_MOCK_STYLE_DIRECTIONS = [
+    {
+        "options": [
+            {
+                "name": "Polished Minimal",
+                "emoji": "🖤",
+                "pieces": [
+                    {"label": "Base", "value": "Your anchor piece as the hero"},
+                    {"label": "Shoes", "value": "Nude block-heel mules or pointed-toe flats"},
+                    {"label": "Outerwear", "value": "Fitted blazer in camel or ivory"},
+                    {"label": "Bag", "value": "Structured mini bag"},
+                    {"label": "Hair", "value": "Sleek low bun or blowout"},
+                    {"label": "Makeup", "value": "Clean skin, defined brows, neutral lip"},
+                    {"label": "Jewelry", "value": "Gold hoops and a thin stacked ring"},
+                ],
+                "why": "Keeping the palette tight and silhouette proportional lets the anchor piece carry the look without competition.",
+                "tip": "If the venue is smart-casual, swap the blazer for a fine-knit cardigan for an equally polished feel.",
+            },
+            {
+                "name": "Elevated Casual",
+                "emoji": "🌿",
+                "pieces": [
+                    {"label": "Base", "value": "Your anchor piece in a relaxed way"},
+                    {"label": "Shoes", "value": "Leather loafers or clean white trainers"},
+                    {"label": "Outerwear", "value": "Oversized linen blazer or trench"},
+                    {"label": "Bag", "value": "Tote or crossbody"},
+                    {"label": "Hair", "value": "Soft waves or high ponytail"},
+                    {"label": "Makeup", "value": "Minimal glow — tinted moisturiser and a glossy lip"},
+                    {"label": "Jewelry", "value": "Layered delicate chains and small studs"},
+                ],
+                "why": "Relaxed tailoring balances the anchor piece and keeps the look intentional rather than trying too hard.",
+                "tip": "A crossbody keeps hands free and adds practicality without breaking the silhouette.",
+            },
+        ]
+    },
+]
+
+
+def _mock_generate_style_direction(anchor_item: dict, event: dict) -> dict:
+    idx = hash(f"{anchor_item.get('category')}{event.get('occasion_type')}") % len(_MOCK_STYLE_DIRECTIONS)
+    return _MOCK_STYLE_DIRECTIONS[idx]
+
+
+def _real_generate_style_direction(
+    anchor_item: dict,
+    event: dict,
+    user_profile: dict,
+    wardrobe_items: List[Dict],
+) -> dict:
+    """
+    Call GPT-4o-mini to produce 2-3 editorial outfit options built around the anchor item.
+    Returns { "options": [ { name, emoji, pieces: [{label, value}], why, tip } ] }
+    """
+    from openai import OpenAI
+
+    client = OpenAI(api_key=get_settings().openai_api_key)
+
+    # ── Anchor item description ────────────────────────────────────────────
+    anchor_color    = (anchor_item.get("color") or "").strip()
+    anchor_category = (anchor_item.get("category") or "").strip()
+    anchor_desc     = anchor_item.get("descriptors") or {}
+    anchor_detail   = ", ".join(
+        f"{k}: {v}" for k, v in anchor_desc.items() if v and k not in ("id",)
+    ) if anchor_desc else ""
+    anchor_line     = f"{anchor_color} {anchor_category}".strip()
+    if anchor_detail:
+        anchor_line += f" ({anchor_detail})"
+
+    # ── Event context ─────────────────────────────────────────────────────
+    occasion   = (event.get("occasion_type") or "occasion").replace("_", " ")
+    formality  = event.get("formality_level", 0.5)
+    setting    = event.get("setting", "indoor")
+    temp       = event.get("temperature_context", "warm")
+    tokens     = ", ".join(event.get("event_tokens") or [])
+
+    # ── User profile ──────────────────────────────────────────────────────
+    body_type  = user_profile.get("body_type") or ""
+    complexion = user_profile.get("complexion") or ""
+    profile_block = ""
+    if body_type or complexion:
+        profile_block = "\nUser profile:"
+        if body_type:
+            profile_block += f"\n- Body type: {body_type}"
+        if complexion:
+            profile_block += f"\n- Complexion: {complexion}"
+
+    # ── Available wardrobe items (lightweight summary, max 20) ───────────
+    wardrobe_lines: List[str] = []
+    for item in wardrobe_items[:20]:
+        if str(item.get("id")) == str(anchor_item.get("id")):
+            continue
+        color_  = (item.get("color") or "").strip()
+        cat_    = (item.get("category") or "").strip()
+        if color_ or cat_:
+            wardrobe_lines.append(f"- {color_} {cat_}".strip("- ").strip())
+    wardrobe_block = ""
+    if wardrobe_lines:
+        wardrobe_block = "\nAvailable wardrobe pieces to pull from:\n" + "\n".join(wardrobe_lines[:20])
+
+    prompt = f"""You are an expert personal stylist for a luxury fashion app.
+
+Anchor piece: {anchor_line}
+Occasion: {occasion} ({setting}, formality {formality:.0%})
+Temperature: {temp}
+Event context: {tokens or occasion}{profile_block}{wardrobe_block}
+
+Create exactly 2 complete outfit options built around the anchor piece. Each option should have a distinct mood and silhouette.
+
+Return ONLY valid JSON — no markdown, no code fences:
+{{
+  "options": [
+    {{
+      "name": "Short evocative mood name (2-4 words)",
+      "emoji": "one relevant emoji",
+      "pieces": [
+        {{"label": "Top/Base/Dress", "value": "specific item with color and silhouette"}},
+        {{"label": "Bottom", "value": "only if separate from base"}},
+        {{"label": "Shoes", "value": "specific footwear"}},
+        {{"label": "Outerwear", "value": "layer or jacket (skip if hot/summer indoor)"}},
+        {{"label": "Bag", "value": "bag style"}},
+        {{"label": "Hair", "value": "specific hair suggestion"}},
+        {{"label": "Makeup", "value": "specific makeup look"}},
+        {{"label": "Jewelry", "value": "specific jewelry"}}
+      ],
+      "why": "One sentence: the specific styling reason this works (reference silhouette, color balance, or occasion fit).",
+      "tip": "One practical occasion-specific tip (e.g. weather, venue, comfort)."
+    }}
+  ]
+}}
+
+Rules:
+- Omit "Bottom" if the anchor or base is a dress/set
+- Omit "Outerwear" if occasion is summer/hot/beach indoor
+- Pull from the available wardrobe when it fits — otherwise suggest generic pieces
+- Be specific: say "ivory ribbed bodysuit" not just "top"
+- If body type is known, choose silhouettes that flatter it (but don't state this explicitly)
+- If complexion is known, favour palette choices that complement it (warm-toned vs cool-toned)
+- Keep each value under 12 words
+- Return ONLY the JSON object"""
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.75,
+        max_tokens=700,
+    )
+    raw = _strip_json_fence(response.choices[0].message.content.strip())
+    try:
+        result = json.loads(raw)
+        # Validate basic shape
+        if not isinstance(result.get("options"), list):
+            raise ValueError("Missing options list")
+        return result
+    except Exception:
+        # Safe fallback
+        return _mock_generate_style_direction(anchor_item, event)
+
+
+def generate_style_direction(
+    anchor_item: dict,
+    event: dict,
+    user_profile: Optional[dict] = None,
+    wardrobe_items: Optional[List[Dict]] = None,
+) -> dict:
+    """
+    Generate 2-3 LLM-authored outfit options built around the anchor piece.
+
+    Returns:
+        { "options": [ { name, emoji, pieces: [{label, value}], why, tip } ] }
+    """
+    settings = get_settings()
+    if settings.use_mock_ai:
+        return _mock_generate_style_direction(anchor_item, event)
+    try:
+        return _real_generate_style_direction(
+            anchor_item,
+            event,
+            user_profile or {},
+            wardrobe_items or [],
+        )
+    except Exception as exc:
+        logger.warning("generate_style_direction failed: %s", exc)
+        return _mock_generate_style_direction(anchor_item, event)
+
+
 # ── Public interface ──────────────────────────────────────────────────────────
 
 def parse_occasion(raw_text: str) -> Dict[str, Any]:
@@ -542,7 +730,6 @@ def analyze_profile_traits(image_bytes: bytes, mime_type: str = "image/jpeg") ->
         import base64
         from openai import OpenAI
 
-        print(f"[llm] analyze_profile_traits start mime_type={mime_type!r} bytes={len(image_bytes)}")
         client = OpenAI(api_key=settings.openai_api_key)
         b64 = base64.b64encode(image_bytes).decode()
         resp = client.chat.completions.create(
@@ -575,9 +762,7 @@ Rules:
                 ],
             }],
         )
-        print("[llm] analyze_profile_traits OpenAI response received")
         parsed = json.loads(_strip_json_fence(resp.choices[0].message.content))
-        print(f"[llm] analyze_profile_traits parsed keys={list(parsed.keys())}")
         return {
             "source": "ai_profile_photo",
             "face_shape": _normalize_trait(
@@ -607,7 +792,6 @@ Rules:
             ),
         }
     except Exception as e:
-        print(f"[llm] analyze_profile_traits failed error={e}")
         failed = {"value": None, "confidence": "low", "reason": f"Analysis failed: {str(e)}"}
         return {
             "source": "ai_profile_photo",
@@ -624,6 +808,7 @@ CATEGORY_DESCRIPTORS = {
     # ── Tops ──────────────────────────────────────────────────────────────────
     "tops": {
         "fabric_type":   list(_FABRIC_OPTIONS),
+        "warmth":        ["airy", "light", "medium", "warm", "thermal"],
         "neckline":      ["crew", "round", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
                           "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
         "sleeve_length": ["sleeveless", "cap", "short", "3/4", "long"],
@@ -644,6 +829,7 @@ CATEGORY_DESCRIPTORS = {
     # ── Dresses ───────────────────────────────────────────────────────────────
     "dresses": {
         "fabric_type":   list(_FABRIC_OPTIONS),
+        "warmth":        ["airy", "light", "medium", "warm", "thermal"],
         "neckline":      ["crew", "round", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
                           "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
         "sleeve_length": ["sleeveless", "cap", "short", "3/4", "long"],
@@ -664,6 +850,7 @@ CATEGORY_DESCRIPTORS = {
     # ── Jumpsuits / Rompers ───────────────────────────────────────────────────
     "jumpsuits": {
         "fabric_type":    list(_FABRIC_OPTIONS),
+        "warmth":         ["airy", "light", "medium", "warm", "thermal"],
         "jumpsuit_style": ["tailored", "utility", "romper", "playsuit", "halter", "strapless",
                            "boiler", "evening", "boho", "wide-leg", "straight-leg", "tapered"],
         "neckline":       ["crew", "round", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
@@ -686,6 +873,7 @@ CATEGORY_DESCRIPTORS = {
     # ── Outerwear ─────────────────────────────────────────────────────────────
     "outerwear": {
         "fabric_type":        list(_FABRIC_OPTIONS),
+        "warmth":             ["airy", "light", "medium", "warm", "thermal"],
         "neckline":           ["crew", "round", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
                                "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
         "sleeve_length":      ["sleeveless", "cap", "short", "3/4", "long"],
@@ -707,6 +895,7 @@ CATEGORY_DESCRIPTORS = {
     # ── Bottoms ───────────────────────────────────────────────────────────────
     "bottoms": {
         "fabric_type":     list(_FABRIC_OPTIONS),
+        "warmth":          ["airy", "light", "medium", "warm", "thermal"],
         "waist_position":  ["high", "mid", "low", "drop", "empire"],
         "waist_structure": ["elastic", "drawstring", "belted", "paperbag", "corset"],
         "fit":             ["slim", "straight", "relaxed", "loose", "wide-leg", "flared"],
@@ -729,10 +918,19 @@ CATEGORY_DESCRIPTORS = {
         "material":    ["leather", "suede", "canvas", "synthetic", "fabric"],
         "pattern":     ["solid", "animal print", "textured", "colorblock"],
     },
+    # ── Jewelry ──────────────────────────────────────────────────────────────
+    "jewelry": {
+        "jewelry_type": ["necklace", "earrings", "bracelet", "ring", "watch", "anklet", "brooch", "cuff"],
+        "metal":        ["gold", "silver", "rose gold", "platinum", "mixed metal"],
+        "stone":        ["none", "pearl", "diamond", "gemstone", "crystal", "beaded"],
+        "style":        ["delicate", "minimal", "statement", "sculptural", "classic", "vintage", "embellished"],
+        "finish":       ["polished", "matte", "textured", "hammered", "glossy"],
+        "length":       ["choker", "short", "princess", "matinee", "opera", "long"],
+    },
     # ── Accessories ───────────────────────────────────────────────────────────
     "accessories": {
         "accessory_type": ["handbag", "tote", "clutch", "backpack", "crossbody", "belt",
-                           "scarf", "hat", "sunglasses", "jewelry", "watch"],
+                           "scarf", "hat", "sunglasses"],
         "size":           ["mini", "small", "medium", "large", "oversized"],
         "material":       ["leather", "fabric", "straw", "metal", "synthetic"],
         "style":          ["structured", "slouchy", "minimalist", "embellished", "logo"],
@@ -740,64 +938,32 @@ CATEGORY_DESCRIPTORS = {
         "strap_type":     ["top handle", "crossbody", "shoulder", "chain"],
     },
     # ── Set (co-ord / two-piece matching sets) ────────────────────────────────
-    # Full tops + bottoms descriptor combo — both halves are described together.
+    # Minimal co-ord schema: enough for season, silhouette, and styling logic
+    # without forcing users to describe the top and bottom as two independent items.
     "set": {
-        # Fabric
         "fabric_type":    list(_FABRIC_OPTIONS),
-        # Top-half attributes
+        "warmth":         ["airy", "light", "medium", "warm", "thermal"],
         "top_style":      ["crop", "halter", "bandeau", "off-shoulder", "bralette", "corset",
                            "blazer", "shirt", "camisole", "waistcoat", "longline"],
-        "neckline":       ["crew", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
-                           "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
-        "sleeve_length":  ["sleeveless", "cap", "short", "3/4", "long"],
-        "sleeve_style":   ["puff", "bishop", "balloon", "bell", "raglan", "batwing", "cold shoulder", "flutter"],
-        "strap_type":     ["strapless", "spaghetti", "wide", "adjustable", "racerback", "cross-back", "halter"],
-        "back_style":     ["open back", "low back", "keyhole", "strappy", "tie-back", "zipper back"],
-        # Bottom-half attributes
         "bottom_style":   ["shorts", "mini skirt", "midi skirt", "maxi skirt", "trousers",
                            "wide-leg trousers", "straight trousers", "skirt", "leggings", "flared trousers"],
-        "waist_position": ["high", "mid", "low", "empire"],
-        "waist_structure":["elastic", "drawstring", "belted", "paperbag", "corset"],
-        "leg_opening":    ["skinny", "straight", "wide", "flare", "bootcut", "tapered"],
-        # Shared
         "fit":            ["slim", "regular", "relaxed", "oversized", "tailored", "wrap", "bodycon", "A-line"],
-        "length":         ["mini", "midi", "maxi", "crop", "regular"],
-        "closure":        ["pullover", "button-front", "zip-up", "wrap", "hook-and-eye", "tie"],
-        "hemline":        ["straight", "curved", "asymmetrical", "high-low", "ruffle hem"],
-        "detailing":      ["ruffles", "pleats", "ruched", "smocked", "tiered", "draped",
-                           "cut-out", "slit", "bow", "lace trim", "embroidery"],
-        "elasticity":     ["non-stretch", "slight stretch", "medium stretch", "high stretch"],
         "pattern":        ["solid", "floral", "striped", "plaid", "abstract", "animal print",
                            "geometric", "tie-dye", "color-block"],
     },
     # ── Swimwear ──────────────────────────────────────────────────────────────
-    # Existing swimwear + bra-type descriptors (top) + underwear-bottom descriptors.
+    # Swimwear should be described as swimwear, not as stitched-together
+    # top/bottom underwear attributes.
     "swimwear": {
-        # Garment type
-        "swimwear_type":    ["bikini", "one-piece", "tankini", "monokini", "swim dress",
-                             "rash guard", "swim shorts", "boardshorts"],
-        # Top-half style
-        "top_style":        ["triangle", "bandeau", "underwire", "halter", "sports bra",
-                             "crop", "balconette", "longline", "bralette"],
-        "neckline":         ["halter", "bandeau", "strapless", "V-neck", "square", "scoop",
-                             "off-shoulder", "high-neck"],
-        "top_coverage":     ["minimal", "moderate", "full"],
-        # Bra-type descriptors (coverage, support, structure, function, fit intent)
-        "support":          ["low", "medium", "high"],
-        "structure":        ["wired", "wireless", "padded", "unlined"],
-        "function":         ["everyday", "sports", "beach", "special occasion"],
-        "fit_intent":       ["enhance", "minimize", "natural"],
-        # Bottom-half descriptors
-        "bottom_rise":      ["low", "mid", "high"],
-        "back_coverage":    ["minimal", "partial", "full"],
-        "bottom_fit_style": ["thong", "bikini", "boyshort", "brief", "high-waist",
-                             "hipster", "cheeky", "string"],
-        "bottom_visibility":["seamless", "no-show", "regular"],
-        # Fabric & finish
-        "fabric_type":      list(_FABRIC_OPTIONS),
-        "pattern":          ["solid", "floral", "animal print", "striped", "tropical",
-                             "geometric", "color-block"],
-        "closure":          ["pull-on", "tie-side", "buckle", "underwired"],
+        "swimwear_style":   ["bikini", "one-piece", "tankini", "monokini", "swim dress",
+                             "rash guard", "swim shorts", "boardshorts", "bandeau",
+                             "triangle", "halter", "balconette", "sporty"],
+        "coverage_level":   ["minimal", "moderate", "full"],
+        "cut":              ["high-leg", "cheeky", "high-waist", "boyshort", "brief",
+                             "thong", "string", "skirted"],
+        "fabric_type":      ["nylon", "polyester", "spandex", "elastane", "lycra",
+                             "recycled nylon", "ribbed swim knit", "textured jacquard",
+                             "neoprene"],
     },
     # ── Loungewear ────────────────────────────────────────────────────────────
     # Existing + top-half details (neckline/sleeve/strap) + light bra/waist attributes
@@ -806,6 +972,7 @@ CATEGORY_DESCRIPTORS = {
         "loungewear_type":  ["hoodie", "sweatshirt", "sweatpants", "joggers", "pajama set",
                              "robe", "shorts set", "tank set", "matching set", "onesie"],
         "fabric_type":      list(_FABRIC_OPTIONS),
+        "warmth":           ["airy", "light", "medium", "warm", "thermal"],
         "fit":              ["oversized", "relaxed", "fitted", "slim", "regular"],
         # Top-half
         "neckline":         ["crew", "V-neck", "scoop", "square", "sweetheart", "halter",
@@ -951,10 +1118,26 @@ def _mock_describe_clothing(category: str) -> dict:
             "closure": "button-front", "hemline": "straight",
             "pattern": "solid", "insulation": "midweight",
         }
+    if "jewel" in cat:
+        return {
+            "jewelry_type": "necklace",
+            "metal": "gold",
+            "stone": "none",
+            "style": "delicate",
+            "finish": "polished",
+            "length": "short",
+        }
     if "shoe" in cat:
         return {
             "shoe_type": "sneakers", "toe_shape": "round",
             "heel_height": "flat", "closure": "lace-up",
             "fit": "regular", "material": "canvas", "pattern": "solid",
+        }
+    if "swim" in cat:
+        return {
+            "swimwear_style": "one-piece",
+            "coverage_level": "moderate",
+            "cut": "high-leg",
+            "fabric_type": "nylon",
         }
     return {"fabric_type": "cotton", "fit": "regular"}
