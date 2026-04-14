@@ -582,17 +582,15 @@ def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
 
 def _get_items_real(user_id: str) -> List[Dict]:
     from utils.db import get_supabase
-    db = get_supabase()
     _reconcile_stale_media_items_real(user_id)
-    items = (
-        db.table(TABLE)
+    result = _execute_supabase_request(lambda: (
+        get_supabase().table(TABLE)
         .select(ITEM_LIST_FIELDS)
         .eq("user_id", user_id)
         .eq("is_active", True)
         .order("created_at", desc=True)
-        .execute().data
-    )
-    return items
+    ))
+    return result.data or []
 
 
 def _get_items_by_ids_real(user_id: str, item_ids: List[str]) -> List[Dict[str, Any]]:
@@ -601,17 +599,15 @@ def _get_items_by_ids_real(user_id: str, item_ids: List[str]) -> List[Dict[str, 
     if not item_ids:
         return []
 
-    db = get_supabase()
     _reconcile_stale_media_items_real(user_id)
-    items = (
-        db.table(TABLE)
+    result = _execute_supabase_request(lambda: (
+        get_supabase().table(TABLE)
         .select(ITEM_LIST_FIELDS)
         .eq("user_id", user_id)
         .eq("is_active", True)
         .in_("id", item_ids)
-        .execute()
-        .data
-    )
+    ))
+    items = result.data or []
     return sorted(items or [], key=lambda r: r.get("media_updated_at") or r.get("created_at", ""), reverse=True)
 
 
@@ -625,16 +621,15 @@ def _get_items_page_real(
 ) -> Dict[str, Any]:
     from utils.db import get_supabase
 
-    db = get_supabase()
     _reconcile_stale_media_items_real(user_id)
     query = (
-        db.table(TABLE)
+        get_supabase().table(TABLE)
         .select(ITEM_LIST_FIELDS)
         .eq("user_id", user_id)
         .eq("is_active", True)
     )
     total_count_query = (
-        db.table(TABLE)
+        get_supabase().table(TABLE)
         .select("id")
         .eq("user_id", user_id)
         .eq("is_active", True)
@@ -653,13 +648,13 @@ def _get_items_page_real(
     elif formality == "Loungewear":
         query = query.lt("formality_score", 0.25)
 
-    rows = (
+    rows_result = _execute_supabase_request(lambda: (
         query.order("created_at", desc=True)
         .range(offset, offset + limit)
-        .execute()
-        .data
-    )
-    total_count = len(total_count_query.execute().data or [])
+    ))
+    total_count_result = _execute_supabase_request(lambda: total_count_query)
+    rows = rows_result.data or []
+    total_count = len(total_count_result.data or [])
 
     return {
         "items": rows[:limit],
@@ -670,17 +665,16 @@ def _get_items_page_real(
 
 def _get_deleted_items_real(user_id: str) -> List[Dict]:
     from utils.db import get_supabase
-    db = get_supabase()
-    return (
-        db.table(TABLE)
+    result = _execute_supabase_request(lambda: (
+        get_supabase().table(TABLE)
         .select("id, category, item_type, accessory_subtype, color, pattern, season, "
                 "formality_score, image_url, thumbnail_url, cutout_url, descriptors, created_at, "
                 "deleted_at, archived_on, is_archived")
         .eq("user_id", user_id)
         .eq("is_active", False)
         .order("archived_on", desc=True)
-        .execute().data
-    )
+    ))
+    return result.data or []
 
 
 def _delete_item_real(item_id: str, user_id: str) -> bool:

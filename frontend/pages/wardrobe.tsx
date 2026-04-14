@@ -64,6 +64,7 @@ function normalizeToPresetKey(color: string): string | null {
   const lower = color.toLowerCase();
   // Explicit overrides for common normalized names
   const overrides: Record<string, string> = {
+    "multicolor": "multicolor", "multi color": "multicolor", "multi-colour": "multicolor", "multi colour": "multicolor",
     "charcoal": "black", "ebony": "black", "jet black": "black", "onyx": "black",
     "ivory": "white", "off white": "white", "cream": "white", "snow": "white",
     "midnight blue": "navy", "dark blue": "navy", "indigo": "navy", "slate blue": "navy",
@@ -134,6 +135,7 @@ const SOLID_COLORS: { key: string; hex: string; label: string }[] = [
   { key: "yellow", hex: "#d4a843", label: "Yellow" },
   { key: "orange", hex: "#d4703a", label: "Orange" },
   { key: "purple", hex: "#7c5cbf", label: "Purple" },
+  { key: "multicolor", hex: "linear-gradient(135deg, #c0392b 0%, #d4a843 24%, #4a7c59 48%, #4a90c4 72%, #7c5cbf 100%)", label: "Multicolor" },
 ];
 
 // Map key → hex for item card display
@@ -177,8 +179,10 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
   tops: {
     fabric_type:   [...FABRIC_OPTIONS],
     warmth:        ["airy","light","medium","warm","thermal"],
-    neckline:      ["crew","round","V-neck","square","scoop","sweetheart","off-shoulder",
-                    "halter","high neck","turtleneck","collar","cowl","asymmetrical"],
+    neckline:      ["crew","round","boat","V-neck","plunging","jewel","square","scoop",
+                    "sweetheart","off-shoulder","strapless","halter","high neck",
+                    "turtleneck","collar","cowl","one shoulder","tie neck","apron neck",
+                    "queen anne","asymmetrical","keyhole neck","scalloped neck","illusion neck"],
     sleeve_length: ["sleeveless","cap","short","3/4","long"],
     fit:           ["slim","regular","relaxed","loose","oversized","bodycon",
                     "tailored","A-line","fit & flare","wrap"],
@@ -197,8 +201,10 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
   dresses: {
     fabric_type:   [...FABRIC_OPTIONS],
     warmth:        ["airy","light","medium","warm","thermal"],
-    neckline:      ["crew","round","V-neck","square","scoop","sweetheart","off-shoulder",
-                    "halter","high neck","turtleneck","collar","cowl","asymmetrical"],
+    neckline:      ["crew","round","boat","V-neck","plunging","jewel","square","scoop",
+                    "sweetheart","off-shoulder","strapless","halter","high neck",
+                    "turtleneck","collar","cowl","one shoulder","tie neck","apron neck",
+                    "queen anne","asymmetrical","keyhole neck","scalloped neck","illusion neck"],
     sleeve_length: ["sleeveless","cap","short","3/4","long"],
     fit:           ["slim","regular","relaxed","loose","oversized","bodycon",
                     "tailored","A-line","fit & flare","wrap"],
@@ -218,8 +224,10 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
     fabric_type:    [...FABRIC_OPTIONS],
     warmth:         ["airy","light","medium","warm","thermal"],
     jumpsuit_style: ["tailored","utility","romper","playsuit","halter","strapless","boiler","evening","boho","wide-leg","straight-leg","tapered"],
-    neckline:       ["crew","round","V-neck","square","scoop","sweetheart","off-shoulder",
-                     "halter","high neck","turtleneck","collar","cowl","asymmetrical"],
+    neckline:       ["crew","round","boat","V-neck","plunging","jewel","square","scoop",
+                     "sweetheart","off-shoulder","strapless","halter","high neck",
+                     "turtleneck","collar","cowl","one shoulder","tie neck","apron neck",
+                     "queen anne","asymmetrical","keyhole neck","scalloped neck","illusion neck"],
     sleeve_length:  ["sleeveless","cap","short","3/4","long"],
     strap_type:     ["strapless","spaghetti","wide","adjustable","racerback","cross-back","halter"],
     fit:            ["slim","regular","relaxed","loose","oversized","bodycon",
@@ -236,7 +244,7 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
   },
   // ── Outerwear ───────────────────────────────────────────────────────────────
   outerwear: {
-    outerwear_type:     ["blazer","jacket","coat","trench","cardigan","bomber","puffer","shacket","cape","vest"],
+    outerwear_type:     ["blazer","jacket","coat","trench","cardigan","bomber","puffer","shacket","cape","vest","shrug","coverup"],
     fabric_type:        [...FABRIC_OPTIONS],
     warmth:             ["airy","light","medium","warm","thermal"],
     collar_style:       ["notched","shawl","mandarin","spread","stand","funnel","hooded","lapel-free"],
@@ -503,6 +511,7 @@ export default function WardrobePage() {
   const [filterFormality, setFilterFormality] = useState("all");
   const [descriptors, setDescriptors] = useState<Record<string, string>>({});
   const [duplicate, setDuplicate] = useState<TagPreview["duplicate"]>(null);
+  const [refreshingCategoryDetails, setRefreshingCategoryDetails] = useState(false);
   const [editingItem, setEditingItem] = useState<ClothingItem | null>(null);
   const [deletingItem, setDeletingItem] = useState<ClothingItem | null>(null);
   const [permanentlyDeletingItem, setPermanentlyDeletingItem] = useState<ClothingItem | null>(null);
@@ -510,6 +519,7 @@ export default function WardrobePage() {
   const [trackedMediaIds, setTrackedMediaIds] = useState<string[]>([]);
   const [mediaActivity, setMediaActivity] = useState<Record<string, ClothingItem>>({});
   const [activityExpanded, setActivityExpanded] = useState(false);
+  const categoryRefreshRequestRef = useRef(0);
 
   const hasActiveFilters = filterCat !== "all" || filterSeason !== "all" || filterFormality !== "all";
 
@@ -692,6 +702,7 @@ export default function WardrobePage() {
     setDescriptors({});
     setDuplicate(null);
     setArchiveAfterSave(false);
+    setRefreshingCategoryDetails(false);
   }, [pendingPreview]);
 
   const onDrop = useCallback(async (accepted: File[]) => {
@@ -714,6 +725,35 @@ export default function WardrobePage() {
       resetWizard();
     }
   }, [ensureTagOptions, resetWizard]);
+
+  const handlePreviewCategoryChange = useCallback(async (nextCategory: string) => {
+    setCorrectedCat(nextCategory);
+
+    if (!pendingFile || !aiTags) return;
+
+    if (nextCategory === aiTags.category) {
+      setRefreshingCategoryDetails(false);
+      setDescriptors(sanitizeDescriptorsForCategory(aiTags.category, aiTags.descriptors || {}));
+      return;
+    }
+
+    const requestId = ++categoryRefreshRequestRef.current;
+    setRefreshingCategoryDetails(true);
+
+    try {
+      const refreshed = await tagPreview(pendingFile, nextCategory);
+      if (categoryRefreshRequestRef.current !== requestId) return;
+      setDescriptors(sanitizeDescriptorsForCategory(nextCategory, refreshed.descriptors || {}));
+    } catch {
+      if (categoryRefreshRequestRef.current !== requestId) return;
+      setDescriptors(sanitizeDescriptorsForCategory(nextCategory, {}));
+      toast.error("Could not refresh style details for that category");
+    } finally {
+      if (categoryRefreshRequestRef.current === requestId) {
+        setRefreshingCategoryDetails(false);
+      }
+    }
+  }, [aiTags, pendingFile]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop, accept: { "image/*": [".jpg",".jpeg",".png",".webp"] },
@@ -978,6 +1018,7 @@ export default function WardrobePage() {
             tagOptionsLoading={loadingTagOptions}
             correctedCat={correctedCat}
             correctedColor={correctedColor}
+            categoryDetailsRefreshing={refreshingCategoryDetails}
             descriptors={descriptors}
             duplicate={duplicate}
             seasonWarning={
@@ -986,7 +1027,7 @@ export default function WardrobePage() {
                 : null
             }
             archiveAfterSave={archiveAfterSave}
-            onCatChange={setCorrectedCat}
+            onCatChange={handlePreviewCategoryChange}
             onColorChange={setCorrectedColor}
             onDescriptorChange={(key, val) =>
               setDescriptors((prev: Record<string, string>) => ({ ...prev, [key]: val }))}
@@ -1417,6 +1458,7 @@ function ManagedImage({
 function ReviewPanel({
   previewUrl, aiTags, tagOptions, tagOptionsLoading,
   correctedCat, correctedColor,
+  categoryDetailsRefreshing,
   descriptors, duplicate,
   seasonWarning, archiveAfterSave,
   onCatChange, onColorChange,
@@ -1430,6 +1472,7 @@ function ReviewPanel({
   tagOptionsLoading: boolean;
   correctedCat: string;
   correctedColor: string;
+  categoryDetailsRefreshing: boolean;
   onCatChange: (v: string) => void;
   onColorChange: (v: string) => void;
   descriptors: Record<string, string>;
@@ -1561,12 +1604,17 @@ function ReviewPanel({
           <div style={{ marginBottom: "20px" }}>
             <label htmlFor="review-category" style={labelStyle}>Category {catChanged && <ChangedBadge />}</label>
             <select id="review-category" name="category" value={correctedCat} onChange={e => onCatChange(e.target.value)}
-              disabled={tagOptionsLoading && tagOptions.categories.length === 0}
+              disabled={categoryDetailsRefreshing || (tagOptionsLoading && tagOptions.categories.length === 0)}
               className="input" style={{ padding: "8px 12px", fontSize: "14px", textTransform: "capitalize" }}>
               {categoryOptions.map(c => (
                 <option key={c} value={c} style={{ textTransform: "capitalize" }}>{c}</option>
               ))}
             </select>
+            {categoryDetailsRefreshing && (
+              <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
+                Refreshing style details for <em style={{ textTransform: "capitalize" }}>{correctedCat}</em>…
+              </p>
+            )}
             {tagOptionsLoading && tagOptions.categories.length === 0 && (
               <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>Loading category options…</p>
             )}
@@ -1995,6 +2043,7 @@ function ItemCard({ item, priority = false, onEdit, onRequestDelete }: {
       : null;
 
   const colorDisplay = COLOR_HEX[item.color || ""]
+    ?? ((item.color || "") === "multicolor" ? "linear-gradient(135deg,#c0392b 0%,#d4a843 24%,#4a7c59 48%,#4a90c4 72%,#7c5cbf 100%)" : undefined)
     ?? ((item.color || "") === "pattern" ? "linear-gradient(135deg,#e8a0a0 25%,#4a90c4 75%)" : undefined)
     ?? ((item.color || "").startsWith("#") ? item.color : "#ccc");
   const mediaBadge = getMediaBadgeLabel(item);

@@ -249,7 +249,7 @@ start_backend() {
   > "$BACKEND_LOG"
  
   log "Launching backend..."
-  venv/bin/uvicorn main:app --port 8000 >> "$BACKEND_LOG" 2>&1 &
+  venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 >> "$BACKEND_LOG" 2>&1 &
   BACKEND_PID=$!
   echo "$BACKEND_PID" >> "$PID_FILE"
 
@@ -276,10 +276,6 @@ start_frontend() {
   cd "$FRONTEND_DIR"
   > "$FRONTEND_LOG"
 
-  # Avoid stale build/dev artifacts causing manifest mismatches between
-  # production builds and the Turbopack dev server.
-  node -e "require('fs').rmSync('.next', { recursive: true, force: true })" 2>/dev/null || true
- 
   log "Launching frontend..."
   NODE_OPTIONS=--max-old-space-size=4096 npm run dev >> "$FRONTEND_LOG" 2>&1 &
   FRONTEND_PID=$!
@@ -397,12 +393,12 @@ cmd_start() {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _refresh_trend_calendar() {
-  CALENDAR="$BACKEND_DIR/data/trend_calendar.json"
+  CALENDAR="$BACKEND_DIR/assets/fashion_rules/trend_calendar.json"
 
   # Age check — how many days since last refresh?
   DAYS_OLD=$(cd "$BACKEND_DIR" && venv/bin/python -c "
 import os, time
-f='data/trend_calendar.json'
+f='assets/fashion_rules/trend_calendar.json'
 print(int((time.time()-os.path.getmtime(f))/86400) if os.path.exists(f) else 999)
 " 2>/dev/null || echo 999)
 
@@ -430,9 +426,9 @@ from config import get_settings; s=get_settings(); print(s.kaggle_key)
   export KAGGLE_USERNAME="$KAGGLE_USER"
   export KAGGLE_KEY="$KAGGLE_API_KEY"
 
-  if venv/bin/python -m kaggle datasets download \
+  if venv/bin/kaggle datasets download \
        paramaggarwal/fashion-product-images-dataset \
-       -f styles.csv --unzip -p data/ -q 2>/dev/null; then
+       -f styles.csv --unzip -p data/ -q; then
     venv/bin/python scripts/build_trend_calendar.py data/styles.csv \
       && ok "Trend calendar refreshed"  \
       || warn "build_trend_calendar.py failed — using existing calendar"

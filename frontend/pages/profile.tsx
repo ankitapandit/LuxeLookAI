@@ -29,6 +29,7 @@ import toast from "react-hot-toast";
 // ── Static data ───────────────────────────────────────────────────────────────
 
 const BODY_TYPES  = ["hourglass", "pear", "apple", "rectangle", "inverted triangle"];
+const SHOULDER_OPTIONS = ["narrow", "balanced", "broad"];
 const GENDER_OPTIONS = [
   ["prefer_not_to_say", "Prefer not to say"],
   ["woman", "Woman"],
@@ -460,6 +461,7 @@ export default function ProfilePage() {
 
   // Core form state
   const [bodyType,    setBodyType]    = useState("");
+  const [shoulders,   setShoulders]   = useState("");
   const [gender,      setGender]      = useState("prefer_not_to_say");
   const [ethnicity,   setEthnicity]   = useState("prefer_not_to_say");
   const [ageRange,    setAgeRange]    = useState("");
@@ -500,6 +502,7 @@ export default function ProfilePage() {
     setGender(p.gender || "prefer_not_to_say");
     setEthnicity(p.ethnicity || "prefer_not_to_say");
     setBodyType(p.body_type || "");
+    setShoulders(p.shoulders || "");
     setAgeRange(p.age_range || "");
     setComplexion(p.complexion || "");
     setFaceShape(p.face_shape || "");
@@ -697,6 +700,7 @@ export default function ProfilePage() {
         gender: gender || "prefer_not_to_say",
         ethnicity: ethnicity || "prefer_not_to_say",
         body_type:  bodyType   || undefined,
+        shoulders: shoulders || undefined,
         age_range:  ageRange   || undefined,
         height_cm: heightCm,
         weight_kg: weightKg,
@@ -1032,6 +1036,16 @@ export default function ProfilePage() {
                 <SelectField id="profile-body-type" name="body_type" value={bodyType} onChange={setBodyType} options={BODY_TYPES} />
               </div>
               <CalcLinkButton label="Calculate mine" open={showBodyCalc} onClick={() => setShowBodyCalc(p => !p)} />
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap", marginBottom: "10px" }}>
+              <label htmlFor="profile-shoulders" style={{ ...labelStyle, marginBottom: 0 }}>Shoulders</label>
+              <div style={{ width: "220px", maxWidth: "100%" }}>
+                <SelectField id="profile-shoulders" name="shoulders" value={shoulders} onChange={setShoulders} options={SHOULDER_OPTIONS} />
+              </div>
+              <p className="type-helper" style={{ fontSize: "12px", color: "var(--muted)", margin: 0 }}>
+                Helps distinguish straighter, pear, and inverted-triangle silhouettes.
+              </p>
             </div>
 
             {showBodyCalc && (

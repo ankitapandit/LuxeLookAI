@@ -45,28 +45,28 @@ export function createDefaultEventBriefValues(): EventBriefValues {
 const DRESS_CODE_OPTIONS = ["Casual", "Smart Casual", "Business Casual", "Cocktail", "Black Tie", "None", "Other"];
 const LOCATION_OPTIONS = ["Indoor", "Outdoor", "Both"];
 const VENUE_OPTIONS = [
-  "Beach",
-  "Rooftop",
-  "Boat",
-  "Hotel",
-  "Park",
-  "Restaurant",
-  "Museum",
-  "Zoo",
-  "Aquarium",
-  "Theatre",
-  "Ballroom",
-  "Conference",
-  "Bar",
-  "Concert",
-  "Sports",
   "Academic",
-  "Resort",
-  "Travel",
+  "Aquarium",
+  "Ballroom",
+  "Bar",
+  "Beach",
+  "Boat",
   "Brewery",
-  "Winery",
-  "Stadium",
+  "Concert",
+  "Conference",
+  "Hotel",
+  "Museum",
   "Other",
+  "Park",
+  "Resort",
+  "Restaurant",
+  "Rooftop",
+  "Sports",
+  "Stadium",
+  "Theatre",
+  "Travel",
+  "Winery",
+  "Zoo",
 ];
 const TIME_OPTIONS = ["Daytime", "Evening", "Nighttime"];
 const PURPOSE_OPTIONS = [
@@ -590,10 +590,12 @@ export function composeEventBriefText(
 export default function EventBriefEditor({
   values,
   onChange,
+  onReset,
   mobileCompact = false,
 }: {
   values: EventBriefValues;
   onChange: (next: EventBriefValues) => void;
+  onReset?: () => void;
   mobileCompact?: boolean;
 }) {
   const dressCodeValues = normalizeMultiValue(values.dressCode);
@@ -681,6 +683,17 @@ export default function EventBriefEditor({
     });
   };
 
+  const handleReset = () => {
+    onChange(createDefaultEventBriefValues());
+    setEditingCustomSingle({
+      purpose: false,
+      styleMood: false,
+      duration: false,
+      audience: false,
+    });
+    onReset?.();
+  };
+
   return (
     <section
       style={{
@@ -688,6 +701,24 @@ export default function EventBriefEditor({
       }}
     >
       <div style={{ display: "grid", gap: "14px" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            onClick={handleReset}
+            style={{
+              border: "none",
+              background: "transparent",
+              color: "rgba(247,240,230,0.62)",
+              fontSize: "11px",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              cursor: "pointer",
+              padding: 0,
+            }}
+          >
+            Reset form
+          </button>
+        </div>
         <FieldShell label="Dress Code" hint="Choose one or more" stackOnMobile={mobileCompact}>
           {mobileCompact ? (
             <MultiSelectDropdown
@@ -846,7 +877,12 @@ export default function EventBriefEditor({
                 {mobileCompact ? (
                   <>
                     <div className="desktop-only-choice">
-                      <OptionPills value={values.purpose} onPick={setPurpose} options={PURPOSE_OPTIONS} />
+                      <OptionPills
+                        value={values.purpose}
+                        onPick={setPurpose}
+                        options={PURPOSE_OPTIONS}
+                        getOptionLabel={(option) => renderOtherLabel(option, values.purposeOther)}
+                      />
                     </div>
                     <div className="mobile-only-choice" style={{ flex: "1 1 220px", minWidth: "200px" }}>
                       <SelectControl
@@ -882,7 +918,12 @@ export default function EventBriefEditor({
                 {mobileCompact ? (
                   <>
                     <div className="desktop-only-choice">
-                      <OptionPills value={values.styleMood} onPick={setStyleMood} options={STYLE_OPTIONS} />
+                      <OptionPills
+                        value={values.styleMood}
+                        onPick={setStyleMood}
+                        options={STYLE_OPTIONS}
+                        getOptionLabel={(option) => renderOtherLabel(option, values.styleMoodOther)}
+                      />
                     </div>
                     <div className="mobile-only-choice" style={{ flex: "1 1 220px", minWidth: "200px" }}>
                       <SelectControl

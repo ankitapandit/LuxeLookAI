@@ -1,0 +1,65 @@
+{
+  "category": "skin_tone",
+  "display_name": "Skin Tone",
+  "summary": {
+    "dos": [
+      "Use colors that enhance the natural skin tone."
+    ],
+    "donts": [
+      "Use dull or muting shades incorrectly."
+    ]
+  },
+  "rules": [
+    {
+      "subtype": "Fair",
+      "key_inputs": [
+        "Light skin"
+      ],
+      "primary_goal": "Soft enhance",
+      "recommended_attributes": [
+        "Pastels",
+        "Light tones"
+      ],
+      "avoid_attributes": [
+        "Neon"
+      ],
+      "engine_tags": [
+        "soft_light"
+      ]
+    },
+    {
+      "subtype": "Medium",
+      "key_inputs": [
+        "Balanced"
+      ],
+      "primary_goal": "Rich enhance",
+      "recommended_attributes": [
+        "Warm tones",
+        "Jewel tones"
+      ],
+      "avoid_attributes": [
+        "Icy tones"
+      ],
+      "engine_tags": [
+        "rich_balance"
+      ]
+    },
+    {
+      "subtype": "Deep",
+      "key_inputs": [
+        "Dark skin"
+      ],
+      "primary_goal": "Bold enhance",
+      "recommended_attributes": [
+        "Bright",
+        "Saturated"
+      ],
+      "avoid_attributes": [
+        "Muted browns"
+      ],
+      "engine_tags": [
+        "bold_pop"
+      ]
+    }
+  ]
+}

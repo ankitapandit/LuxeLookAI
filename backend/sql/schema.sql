@@ -15,6 +15,7 @@ create table if not exists users (
   gender                   text not null default 'prefer_not_to_say',
   ethnicity                text not null default 'prefer_not_to_say',
   body_type                text,
+  shoulders                text,
   height_cm                float,
   weight_kg                float,
   complexion               text,
@@ -112,7 +113,7 @@ create table if not exists outfit_suggestions (
   accessory_ids   uuid[] default '{}', -- up to 2 finishing pieces (accessories/jewelry; can be empty)
   score           float,               -- composite recommendation score 0–1
   explanation     text,                -- LLM-generated rationale
-  user_rating     int check (user_rating between 1 and 5),  -- feedback
+  user_rating     int check (user_rating between 0 and 5),  -- feedback (0 = none of these work)
   generated_at    timestamptz default now()
 );
 

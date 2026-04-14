@@ -1,0 +1,385 @@
+{
+  "category": "jewelry",
+  "display_name": "Jewelry",
+  "summary": {
+    "dos": [
+      "Use jewelry to support the neckline, occasion, and overall visual hierarchy of the outfit.",
+      "Let one jewelry focal point lead when the outfit or neckline already has presence."
+    ],
+    "donts": [
+      "Do not overload a look with both heavy earrings and a competing necklace.",
+      "Do not ignore neckline logic when choosing necklace shape and length."
+    ]
+  },
+  "rules": [
+    {
+      "subtype": "Stud Earrings",
+      "key_inputs": [
+        "All outfits",
+        "All necklines",
+        "All occasions"
+      ],
+      "primary_goal": "Provide a safe default finish",
+      "recommended_attributes": [
+        "Minimal polish",
+        "Low visual competition",
+        "Easy pairing"
+      ],
+      "avoid_attributes": [
+        "None when balance and restraint are needed"
+      ],
+      "engine_tags": [
+        "safe_pick",
+        "minimal",
+        "default_fallback"
+      ]
+    },
+    {
+      "subtype": "Hoop Earrings",
+      "key_inputs": [
+        "Casual outfits",
+        "Dresses",
+        "Open necklines"
+      ],
+      "primary_goal": "Add effort without overload",
+      "recommended_attributes": [
+        "Open necklines",
+        "No necklace or a very minimal necklace",
+        "Relaxed polish"
+      ],
+      "avoid_attributes": [
+        "Heavy competing necklaces"
+      ],
+      "engine_tags": [
+        "casual_polish",
+        "open_neckline",
+        "effort"
+      ]
+    },
+    {
+      "subtype": "Statement Earrings",
+      "key_inputs": [
+        "Simple outfits",
+        "High neck",
+        "Closed neck",
+        "Party"
+      ],
+      "primary_goal": "Replace the necklace as the focal point",
+      "recommended_attributes": [
+        "High or closed necklines",
+        "Simple outfit base",
+        "Single focal jewelry moment"
+      ],
+      "avoid_attributes": [
+        "Necklace layering",
+        "Busy outfits"
+      ],
+      "engine_tags": [
+        "statement",
+        "upward_focus",
+        "necklace_replacement"
+      ]
+    },
+    {
+      "subtype": "Pendant Necklace",
+      "key_inputs": [
+        "Dresses",
+        "Tops",
+        "V-neck",
+        "Sweetheart"
+      ],
+      "primary_goal": "Follow and complement the neckline shape",
+      "recommended_attributes": [
+        "V-necklines",
+        "Sweetheart necklines",
+        "Stud earrings"
+      ],
+      "avoid_attributes": [
+        "Crowding ornate or closed necklines"
+      ],
+      "engine_tags": [
+        "default_necklace",
+        "neckline_follow",
+        "balanced_polish"
+      ]
+    },
+    {
+      "subtype": "Statement Necklace",
+      "key_inputs": [
+        "Plain outfits",
+        "Strapless",
+        "Off-shoulder",
+        "Formal"
+      ],
+      "primary_goal": "Create one strong focal point at the neckline",
+      "recommended_attributes": [
+        "Plain outfit base",
+        "Open necklines",
+        "Minimal earrings"
+      ],
+      "avoid_attributes": [
+        "Heavy earrings",
+        "Busy necklines"
+      ],
+      "engine_tags": [
+        "statement",
+        "neck_focus",
+        "formal_focal"
+      ]
+    },
+    {
+      "subtype": "Layered Necklace",
+      "key_inputs": [
+        "Casual chic",
+        "Crew",
+        "Scoop"
+      ],
+      "primary_goal": "Add depth and dimension",
+      "recommended_attributes": [
+        "Crew necklines",
+        "Scoop necklines",
+        "Minimal earrings"
+      ],
+      "avoid_attributes": [
+        "Bulky single focal jewelry elsewhere"
+      ],
+      "engine_tags": [
+        "depth",
+        "casual_chic",
+        "dimension"
+      ]
+    },
+    {
+      "subtype": "Choker",
+      "key_inputs": [
+        "Off-shoulder",
+        "Strapless",
+        "Party"
+      ],
+      "primary_goal": "Keep the focus close to the neckline",
+      "recommended_attributes": [
+        "Strapless",
+        "Off-shoulder",
+        "Studs or no earrings"
+      ],
+      "avoid_attributes": [
+        "Long competing necklaces"
+      ],
+      "engine_tags": [
+        "neck_focus",
+        "party",
+        "collarbone_frame"
+      ]
+    },
+    {
+      "subtype": "Long Necklace",
+      "key_inputs": [
+        "High neck outfits",
+        "Turtleneck",
+        "Casual/Formal"
+      ],
+      "primary_goal": "Add vertical balance and elongation",
+      "recommended_attributes": [
+        "High necklines",
+        "Minimal earrings",
+        "Vertical emphasis"
+      ],
+      "avoid_attributes": [
+        "Short competing neck pieces"
+      ],
+      "engine_tags": [
+        "vertical_balance",
+        "elongating",
+        "high_neckline"
+      ]
+    },
+    {
+      "subtype": "Pearl Jewelry",
+      "key_inputs": [
+        "Elegant outfits",
+        "Structured necklines",
+        "Formal"
+      ],
+      "primary_goal": "Add polish and classic refinement",
+      "recommended_attributes": [
+        "Structured necklines",
+        "Studs or small hoops",
+        "Elegant occasion dressing"
+      ],
+      "avoid_attributes": [
+        "Overly casual styling when a polished look is intended"
+      ],
+      "engine_tags": [
+        "classic",
+        "formal_polish",
+        "refined"
+      ]
+    },
+    {
+      "subtype": "Diamond Jewelry",
+      "key_inputs": [
+        "Evening wear",
+        "Formal"
+      ],
+      "primary_goal": "Provide a luxury polish boost",
+      "recommended_attributes": [
+        "Minimal pairing",
+        "High polish occasion dressing",
+        "Evening finish"
+      ],
+      "avoid_attributes": [
+        "Too many competing statement pieces"
+      ],
+      "engine_tags": [
+        "luxury_boost",
+        "formal",
+        "evening_polish"
+      ]
+    }
+  ],
+  "neckline_rules": [
+    {
+      "neckline": "V-Neck",
+      "necklace_length": "Medium-Long",
+      "best_style": [
+        "Pendant",
+        "Drop"
+      ],
+      "avoid": [
+        "Chunky short"
+      ],
+      "engine_logic": "Follow the neckline shape."
+    },
+    {
+      "neckline": "Round Neck",
+      "necklace_length": "Short",
+      "best_style": [
+        "Dainty"
+      ],
+      "avoid": [
+        "Angular"
+      ],
+      "engine_logic": "Soften curves."
+    },
+    {
+      "neckline": "Crew Neck",
+      "necklace_length": "Varied",
+      "best_style": [
+        "Layered"
+      ],
+      "avoid": [
+        "Single bulky"
+      ],
+      "engine_logic": "Add dimension."
+    },
+    {
+      "neckline": "Scoop",
+      "necklace_length": "Short-Medium",
+      "best_style": [
+        "Delicate"
+      ],
+      "avoid": [
+        "Heavy"
+      ],
+      "engine_logic": "Keep the neckline area light."
+    },
+    {
+      "neckline": "High Neck",
+      "necklace_length": "Long",
+      "best_style": [
+        "Lariat",
+        "Chain"
+      ],
+      "avoid": [
+        "Short"
+      ],
+      "engine_logic": "Elongate the neckline visually."
+    },
+    {
+      "neckline": "Off-Shoulder",
+      "necklace_length": "Short-Medium",
+      "best_style": [
+        "Statement",
+        "Delicate"
+      ],
+      "avoid": [
+        "Too long"
+      ],
+      "engine_logic": "Highlight the collarbone."
+    },
+    {
+      "neckline": "Strapless",
+      "necklace_length": "Short",
+      "best_style": [
+        "Choker"
+      ],
+      "avoid": [
+        "Long"
+      ],
+      "engine_logic": "Frame the neckline."
+    },
+    {
+      "neckline": "Sweetheart",
+      "necklace_length": "Short",
+      "best_style": [
+        "Pendant"
+      ],
+      "avoid": [
+        "Busy pieces"
+      ],
+      "engine_logic": "Complement the neckline shape."
+    }
+  ],
+  "earring_rules": [
+    {
+      "outfit_feature": "High neckline",
+      "recommendation": [
+        "Statement earrings"
+      ],
+      "avoid": [
+        "Necklace"
+      ],
+      "engine_logic": "Shift the focus upward."
+    },
+    {
+      "outfit_feature": "Busy outfit",
+      "recommendation": [
+        "Minimal studs"
+      ],
+      "avoid": [
+        "Large earrings"
+      ],
+      "engine_logic": "Reduce visual noise."
+    },
+    {
+      "outfit_feature": "Minimal outfit",
+      "recommendation": [
+        "Statement earrings"
+      ],
+      "avoid": [],
+      "engine_logic": "Add one focal point."
+    },
+    {
+      "outfit_feature": "Formal wear",
+      "recommendation": [
+        "Diamonds",
+        "Pearls"
+      ],
+      "avoid": [
+        "Casual hoops"
+      ],
+      "engine_logic": "Increase polish."
+    },
+    {
+      "outfit_feature": "Casual wear",
+      "recommendation": [
+        "Hoops",
+        "Studs"
+      ],
+      "avoid": [
+        "Heavy chandelier"
+      ],
+      "engine_logic": "Keep the look relaxed."
+    }
+  ]
+}

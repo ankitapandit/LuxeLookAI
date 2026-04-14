@@ -129,6 +129,7 @@ alter table public.users
   add column if not exists gender         text default 'prefer_not_to_say',
   add column if not exists ethnicity      text default 'prefer_not_to_say',
   add column if not exists body_type        text,
+  add column if not exists shoulders        text,
   add column if not exists height           float,
   add column if not exists weight           float,
   add column if not exists complexion       text,
@@ -179,6 +180,15 @@ create policy "Users can update own profile"
 -- ─────────────────────────────────────────────────────────────────────────────
 -- v2.0.0 — Discover taste-learning tables
 -- ─────────────────────────────────────────────────────────────────────────────
+
+-- Align outfit suggestion feedback with app logic:
+-- 0 = explicit "none of these work", 1-5 = star ratings.
+ALTER TABLE public.outfit_suggestions
+  DROP CONSTRAINT IF EXISTS outfit_suggestions_user_rating_check;
+
+ALTER TABLE public.outfit_suggestions
+  ADD CONSTRAINT outfit_suggestions_user_rating_check
+  CHECK (user_rating IS NULL OR user_rating BETWEEN 0 AND 5);
 
 CREATE TABLE IF NOT EXISTS public.style_catalog (
     id            uuid DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -1284,7 +1294,8 @@ VALUES
   ('color', '', 'name', 'lavender', '{"r": 220, "g": 200, "b": 250, "clip_prompt": ""}', 31),
   ('color', '', 'name', 'pink', '{"r": 240, "g": 140, "b": 170, "clip_prompt": "this clothing item is pink, blush, or rose coloured"}', 32),
   ('color', '', 'name', 'blush', '{"r": 255, "g": 182, "b": 193, "clip_prompt": ""}', 33),
-  ('color', '', 'name', 'magenta', '{"r": 255, "g": 0, "b": 255, "clip_prompt": ""}', 34)
+  ('color', '', 'name', 'magenta', '{"r": 255, "g": 0, "b": 255, "clip_prompt": ""}', 34),
+  ('color', '', 'name', 'multicolor', '{"r": 170, "g": 135, "b": 145, "clip_prompt": "this clothing item is multicolor, colour-blocked, rainbow, or clearly contains several distinct colours"}', 35)
 ON CONFLICT DO NOTHING;
 
 -- CLIP zero-shot classification labels — tagger.py
@@ -2349,4 +2360,93 @@ VALUES
   ('body_type','petite','swimwear_swimwear_style','monokini','{}',2),
   ('body_type','petite','swimwear_coverage_level','minimal','{}',1),
   ('body_type','petite','swimwear_coverage_level','moderate','{}',2)
+ON CONFLICT DO NOTHING;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v2.4.1 — Outerwear type taxonomy expansion
+-- Adds explicit outerwear_type values so wardrobe editing, AI descriptor
+-- extraction, and taxonomy-backed validation share the same vocabulary.
+-- Safe to re-run.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+INSERT INTO public.style_taxonomy (domain, category, attribute, value, meta, sort_order)
+VALUES
+  ('descriptor','outerwear','outerwear_type','blazer','{}',1),
+  ('descriptor','outerwear','outerwear_type','jacket','{}',2),
+  ('descriptor','outerwear','outerwear_type','coat','{}',3),
+  ('descriptor','outerwear','outerwear_type','trench','{}',4),
+  ('descriptor','outerwear','outerwear_type','cardigan','{}',5),
+  ('descriptor','outerwear','outerwear_type','bomber','{}',6),
+  ('descriptor','outerwear','outerwear_type','puffer','{}',7),
+  ('descriptor','outerwear','outerwear_type','shacket','{}',8),
+  ('descriptor','outerwear','outerwear_type','cape','{}',9),
+  ('descriptor','outerwear','outerwear_type','vest','{}',10),
+  ('descriptor','outerwear','outerwear_type','shrug','{}',11),
+  ('descriptor','outerwear','outerwear_type','coverup','{}',12)
+ON CONFLICT DO NOTHING;
+
+UPDATE public.style_taxonomy
+SET meta = '{"clip_prompt": "a photo of a coat, jacket, blazer, cardigan, shrug, or beach coverup worn as an outer layer"}'
+WHERE domain = 'clip_label'
+  AND category = ''
+  AND attribute = 'category'
+  AND value = 'outerwear';
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v2.4.2 — Neckline vocabulary expansion
+-- Adds the curated neckline values used in wardrobe editing and AI descriptor
+-- extraction. Safe to re-run.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+INSERT INTO public.style_taxonomy (domain, category, attribute, value, meta, sort_order)
+VALUES
+  ('descriptor','tops','neckline','boat','{}',14),
+  ('descriptor','tops','neckline','plunging','{}',15),
+  ('descriptor','tops','neckline','jewel','{}',16),
+  ('descriptor','tops','neckline','strapless','{}',17),
+  ('descriptor','tops','neckline','one shoulder','{}',18),
+  ('descriptor','tops','neckline','tie neck','{}',19),
+  ('descriptor','tops','neckline','apron neck','{}',20),
+  ('descriptor','tops','neckline','queen anne','{}',21),
+  ('descriptor','tops','neckline','keyhole neck','{}',22),
+  ('descriptor','tops','neckline','scalloped neck','{}',23),
+  ('descriptor','tops','neckline','illusion neck','{}',24),
+
+  ('descriptor','dresses','neckline','boat','{}',14),
+  ('descriptor','dresses','neckline','plunging','{}',15),
+  ('descriptor','dresses','neckline','jewel','{}',16),
+  ('descriptor','dresses','neckline','strapless','{}',17),
+  ('descriptor','dresses','neckline','one shoulder','{}',18),
+  ('descriptor','dresses','neckline','tie neck','{}',19),
+  ('descriptor','dresses','neckline','apron neck','{}',20),
+  ('descriptor','dresses','neckline','queen anne','{}',21),
+  ('descriptor','dresses','neckline','keyhole neck','{}',22),
+  ('descriptor','dresses','neckline','scalloped neck','{}',23),
+  ('descriptor','dresses','neckline','illusion neck','{}',24),
+
+  ('descriptor','jumpsuits','neckline','boat','{}',14),
+  ('descriptor','jumpsuits','neckline','plunging','{}',15),
+  ('descriptor','jumpsuits','neckline','jewel','{}',16),
+  ('descriptor','jumpsuits','neckline','strapless','{}',17),
+  ('descriptor','jumpsuits','neckline','one shoulder','{}',18),
+  ('descriptor','jumpsuits','neckline','tie neck','{}',19),
+  ('descriptor','jumpsuits','neckline','apron neck','{}',20),
+  ('descriptor','jumpsuits','neckline','queen anne','{}',21),
+  ('descriptor','jumpsuits','neckline','keyhole neck','{}',22),
+  ('descriptor','jumpsuits','neckline','scalloped neck','{}',23),
+  ('descriptor','jumpsuits','neckline','illusion neck','{}',24),
+
+  ('descriptor','outerwear','neckline','boat','{}',14),
+  ('descriptor','outerwear','neckline','plunging','{}',15),
+  ('descriptor','outerwear','neckline','jewel','{}',16),
+  ('descriptor','outerwear','neckline','strapless','{}',17),
+  ('descriptor','outerwear','neckline','one shoulder','{}',18),
+  ('descriptor','outerwear','neckline','tie neck','{}',19),
+  ('descriptor','outerwear','neckline','apron neck','{}',20),
+  ('descriptor','outerwear','neckline','queen anne','{}',21),
+  ('descriptor','outerwear','neckline','keyhole neck','{}',22),
+  ('descriptor','outerwear','neckline','scalloped neck','{}',23),
+  ('descriptor','outerwear','neckline','illusion neck','{}',24)
 ON CONFLICT DO NOTHING;

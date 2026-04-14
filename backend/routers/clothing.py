@@ -26,6 +26,15 @@ from utils.color_utils import normalize_color
 router = APIRouter()
 
 
+def _derive_item_type(category: str) -> str:
+    return (
+        "accessory" if category in {"accessories", "jewelry"} else
+        "footwear" if category == "shoes" else
+        "outerwear" if category == "outerwear" else
+        "core_garment"
+    )
+
+
 @router.get("/tag-options")
 def tag_options():
     """
@@ -39,6 +48,7 @@ def tag_options():
 @router.post("/tag-preview")
 async def tag_preview(
     file: UploadFile = File(..., description="Clothing image to analyse"),
+    category_override: Optional[str] = Form(None),
     user_id: str = Depends(get_current_user_id),
 ):
     """
@@ -56,6 +66,13 @@ async def tag_preview(
         image_bytes=image_bytes,
     )
 
+    effective_category = category_override or tags.get("category") or "tops"
+    if category_override:
+        tags["category"] = category_override
+        tags["item_type"] = _derive_item_type(category_override)
+        if tags["item_type"] != "accessory":
+            tags["accessory_subtype"] = None
+
     # Map numeric formality score → human label matching frontend FORMALITY_DESCRIPTIONS
     formality_score = tags.get("formality_score", 0.5)
     formality_label = (
@@ -72,7 +89,7 @@ async def tag_preview(
     duplicate = find_duplicate(user_id=user_id, image_bytes=image_bytes, new_color=tags.get("color"))
 
     from ml.llm import describe_clothing
-    descriptors = describe_clothing(image_bytes, tags.get("category", "tops"), file.content_type or "image/jpeg")
+    descriptors = describe_clothing(image_bytes, effective_category, file.content_type or "image/jpeg")
 
     return {
         **tags,

@@ -74,6 +74,7 @@ def _profile_context(profile: Dict[str, Any]) -> Dict[str, Any]:
         "gender": profile.get("gender") or "prefer_not_to_say",
         "ethnicity": profile.get("ethnicity") or "prefer_not_to_say",
         "body_type": profile.get("body_type"),
+        "shoulders": profile.get("shoulders"),
         "complexion": profile.get("complexion"),
         "age_range": profile.get("age_range"),
         "hairstyle": profile.get("hairstyle"),

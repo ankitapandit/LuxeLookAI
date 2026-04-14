@@ -1,0 +1,485 @@
+{
+  "category": "shoes",
+  "display_name": "Shoes",
+  "summary": {
+    "dos": [
+      "Use shoes to ground the outfit, support the occasion, and reinforce the intended silhouette.",
+      "Match footwear polish, contrast, and seasonal weight to the outfit and setting."
+    ],
+    "donts": [
+      "Do not let footwear break the occasion or weather logic of the look.",
+      "Do not use statement shoes with already busy outfits unless the rest of the styling is intentionally quiet."
+    ]
+  },
+  "rules": [
+    {
+      "subtype": "Heels (pumps, stilettos) — Black",
+      "key_inputs": [
+        "Dresses",
+        "Skirts",
+        "Tailored sets",
+        "Formal",
+        "Date night"
+      ],
+      "primary_goal": "Provide a polished formal default",
+      "recommended_attributes": [
+        "High contrast",
+        "Dressy styling",
+        "Tailored or elevated base looks"
+      ],
+      "avoid_attributes": [
+        "Comfort-first casual looks",
+        "Very relaxed daytime outfits"
+      ],
+      "engine_tags": [
+        "formal_default",
+        "dressy",
+        "high_formality"
+      ]
+    },
+    {
+      "subtype": "Heels — Nude / Beige",
+      "key_inputs": [
+        "Dresses",
+        "Skirts",
+        "Mini outfits",
+        "Formal",
+        "Events"
+      ],
+      "primary_goal": "Boost flattery through leg elongation",
+      "recommended_attributes": [
+        "Low contrast",
+        "Leg-lengthening finish",
+        "Clean event styling"
+      ],
+      "avoid_attributes": [
+        "Looks that need a stronger contrast anchor"
+      ],
+      "engine_tags": [
+        "elongating",
+        "flattery_boost",
+        "eventwear"
+      ]
+    },
+    {
+      "subtype": "Heels — Metallic",
+      "key_inputs": [
+        "Simple dresses",
+        "Monochrome looks",
+        "Party",
+        "Wedding"
+      ],
+      "primary_goal": "Elevate minimal outfits",
+      "recommended_attributes": [
+        "Statement finish",
+        "Simple outfit base",
+        "High-polish occasion styling"
+      ],
+      "avoid_attributes": [
+        "Already embellished outfits",
+        "Highly casual settings"
+      ],
+      "engine_tags": [
+        "statement",
+        "elevating",
+        "very_high_formality"
+      ]
+    },
+    {
+      "subtype": "Heels — Red / Bold",
+      "key_inputs": [
+        "Neutral outfits",
+        "Date night",
+        "Party"
+      ],
+      "primary_goal": "Create a focal point",
+      "recommended_attributes": [
+        "High contrast",
+        "Quiet outfit base",
+        "Confident statement styling"
+      ],
+      "avoid_attributes": [
+        "Busy outfits",
+        "Too many other focal pieces"
+      ],
+      "engine_tags": [
+        "focal_point",
+        "statement",
+        "date_night"
+      ]
+    },
+    {
+      "subtype": "Flats (ballet, loafers) — Black",
+      "key_inputs": [
+        "Workwear",
+        "Trousers",
+        "Midi skirts",
+        "Work",
+        "Casual"
+      ],
+      "primary_goal": "Offer a safe polished everyday option",
+      "recommended_attributes": [
+        "Medium contrast",
+        "Clean practical finish",
+        "Everyday refinement"
+      ],
+      "avoid_attributes": [
+        "Very formal evening dressing"
+      ],
+      "engine_tags": [
+        "safe_pick",
+        "polished_everyday",
+        "workwear"
+      ]
+    },
+    {
+      "subtype": "Flats — Brown / Tan",
+      "key_inputs": [
+        "Denim",
+        "Casual dresses",
+        "Casual",
+        "Day out"
+      ],
+      "primary_goal": "Support warm-tone styling",
+      "recommended_attributes": [
+        "Medium contrast",
+        "Warm palette outfits",
+        "Relaxed polish"
+      ],
+      "avoid_attributes": [
+        "Cool-toned formal looks that need sharper contrast"
+      ],
+      "engine_tags": [
+        "warm_tone_pairing",
+        "casual_polish",
+        "daytime"
+      ]
+    },
+    {
+      "subtype": "Flats — White",
+      "key_inputs": [
+        "Light outfits",
+        "Summer dresses",
+        "Casual",
+        "Travel"
+      ],
+      "primary_goal": "Keep the look fresh and relaxed",
+      "recommended_attributes": [
+        "Light contrast",
+        "Easy summer dressing",
+        "Clean casual finish"
+      ],
+      "avoid_attributes": [
+        "Heavy fall/winter looks"
+      ],
+      "engine_tags": [
+        "fresh",
+        "relaxed",
+        "summer"
+      ]
+    },
+    {
+      "subtype": "Sneakers — White",
+      "key_inputs": [
+        "Denim",
+        "Athleisure",
+        "Casual dresses",
+        "Casual",
+        "Travel"
+      ],
+      "primary_goal": "Act as the default casual pairing",
+      "recommended_attributes": [
+        "Light contrast",
+        "Relaxed styling",
+        "Travel practicality"
+      ],
+      "avoid_attributes": [
+        "Strictly formal dressing"
+      ],
+      "engine_tags": [
+        "default_casual",
+        "travel_ready",
+        "low_formality"
+      ]
+    },
+    {
+      "subtype": "Sneakers — Neutral (grey, beige)",
+      "key_inputs": [
+        "Monochrome outfits",
+        "Muted outfits",
+        "Casual"
+      ],
+      "primary_goal": "Add a minimal aesthetic boost",
+      "recommended_attributes": [
+        "Low contrast",
+        "Muted palette",
+        "Quiet casual styling"
+      ],
+      "avoid_attributes": [
+        "Looks that need sharper polish or stronger contrast"
+      ],
+      "engine_tags": [
+        "minimal",
+        "low_contrast",
+        "casual"
+      ]
+    },
+    {
+      "subtype": "Sneakers — Bold / Color pop",
+      "key_inputs": [
+        "Neutral outfits",
+        "Casual street style"
+      ],
+      "primary_goal": "Add interest to simple looks",
+      "recommended_attributes": [
+        "High contrast",
+        "Neutral outfit base",
+        "Street-style energy"
+      ],
+      "avoid_attributes": [
+        "Already busy outfits",
+        "Formal settings"
+      ],
+      "engine_tags": [
+        "statement",
+        "street_style",
+        "color_pop"
+      ]
+    },
+    {
+      "subtype": "Boots (ankle, knee-high) — Black",
+      "key_inputs": [
+        "Dresses",
+        "Jeans",
+        "Skirts",
+        "Fall",
+        "Evening"
+      ],
+      "primary_goal": "Support structured fall styling",
+      "recommended_attributes": [
+        "Medium to high contrast",
+        "Structured outfit base",
+        "Seasonal weight"
+      ],
+      "avoid_attributes": [
+        "Hot-weather looks",
+        "Airy summer styling"
+      ],
+      "engine_tags": [
+        "structured",
+        "fall",
+        "medium_high_formality"
+      ]
+    },
+    {
+      "subtype": "Boots — Brown / Tan",
+      "key_inputs": [
+        "Denim",
+        "Knitwear",
+        "Fall",
+        "Daytime"
+      ],
+      "primary_goal": "Support warm seasonal styling",
+      "recommended_attributes": [
+        "Medium contrast",
+        "Warm palette outfits",
+        "Daytime fall dressing"
+      ],
+      "avoid_attributes": [
+        "Cool formal looks that need sharper polish"
+      ],
+      "engine_tags": [
+        "warm_seasonal",
+        "fall",
+        "daytime"
+      ]
+    },
+    {
+      "subtype": "Boots — White / Light",
+      "key_inputs": [
+        "Statement outfits",
+        "Fashion-forward",
+        "Events"
+      ],
+      "primary_goal": "Add a trend-driven contrast note",
+      "recommended_attributes": [
+        "High contrast",
+        "Fashion-led styling",
+        "Confident visual hierarchy"
+      ],
+      "avoid_attributes": [
+        "Already cluttered statement looks"
+      ],
+      "engine_tags": [
+        "trend_driven",
+        "fashion",
+        "contrast"
+      ]
+    },
+    {
+      "subtype": "Sandals (strappy, minimal) — Nude",
+      "key_inputs": [
+        "Dresses",
+        "Skirts",
+        "Shorts",
+        "Summer",
+        "Vacation"
+      ],
+      "primary_goal": "Create an airy, leg-lengthening finish",
+      "recommended_attributes": [
+        "Low contrast",
+        "Airy styling",
+        "Warm-weather ease"
+      ],
+      "avoid_attributes": [
+        "Cold-weather outfits"
+      ],
+      "engine_tags": [
+        "elongating",
+        "airy",
+        "summer"
+      ]
+    },
+    {
+      "subtype": "Sandals — Metallic",
+      "key_inputs": [
+        "Evening dresses",
+        "Party",
+        "Wedding"
+      ],
+      "primary_goal": "Dress up the outfit cleanly",
+      "recommended_attributes": [
+        "Statement finish",
+        "Simple formal base",
+        "Evening polish"
+      ],
+      "avoid_attributes": [
+        "Highly casual daytime looks"
+      ],
+      "engine_tags": [
+        "dress_up",
+        "statement",
+        "formal_polish"
+      ]
+    },
+    {
+      "subtype": "Sandals — Black",
+      "key_inputs": [
+        "All outfits",
+        "Casual to semi-formal"
+      ],
+      "primary_goal": "Provide a versatile fallback",
+      "recommended_attributes": [
+        "Medium contrast",
+        "Adaptable styling",
+        "Clean grounding"
+      ],
+      "avoid_attributes": [
+        "Very cold-weather looks"
+      ],
+      "engine_tags": [
+        "versatile",
+        "fallback",
+        "semi_formal"
+      ]
+    },
+    {
+      "subtype": "Statement Shoes (animal print, embellished) — Print / Multi",
+      "key_inputs": [
+        "Solid outfits only",
+        "Party",
+        "Fashion"
+      ],
+      "primary_goal": "Carry the focal point through footwear",
+      "recommended_attributes": [
+        "High contrast",
+        "Solid outfit base",
+        "Reduced outfit complexity"
+      ],
+      "avoid_attributes": [
+        "Busy outfits",
+        "Multiple competing statement elements"
+      ],
+      "engine_tags": [
+        "statement",
+        "focal_point",
+        "complexity_control"
+      ]
+    },
+    {
+      "subtype": "Loafers / Oxfords — Black",
+      "key_inputs": [
+        "Tailored pants",
+        "Suits",
+        "Work",
+        "Smart casual"
+      ],
+      "primary_goal": "Lean structured and formal",
+      "recommended_attributes": [
+        "Medium contrast",
+        "Tailored base outfits",
+        "Sharp finish"
+      ],
+      "avoid_attributes": [
+        "Very soft or overtly romantic styling"
+      ],
+      "engine_tags": [
+        "structured",
+        "workwear",
+        "smart_casual"
+      ]
+    },
+    {
+      "subtype": "Loafers / Oxfords — Brown",
+      "key_inputs": [
+        "Earth-tone outfits",
+        "Work",
+        "Casual"
+      ],
+      "primary_goal": "Support warm professional styling",
+      "recommended_attributes": [
+        "Medium contrast",
+        "Earth-tone palettes",
+        "Relaxed structure"
+      ],
+      "avoid_attributes": [
+        "Cool sleek looks that need black or metallic polish"
+      ],
+      "engine_tags": [
+        "warm_professional",
+        "earth_tones",
+        "structured"
+      ]
+    }
+  ],
+  "factors": [
+    {
+      "factor": "Outfit Type Match",
+      "logic_derived": "Sneakers lean casual, heels lean dressy, and boots support structured looks."
+    },
+    {
+      "factor": "Occasion Alignment",
+      "logic_derived": "Formal settings favor heels, metallics, and black; casual settings favor sneakers and flats."
+    },
+    {
+      "factor": "Color Neutrality",
+      "logic_derived": "Neutral shoes maximize compatibility across more outfits."
+    },
+    {
+      "factor": "Contrast Control",
+      "logic_derived": "Statement shoes work best when the rest of the outfit is simple."
+    },
+    {
+      "factor": "Seasonal Fit",
+      "logic_derived": "Boots skew fall and winter, while sandals skew summer."
+    },
+    {
+      "factor": "Visual Balance",
+      "logic_derived": "Nude tones elongate, while bold colors act as focal points."
+    },
+    {
+      "factor": "Style Intent",
+      "logic_derived": "Footwear should reinforce whether the outfit is minimal, statement-led, or polished."
+    }
+  ]
+}

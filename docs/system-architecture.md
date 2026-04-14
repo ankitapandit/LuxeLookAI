@@ -11,6 +11,7 @@ The goal is not just raw DDL. This file explains:
 - the system architecture and request boundaries
 - the access-control model and how Supabase roles are used
 - how the wardrobe, event, archive, and Discover flows operate
+- how the Guide and non-wardrobe styling surfaces fit into the product
 - what each table means in product terms
 - which tables are source-of-truth vs derived/cache-like
 - how data cascades on delete
@@ -26,6 +27,7 @@ LuxeLook AI is a modular monolith:
 - `Supabase Storage` for images and media artifacts
 - `DB-backed background jobs` for Discover and media processing
 - `hybrid AI` where CLIP / Hugging Face powers local visual understanding and the backend retains a provider abstraction for external search sources
+- `visual style-direction enrichment` for non-wardrobe recommendations, using image search plus structured style-direction pieces
 
 The backend is the trust boundary.
 - The frontend calls FastAPI over HTTP and carries the user JWT.
@@ -45,6 +47,7 @@ flowchart TB
     API --> EVENT[Event Router / Service]
     API --> REC[Recommendations Router]
     API --> PROF[Profile Router]
+    API --> STYLEIMG[Style Image Enrichment]
 
     API --> DB[(Supabase Postgres)]
     API --> ST[(Supabase Storage)]
@@ -60,6 +63,7 @@ flowchart TB
     CLOTH --> ST
     EVENT --> DB
     REC --> DB
+    REC --> STYLEIMG
     PROF --> DB
     AUTH --> DB
 
@@ -92,10 +96,12 @@ flowchart TB
 ### 3. Event to outfit suggestions
 
 1. User enters an occasion or event description.
-2. Backend parses the occasion and computes formality context.
+2. Backend parses the occasion, injects structured EventBrief tokens, and computes formality context.
 3. Recommender scores wardrobe combinations.
-4. Results are stored in `outfit_suggestions`.
-5. The archive page and event page render those suggestions and feedback states.
+4. The non-wardrobe style-direction path can build editorial options when the UI requests broader inspiration.
+5. Visual image enrichment can attach representative fashion imagery to wearable style-direction pieces.
+6. Results are stored in `outfit_suggestions`.
+7. The archive page, event page, and style-item flow render those suggestions and feedback states.
 
 ### 4. Discover / The Edit
 
@@ -116,6 +122,12 @@ flowchart TB
 2. The row is marked inactive and archived.
 3. Archived items remain recoverable.
 4. After the purge window, archived items may be permanently removed by cleanup logic.
+
+### 6. Guide
+
+1. User opens the Guide page.
+2. The frontend renders in-app reference content for dress codes, season readings, descriptor families, and profile usage.
+3. No backend request is required; the guide is a user-education surface that helps users correct AI tags and understand recommendation logic.
 
 ## Access Control Model
 

@@ -35,7 +35,7 @@ CATEGORY_LABELS: List[Tuple[str, str]] = [
     ("dresses",     "a photo of a dress that covers both the torso and legs"),
     ("jumpsuits",   "a photo of a jumpsuit, romper, or playsuit that covers the torso and either full legs or shorts"),
     ("shoes",       "a photo of shoes, boots, heels, sneakers, sandals, or footwear"),
-    ("outerwear",   "a photo of a coat, jacket, blazer, or cardigan worn as an outer layer"),
+    ("outerwear",   "a photo of a coat, jacket, blazer, cardigan, shrug, or coverup worn as an outer layer"),
     ("jewelry",     "a photo of jewelry such as a necklace, earrings, bracelet, ring, or watch"),
     ("accessories", "a photo of a non-jewelry accessory such as a handbag, belt, scarf, hat, or sunglasses"),
     ("set",         "a photo of a co-ord set or matching two-piece outfit with a coordinated top and bottom in the same fabric or print"),
@@ -57,6 +57,7 @@ COLOR_LABELS: List[Tuple[str, str]] = [
     ("yellow",  "this clothing item is yellow or mustard or gold coloured"),
     ("orange",  "this clothing item is orange or rust or terracotta coloured"),
     ("purple",  "this clothing item is purple, violet, or lavender coloured"),
+    ("multicolor", "this clothing item is multicolor, colour-blocked, rainbow, or clearly contains several distinct colours"),
     ("pattern", "this clothing item has a pattern: stripes, floral, plaid, or print"),
 ]
 
@@ -311,7 +312,11 @@ def _refine_season_from_tags(tags: Dict[str, Any]) -> str:
     elif category in {"dresses", "jumpsuits"}:
         bump("fall", 0.15)
     elif category == "tops":
-        if any(token in value for token in values for token in ("knit", "ribbed", "sweater", "long sleeve", "mock neck", "turtleneck")):
+        if any(
+            token in descriptor_value
+            for descriptor_value in values
+            for token in ("knit", "ribbed", "sweater", "long sleeve", "mock neck", "turtleneck")
+        ):
             bump("fall", 0.55)
             bump("winter", 0.50)
 

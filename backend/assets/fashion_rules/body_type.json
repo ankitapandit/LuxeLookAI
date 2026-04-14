@@ -1,0 +1,97 @@
+{
+  "category": "body_type",
+  "display_name": "Body Type",
+  "summary": {
+    "dos": [
+      "Balance proportions by adding or removing volume strategically."
+    ],
+    "donts": [
+      "Emphasize the widest area unintentionally."
+    ]
+  },
+  "rules": [
+    {
+      "subtype": "Hourglass",
+      "key_inputs": [
+        "Balanced bust/hips"
+      ],
+      "primary_goal": "Define waist",
+      "recommended_attributes": [
+        "Fitted",
+        "Wrap"
+      ],
+      "avoid_attributes": [
+        "Boxy fits"
+      ],
+      "engine_tags": [
+        "waist_define"
+      ]
+    },
+    {
+      "subtype": "Pear",
+      "key_inputs": [
+        "Wider hips"
+      ],
+      "primary_goal": "Balance upper",
+      "recommended_attributes": [
+        "Structured tops"
+      ],
+      "avoid_attributes": [
+        "Tight bottoms"
+      ],
+      "engine_tags": [
+        "upper_volume"
+      ]
+    },
+    {
+      "subtype": "Apple",
+      "key_inputs": [
+        "Mid-heavy"
+      ],
+      "primary_goal": "Elongate torso",
+      "recommended_attributes": [
+        "V-neck",
+        "Flowy"
+      ],
+      "avoid_attributes": [
+        "Clingy waist"
+      ],
+      "engine_tags": [
+        "torso_elongate"
+      ]
+    },
+    {
+      "subtype": "Rectangle",
+      "key_inputs": [
+        "Straight frame"
+      ],
+      "primary_goal": "Create curves",
+      "recommended_attributes": [
+        "Peplum",
+        "Layers"
+      ],
+      "avoid_attributes": [
+        "Straight cuts"
+      ],
+      "engine_tags": [
+        "curve_create"
+      ]
+    },
+    {
+      "subtype": "Inverted Triangle",
+      "key_inputs": [
+        "Broad shoulders"
+      ],
+      "primary_goal": "Add lower volume",
+      "recommended_attributes": [
+        "Wide-leg bottoms"
+      ],
+      "avoid_attributes": [
+        "Shoulder-heavy tops"
+      ],
+      "engine_tags": [
+        "lower_balance"
+      ]
+    }
+  ]
+}

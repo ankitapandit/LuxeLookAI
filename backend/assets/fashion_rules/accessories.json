@@ -1,0 +1,384 @@
+{
+  "category": "accessories",
+  "display_name": "Accessories",
+  "summary": {
+    "dos": [
+      "Use accessories to anchor, refine, or finish the outfit without competing with its main story.",
+      "Match accessory intensity to outfit complexity, occasion, and the number of existing focal points."
+    ],
+    "donts": [
+      "Do not stack too many statement pieces at once.",
+      "Do not pair busy accessories with already busy outfits unless the look intentionally calls for maximalism."
+    ]
+  },
+  "rules": [
+    {
+      "subtype": "Handbag / Purse — Black / Neutral",
+      "key_inputs": [
+        "Neutral color",
+        "All outfits",
+        "All occasions"
+      ],
+      "primary_goal": "Anchor the look safely",
+      "recommended_attributes": [
+        "Low contrast",
+        "Balanced finish",
+        "Versatile styling"
+      ],
+      "avoid_attributes": [
+        "Overly loud pairings when a subtle finish is desired"
+      ],
+      "engine_tags": [
+        "safe_pick",
+        "anchor",
+        "all_occasions"
+      ]
+    },
+    {
+      "subtype": "Handbag — Bold color",
+      "key_inputs": [
+        "Neutral outfits",
+        "Casual to party occasions"
+      ],
+      "primary_goal": "Create a focal point",
+      "recommended_attributes": [
+        "High contrast",
+        "Simple outfit base",
+        "One clear statement"
+      ],
+      "avoid_attributes": [
+        "Already busy outfits",
+        "Too many other statement accessories"
+      ],
+      "engine_tags": [
+        "statement",
+        "contrast",
+        "focal_point"
+      ]
+    },
+    {
+      "subtype": "Handbag — Metallic / Embellished",
+      "key_inputs": [
+        "Simple evening wear",
+        "Party",
+        "Wedding"
+      ],
+      "primary_goal": "Elevate minimal looks",
+      "recommended_attributes": [
+        "Medium to high contrast",
+        "Polished finish",
+        "Evening styling"
+      ],
+      "avoid_attributes": [
+        "Over-embellished outfits",
+        "Highly casual daytime looks"
+      ],
+      "engine_tags": [
+        "evening_enhancer",
+        "polish_boost",
+        "statement_finish"
+      ]
+    },
+    {
+      "subtype": "Belt — Matching outfit tone",
+      "key_inputs": [
+        "Dresses",
+        "Trousers",
+        "Work",
+        "Casual"
+      ],
+      "primary_goal": "Define and structure the silhouette",
+      "recommended_attributes": [
+        "Low contrast",
+        "Shape definition",
+        "Waist emphasis"
+      ],
+      "avoid_attributes": [
+        "Unnecessary break points on already segmented looks"
+      ],
+      "engine_tags": [
+        "structure",
+        "silhouette_definition",
+        "low_contrast"
+      ]
+    },
+    {
+      "subtype": "Belt — Contrast belt",
+      "key_inputs": [
+        "Monochrome outfits",
+        "Casual",
+        "Street"
+      ],
+      "primary_goal": "Break up and separate the silhouette",
+      "recommended_attributes": [
+        "Medium contrast",
+        "Monochrome base",
+        "Visual separation"
+      ],
+      "avoid_attributes": [
+        "Already fragmented color stories"
+      ],
+      "engine_tags": [
+        "visual_break",
+        "contrast",
+        "waist_focus"
+      ]
+    },
+    {
+      "subtype": "Sunglasses — Neutral",
+      "key_inputs": [
+        "Casual",
+        "Travel",
+        "All outfits"
+      ],
+      "primary_goal": "Finish the look cleanly",
+      "recommended_attributes": [
+        "Low contrast",
+        "Polished daytime finish",
+        "Easy versatility"
+      ],
+      "avoid_attributes": [
+        "Very formal evening settings"
+      ],
+      "engine_tags": [
+        "polish",
+        "travel_ready",
+        "daytime_finish"
+      ]
+    },
+    {
+      "subtype": "Sunglasses — Statement",
+      "key_inputs": [
+        "Minimal outfits",
+        "Casual",
+        "Fashion"
+      ],
+      "primary_goal": "Add personality",
+      "recommended_attributes": [
+        "High contrast",
+        "Simple outfit base",
+        "Expressive styling"
+      ],
+      "avoid_attributes": [
+        "Already loud prints",
+        "Stacking with multiple statement accessories"
+      ],
+      "engine_tags": [
+        "statement",
+        "personality",
+        "contrast"
+      ]
+    },
+    {
+      "subtype": "Scarf — Neutral",
+      "key_inputs": [
+        "Outerwear looks",
+        "Fall",
+        "Winter"
+      ],
+      "primary_goal": "Add texture and layering",
+      "recommended_attributes": [
+        "Low contrast",
+        "Seasonal texture",
+        "Layering depth"
+      ],
+      "avoid_attributes": [
+        "Hot-weather outfits"
+      ],
+      "engine_tags": [
+        "texture",
+        "layering",
+        "cool_weather"
+      ]
+    },
+    {
+      "subtype": "Scarf — Printed / Bold",
+      "key_inputs": [
+        "Simple outfits",
+        "Casual",
+        "Travel"
+      ],
+      "primary_goal": "Add statement texture and interest",
+      "recommended_attributes": [
+        "High contrast",
+        "Quiet outfit base",
+        "One clear print story"
+      ],
+      "avoid_attributes": [
+        "Busy outfits",
+        "Competing prints"
+      ],
+      "engine_tags": [
+        "statement",
+        "print_focus",
+        "travel"
+      ]
+    },
+    {
+      "subtype": "Hat — Neutral",
+      "key_inputs": [
+        "Casual outfits",
+        "Travel",
+        "Day out"
+      ],
+      "primary_goal": "Complete the casual vibe",
+      "recommended_attributes": [
+        "Low contrast",
+        "Relaxed styling",
+        "Daytime ease"
+      ],
+      "avoid_attributes": [
+        "Highly formal settings"
+      ],
+      "engine_tags": [
+        "casual_finish",
+        "daytime",
+        "style_enhancer"
+      ]
+    },
+    {
+      "subtype": "Hat — Statement",
+      "key_inputs": [
+        "Minimal outfits",
+        "Fashion"
+      ],
+      "primary_goal": "Add visual interest",
+      "recommended_attributes": [
+        "High contrast",
+        "Simple outfit base",
+        "Fashion-led styling"
+      ],
+      "avoid_attributes": [
+        "Over-accessorized looks"
+      ],
+      "engine_tags": [
+        "statement",
+        "fashion",
+        "contrast"
+      ]
+    },
+    {
+      "subtype": "Hair Accessories — Minimal",
+      "key_inputs": [
+        "All outfits",
+        "Casual to formal"
+      ],
+      "primary_goal": "Add subtle polish",
+      "recommended_attributes": [
+        "Low contrast",
+        "Understated finish",
+        "Easy enhancement"
+      ],
+      "avoid_attributes": [
+        "None when balance is needed"
+      ],
+      "engine_tags": [
+        "subtle_polish",
+        "safe_pick",
+        "finish"
+      ]
+    },
+    {
+      "subtype": "Hair Accessories — Statement",
+      "key_inputs": [
+        "Simple outfits",
+        "Party"
+      ],
+      "primary_goal": "Add a focal styling moment",
+      "recommended_attributes": [
+        "High contrast",
+        "Minimal outfit base",
+        "Celebratory finish"
+      ],
+      "avoid_attributes": [
+        "Over-layering",
+        "Busy outfits"
+      ],
+      "engine_tags": [
+        "statement",
+        "party",
+        "focal_point"
+      ]
+    },
+    {
+      "subtype": "Watch — Minimal",
+      "key_inputs": [
+        "All outfits",
+        "Work",
+        "Formal"
+      ],
+      "primary_goal": "Add refinement and polish",
+      "recommended_attributes": [
+        "Low contrast",
+        "Clean metals or leather",
+        "Structured finish"
+      ],
+      "avoid_attributes": [
+        "None when a subtle polish is desired"
+      ],
+      "engine_tags": [
+        "refinement",
+        "workwear",
+        "formal_polish"
+      ]
+    },
+    {
+      "subtype": "Watch — Bold / Oversized",
+      "key_inputs": [
+        "Casual outfits"
+      ],
+      "primary_goal": "Add personality",
+      "recommended_attributes": [
+        "Medium contrast",
+        "Relaxed outfit base",
+        "Statement wrist styling"
+      ],
+      "avoid_attributes": [
+        "Very delicate formal looks"
+      ],
+      "engine_tags": [
+        "statement",
+        "casual_personality",
+        "medium_contrast"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "mistake_type": "Matchy-Matchy Overload",
+      "what_happens": "The bag, jewelry, and other finishing pieces all repeat the exact same color.",
+      "why_its_bad": "The look can feel forced and dated instead of coordinated.",
+      "engine_constraint": "Limit exact color repetition across finishing pieces."
+    },
+    {
+      "mistake_type": "Too Many Statement Pieces",
+      "what_happens": "A bold bag, bold jewelry, and another statement finishing piece all compete at once.",
+      "why_its_bad": "The outfit loses hierarchy and feels visually chaotic.",
+      "engine_constraint": "Allow only one or two focal finishing pieces."
+    },
+    {
+      "mistake_type": "Over-Accessorizing",
+      "what_happens": "Too many accessories are added at once.",
+      "why_its_bad": "The outfit feels cluttered and overworked.",
+      "engine_constraint": "Cap accessory count and favor balance."
+    },
+    {
+      "mistake_type": "Ignoring Outfit Complexity",
+      "what_happens": "Busy accessories are paired with a busy outfit.",
+      "why_its_bad": "The accessories compete with the outfit instead of supporting it.",
+      "engine_constraint": "Simplify finishing pieces when the core outfit is already complex."
+    },
+    {
+      "mistake_type": "No Contrast",
+      "what_happens": "Everything blends into one flat visual field.",
+      "why_its_bad": "The styling can feel unfinished or forgettable.",
+      "engine_constraint": "Introduce at least one controlled contrast element when the look is too flat."
+    },
+    {
+      "mistake_type": "Wrong Occasion",
+      "what_happens": "A casual accessory is used in a formal context, or vice versa.",
+      "why_its_bad": "It breaks the coherence of the outfit.",
+      "engine_constraint": "Enforce accessory occasion-fit checks."
+    }
+  ]
+}

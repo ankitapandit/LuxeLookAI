@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/hooks/useAuth";
-import { Sparkles, ShirtIcon, CalendarDays, LogOut, User, Menu, X, WandSparkles } from "lucide-react";
+import { Sparkles, ShirtIcon, CalendarDays, LogOut, User, Menu, X, WandSparkles, BookOpen } from "lucide-react";
 
 export default function Navbar() {
   const router = useRouter();
@@ -73,6 +73,7 @@ export default function Navbar() {
             <NavLink href="/style-item" icon={<WandSparkles size={16} />} label="Style Item" active={router.pathname === "/style-item"} />
             <NavLink href="/archive"  icon={<Sparkles size={16} />}   label="Archive"  active={router.pathname === "/archive"} />
             <NavLink href="/event"   icon={<CalendarDays size={16} />} label="Event" active={router.pathname === "/event"} />
+            <NavLink href="/guide" icon={<BookOpen size={16} />} label="Guide" active={router.pathname === "/guide"} />
             <NavLink href="/profile"   icon={<User size={16} />} label="Profile" active={router.pathname === "/profile"} />
 
             <button
@@ -112,6 +113,7 @@ export default function Navbar() {
               <MobileNavLink href="/style-item" icon={<WandSparkles size={16} />} label="Style Item" active={router.pathname === "/style-item"} />
               <MobileNavLink href="/archive" icon={<Sparkles size={16} />} label="Archive" active={router.pathname === "/archive"} />
               <MobileNavLink href="/event" icon={<CalendarDays size={16} />} label="Event" active={router.pathname === "/event"} />
+              <MobileNavLink href="/guide" icon={<BookOpen size={16} />} label="Guide" active={router.pathname === "/guide"} />
               <MobileNavLink href="/profile" icon={<User size={16} />} label="Profile" active={router.pathname === "/profile"} />
               <button className="nav-mobile-logout" onClick={handleLogout}>
                 <LogOut size={16} />

@@ -29,8 +29,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | 2.2.0   | 2026-04-02 | Session restore, wardrobe media activity/status, cutout extraction, and duplicate-safe outfit refreshes                    |
 | 2.3.0   | 2026-04-09 | Discover taste-learning, Style Item workflow, jumpsuits taxonomy, and current data-model documentation                      |
 | 2.4.0   | 2026-04-12 | Beach-aware scoring, structured event briefs, Discover preference reliability, and wardrobe taxonomy cleanup                |
+| 2.4.1   | 2026-04-14 | Style-direction moodboards, event-token completeness, guide page, scenario testing, and UX reliability polish              |
 
 ---
+
+## [2.4.1] - 2026-04-14
+
+### Added
+- **Beyond Your Wardrobe visual moodboards** — editorial style directions now return per-piece `image_url` values and render as visual moodboards instead of chip-only lists, including a dedicated [`backend/services/style_images.py`](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/services/style_images.py) enrichment layer and the new [`frontend/components/StyleDirectionMoodboard.tsx`](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/frontend/components/StyleDirectionMoodboard.tsx) presentation component.
+- **In-app Guide page** — added `/guide`, a user-facing reference page that explains wardrobe terms, dress-code ladders, season readings, descriptor families, and how profile details are used in suggestions.
+- **Event scenario test harness** — added `/test/event-scenarios`, an isolated UI for loading saved event-brief JSON scenarios, editing them with the shared brief editor, and running real recommendation requests without touching the main Event page.
+- **Style direction finishing chips** — hair and makeup now render as finishing chips beneath the style-direction moodboard instead of being mixed into the wearable-piece grid.
+
+### Changed
+- **Stitch moodboard fixed-zone placement** — `OutfitMoodboard` now uses strict zone rules: left column for the main garment + shoes, top-right for outerwear, and bottom-right for accessories / jewelry, with graceful fallbacks when zones are empty.
+- **Event token completeness** — `_enrich_event_tokens()` now injects all 12 structured EventBrief form fields as lowercased tokens, rather than relying on a much smaller subset of occasion cues.
+- **Direct dress-code formality override** — explicit dress-code selections now take precedence over softer inference through `_apply_direct_formality()` and the `_DRESS_CODE_FORMALITY` map in event creation, hydration, and mock flows.
+- **Beyond Your Wardrobe placement in the tester** — the scenario test page now renders style-direction content below the wardrobe suggestions and uses the same visual moodboard treatment as the main Event page.
+- **Guide page layout** — the wardrobe reference section now uses flatter horizontal boards and scrollable descriptor rails, while the descriptor illustrations use consistent fixed-size tiles.
+- **Guide iconography** — neckline, fit, and length illustrations were iterated toward a clearer human-figure metaphor, with `length` now using a standing figure plus side-arrow only.
+
+### Fixed
+- **Shoe recommendation heel detection** — `_shoe_signals()` now checks the full concatenated shoe profile instead of only `shoe_type`, catching labels like `strappy heels` when the heel cue lives in `item_type`.
+- **Walkable / outdoor footwear penalties** — heel penalties were strengthened for park, walking, grass, and other practical outdoor contexts, making grounded shoes more competitive when the brief clearly calls for them.
+- **Minimalist extras discipline** — recommendation mood tokens now better constrain finishing pieces for minimalist briefs instead of treating them only as descriptive style language.
+- **Event context hydration for older rows** — event retrieval now rehydrates structured occasion fields from `raw_text_json`, so older saved events benefit from newer token, formality, and practicality rules without being recreated.
+- **`None of these looks` rating path** — the outfit rating constraint now allows `0` as a valid rating so the skip / reject flow no longer trips the `outfit_suggestions_user_rating_check`.
+- **Form reset behavior** — the shared structured brief editor’s reset action now clears generated results too, returning Event and Style Item flows to their initial state instead of only wiping the inputs.
+- **Guide page rail overflow** — wardrobe reference rows now scroll inside bounded containers instead of stretching the page width.
+
+### Docs
+- **Guide + scenario docs surfaced** — changelog and README now document the new `/guide` page, the `/test/event-scenarios` harness, and the style-direction image enrichment pipeline.
+- **Architecture references updated** — supporting docs now mention the new style-direction image service and the guide route alongside the existing product surfaces.
 
 ## [2.4.0] - 2026-04-12
 
@@ -42,25 +72,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Wardrobe correction feedback snapshots** — user corrections to AI-tagged wardrobe items now log the edited field plus a frozen item snapshot, creating a usable dataset for later prompt tuning and analytics.
 - **`warmth` apparel descriptor** — apparel categories now support `warmth` (`airy`, `light`, `medium`, `warm`, `thermal`) so season-fit logic and manual editing can represent wearability more directly.
 - **`style_catalog` seed and table comments** — the previously empty Discover style catalog is now seedable from the live fallback vocabulary, and key product tables are documented with Postgres comments inside the migration path.
+- **Pexels-backed style-direction images** — the non-wardrobe recommendation lane can now enrich wearable pieces with a representative fashion image, supporting visual moodboards for `Beyond Your Wardrobe`.
 
 ### Changed
 - **Beach occasion scoring** — venue-fit and risk logic now penalize denim, leather/suede/wool, closed-toe shoes, and overly structured silhouettes at beach events while giving swimwear, beach shoes, and lighter fabrics stronger numeric priority.
 - **Season scoring blend** — season fit now combines the stored item season with descriptor-level rules rather than relying only on the top-level metadata label.
 - **Event prompt composition** — structured brief data is now expanded into a richer prompt block for occasion parsing, and the archive page renders those same JSON fields back into cleaner English summaries.
+- **Event summary generation** — `_humanize_event_summary()` now turns structured event form JSON into a clearer sentence for both prompt context and archive summaries, with optional fields dropping out cleanly when absent.
 - **Event + Style Item input UX** — both flows now use the same structured brief editor with mobile-friendly dropdown behavior, optional detail handling, and “Other” value support.
 - **Structured brief custom-value display** — when users choose `Other` in Event or Style Item, the selected control now displays the entered custom value directly instead of leaving a generic `Other` label or helper text behind.
 - **Outfit loading state** — generic spinners on Event and Style Item were replaced with a themed clothing-assembly loader that cycles through wardrobe-relevant icons.
 - **Moodboard presentation** — flat-lay boards now use a white stage on a neutral shell, tighter shadows, compact-aware placements, jewelry-capable accessory placement, reduced overflow, and equalized card heights in the carousel.
+- **Stitch moodboard zone rules** — the stitch-style moodboard layout now follows explicit fixed-zone placement so shoes, outerwear, accessories, and jewelry stop drifting into visually awkward positions.
 - **Swimwear taxonomy** — swimwear no longer borrows `tops`/`bottoms` descriptors; it now uses a dedicated vocabulary centered on `swimwear_style`, `coverage_level`, `cut`, and swim-specific fabric materials.
 - **Set descriptor scope** — coordinated sets now expose a smaller, unified schema focused on `fabric_type`, `warmth`, `top_style`, `bottom_style`, `fit`, and `pattern` rather than mirroring full separate top and bottom editors.
 - **Wardrobe descriptor editing** — wardrobe edit now exposes category, season, and dress code corrections together, hides duplicate / `None` descriptor chips on cards, and removes `sleeve_style` from the UI while keeping backend compatibility.
 - **Jewelry split** — jewelry is now treated as its own category end-to-end rather than living under generic accessories, including recommendation surfaces and taxonomy handling.
+- **Preference thresholds** — Discover learned-style thresholds now populate earlier through lower exposure/count requirements, faster gate scaling, and softer preferred/disliked boundaries.
 
 ### Fixed
 - **Discover preference wipe bug** — learned preference rows are no longer deleted when a recompute pass produces no recognized aggregate; existing preferences stay intact instead of being wiped to empty.
 - **Discover preference state clobber** — feed refreshes and status polls no longer overwrite freshly computed preference state with empty arrays on the frontend.
 - **Discover style lookup drift** — preference recompute now resolves style rows against the shared style lookup rather than assuming one identifier shape.
 - **Discover preference population timing** — commit-time preference refreshes now return usable rows synchronously so the UI can update immediately instead of waiting for a later poll.
+- **Discover transient DB disconnects** — style-learning and Discover-service DB operations now use the same retry/reset pattern around transient `RemoteProtocolError` failures.
 - **Event summary prompt bug** — Python `filter(Boolean, ...)` misuse in event-summary composition was removed, preventing dropped dress-code strings from the generated prompt text.
 - **Wardrobe duplicate conflict recovery** — uploads that match items already in the wardrobe or archive once again present the right `replace`, `unarchive`, or `force add` options.
 - **Wardrobe duplicate color handling** — duplicate detection now respects broad color families instead of over-collapsing visually similar items that exist in legitimately different colorways.
