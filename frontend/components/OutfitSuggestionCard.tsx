@@ -30,6 +30,7 @@ export default function OutfitSuggestionCard({
   compact = false,
   showMetricsWhenCompact = false,
   imageMode = "cutout",
+  moodboardVariant = "editorial",
 }: {
   suggestion: OutfitSuggestion;
   rank: number;
@@ -38,6 +39,10 @@ export default function OutfitSuggestionCard({
   compact?: boolean;
   showMetricsWhenCompact?: boolean;
   imageMode?: "cutout" | "upload";
+  /** Controls the moodboard layout style passed down to OutfitMoodboard.
+   *  "editorial" — original scatter with header above (default).
+   *  "stitch"    — clean 2×2 grid with title label below the image. */
+  moodboardVariant?: "editorial" | "stitch";
 }) {
   const [hover, setHover] = useState(0);
 
@@ -71,6 +76,7 @@ export default function OutfitSuggestionCard({
             scoreLabel={`${Math.round(suggestion.score * 100)}% match`}
             compact={compact}
             imageMode={imageMode}
+            variant={moodboardVariant}
           />
 
           {(!compact || showMetricsWhenCompact) && isCurrentCardSchema(suggestion.card) ? (

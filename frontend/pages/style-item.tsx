@@ -62,8 +62,26 @@ function getCarouselImageSrc(item: ClothingItem): string {
   return item.thumbnail_url || item.image_url || item.cutout_url || "";
 }
 
+function getSubtypeLabel(item: ClothingItem): string | null {
+  const descriptors = item.descriptors || {};
+
+  if (item.category === "accessories") {
+    const accessoryType = descriptors.accessory_type?.trim();
+    if (accessoryType) return titleCase(accessoryType);
+  }
+
+  if (item.category === "jewelry") {
+    const jewelryType = descriptors.jewelry_type?.trim();
+    if (jewelryType) return titleCase(jewelryType);
+  }
+
+  const subtype = item.accessory_subtype?.trim();
+  return subtype ? titleCase(subtype) : null;
+}
+
 function getItemTitle(item: ClothingItem): string {
-  if (item.accessory_subtype) return titleCase(item.accessory_subtype);
+  const subtypeLabel = getSubtypeLabel(item);
+  if (subtypeLabel) return subtypeLabel;
   if (item.item_type && !["core_garment", "footwear", "outerwear", "accessory"].includes(item.item_type)) {
     return titleCase(item.item_type);
   }
@@ -158,6 +176,7 @@ export default function StyleItemPage() {
   const [coverageHints, setCoverageHints] = useState<string[]>([]);
   const [styleDirectionData, setStyleDirectionData] = useState<StyleDirectionData | null>(null);
   const [showExpertSuggestion, setShowExpertSuggestion] = useState(true);
+  const styleOptions = styleDirectionData?.options ?? [];
 
   useEffect(() => {
     let active = true;
@@ -214,6 +233,12 @@ export default function StyleItemPage() {
     }
   }
 
+  function resetStyleComposer() {
+    setBrief(createDefaultEventBriefValues());
+    clearResults(true);
+    setShowExpertSuggestion(true);
+  }
+
   function handleSelectItem(itemId: string) {
     setSelectedItemId(itemId);
     clearResults(true);
@@ -254,7 +279,7 @@ export default function StyleItemPage() {
 
       const response = await generateOutfits(
         currentEventId,
-        5,
+        3,
         moreLooks ? allShownIds : undefined,
         false,
         selectedItemId,
@@ -364,7 +389,7 @@ export default function StyleItemPage() {
             </p>
 
             <div style={{ display: "grid", gap: "14px", marginTop: "22px", maxWidth: "38rem" }}>
-              <EventBriefEditor values={brief} onChange={setBrief} mobileCompact />
+              <EventBriefEditor values={brief} onChange={setBrief} onReset={resetStyleComposer} mobileCompact />
 
               <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                 <button
@@ -586,11 +611,11 @@ export default function StyleItemPage() {
                   </div>
                   <p style={{ margin: "14px 0 0", color: "var(--muted)", lineHeight: 1.65, fontSize: "14px" }}>
                     {missingItems.some((item) => /shoe/i.test(item))
-                      ? "Add at least one pair of shoes — every outfit template needs footwear."
+                      ? "Add at least one pair of shoes to ground the look."
                       : "Add at least one pair of shoes to ground the outfit."}
                     {" "}
                     {missingItems.some((item) => /bottom/i.test(item))
-                      ? "Add at least one bottom (trousers or skirt) to complete the cleaner templates."
+                      ? "Add at least one bottom (trousers or skirt) to complete a separates look."
                       : ""}
                   </p>
                 </>
@@ -600,14 +625,14 @@ export default function StyleItemPage() {
                     Waiting for input
                   </p>
                   <p style={{ margin: "10px 0 0", color: "var(--muted)", lineHeight: 1.6 }}>
-                    Select an item, write the occasion, and we’ll build the first direction.
+                    Select an item, shape the occasion, and we’ll build the first direction.
                   </p>
                 </>
               )}
             </div>
           )}
 
-          {styleDirectionData && styleDirectionData.options.length > 0 ? (
+          {styleOptions.length > 0 ? (
             <div
               style={{
                 marginTop: "18px",
@@ -620,11 +645,8 @@ export default function StyleItemPage() {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
                 <div>
                   <p className="type-kicker" style={{ margin: 0, fontSize: "11px", color: "var(--gold)", letterSpacing: "0.14em", textTransform: "uppercase" }}>
-                    Experts Suggest
+                    Beyond your wardrobe
                   </p>
-                  <h3 style={{ margin: "8px 0 0", fontFamily: "Playfair Display, serif", fontSize: "clamp(22px, 3vw, 30px)", lineHeight: 1.05, color: "var(--charcoal)" }}>
-                    {styleDirectionData.options.length === 1 ? "One direction worth trying" : `${styleDirectionData.options.length} ways to style this`}
-                  </h3>
                 </div>
                 <button
                   type="button"
@@ -650,7 +672,7 @@ export default function StyleItemPage() {
 
               {showExpertSuggestion ? (
                 <div style={{ display: "grid", gap: "16px", marginTop: "18px" }}>
-                  {styleDirectionData.options.map((option, optIndex) => (
+                  {styleOptions.map((option, optIndex) => (
                     <div
                       key={optIndex}
                       style={{

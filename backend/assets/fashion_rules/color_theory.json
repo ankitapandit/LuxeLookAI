@@ -1,0 +1,94 @@
+{
+  "category": "color_theory",
+  "display_name": "Color Theory",
+  "summary": {
+    "dos": [
+      "Match undertone and contrast level."
+    ],
+    "donts": [
+      "Mix conflicting undertones."
+    ]
+  },
+  "rules": [
+    {
+      "subtype": "Warm Undertone",
+      "key_inputs": [
+        "Yellow/golden skin"
+      ],
+      "primary_goal": "Harmonize warmth",
+      "recommended_attributes": [
+        "Earth tones"
+      ],
+      "avoid_attributes": [
+        "Icy tones"
+      ],
+      "engine_tags": [
+        "warm_palette"
+      ]
+    },
+    {
+      "subtype": "Cool Undertone",
+      "key_inputs": [
+        "Pink/blue skin"
+      ],
+      "primary_goal": "Harmonize coolness",
+      "recommended_attributes": [
+        "Jewel tones"
+      ],
+      "avoid_attributes": [
+        "Orange tones"
+      ],
+      "engine_tags": [
+        "cool_palette"
+      ]
+    },
+    {
+      "subtype": "Neutral",
+      "key_inputs": [
+        "Mixed"
+      ],
+      "primary_goal": "Flexible styling",
+      "recommended_attributes": [
+        "Balanced colors"
+      ],
+      "avoid_attributes": [
+        "Extreme tones"
+      ],
+      "engine_tags": [
+        "neutral_palette"
+      ]
+    },
+    {
+      "subtype": "High Contrast",
+      "key_inputs": [
+        "Strong features"
+      ],
+      "primary_goal": "Enhance contrast",
+      "recommended_attributes": [
+        "Bold combos"
+      ],
+      "avoid_attributes": [
+        "Muted blends"
+      ],
+      "engine_tags": [
+        "high_contrast"
+      ]
+    },
+    {
+      "subtype": "Low Contrast",
+      "key_inputs": [
+        "Soft features"
+      ],
+      "primary_goal": "Blend tones",
+      "recommended_attributes": [
+        "Monochrome"
+      ],
+      "avoid_attributes": [
+        "Harsh contrast"
+      ],
+      "engine_tags": [
+        "soft_blend"
+      ]
+    }
+  ]
+}

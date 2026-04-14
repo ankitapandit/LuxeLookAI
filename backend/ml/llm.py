@@ -161,11 +161,26 @@ def _mock_parse_occasion(raw_text: str) -> Dict[str, Any]:
         "exhibition": "exhibition", "show": "show",
     }
     # Setting tokens (medium discriminative power)
+    # Water-body synonyms all map to the canonical beach/pool/resort/swim tokens
+    # so the recommender's _BEACH_TOKENS gate fires correctly for any venue phrasing.
     _SETTING_MAP = {
-        "beach": "beach", "office": "office", "restaurant": "restaurant",
-        "museum": "museum", "garden": "garden", "rooftop": "rooftop",
-        "bar": "bar", "park": "park", "lounge": "lounge", "gallery": "gallery",
-        "hotel": "hotel", "club": "club", "outdoor": "outdoor", "indoor": "indoor",
+        # ── canonical beach-adjacent ───────────────────────────────────────
+        "beach": "beach", "ocean": "beach", "sea": "beach", "seaside": "beach",
+        "shore": "beach", "coast": "beach", "coastal": "beach",
+        "waterfront": "beach", "harbour": "beach", "harbor": "beach",
+        "marina": "beach", "pier": "beach", "dock": "beach",
+        "lake": "beach", "lakeside": "beach", "riverside": "beach",
+        "boat": "beach", "yacht": "beach", "vessel": "beach",
+        # ── pool / water-park ──────────────────────────────────────────────
+        "pool": "pool", "poolside": "pool", "waterpark": "pool",
+        "hot tub": "pool", "jacuzzi": "pool", "spa pool": "pool",
+        # ── resort / swim ──────────────────────────────────────────────────
+        "resort": "resort", "swim": "swim", "swimming": "swim",
+        # ── standard settings ──────────────────────────────────────────────
+        "office": "office", "restaurant": "restaurant", "museum": "museum",
+        "garden": "garden", "rooftop": "rooftop", "bar": "bar", "park": "park",
+        "lounge": "lounge", "gallery": "gallery", "hotel": "hotel",
+        "club": "club", "outdoor": "outdoor", "indoor": "indoor",
     }
     # Social / time tokens (lower discriminative power)
     _SOCIAL_MAP = {
@@ -247,7 +262,7 @@ def _real_parse_occasion(raw_text: str) -> Dict[str, Any]:
       "formality_level": <float 0.0-1.0 where 0=very casual, 0.5=smart casual, 0.8=formal, 1.0=black tie>,
       "setting": "one of: indoor, outdoor, mixed",
       "temperature_context": "one of: hot, warm, cool, cold",
-      "event_tokens": ["3-8 semantic tags drawn from the event description — use activity tokens (dinner/interview/wedding/party/cocktail/brunch/gala/concert/ceremony/bbq/picnic/workout), setting tokens (beach/office/restaurant/museum/garden/rooftop/bar/park/lounge/gallery/hotel/club), social context (romantic/professional/friends/family/colleagues), and time of day (morning/afternoon/evening/night). Activity tokens carry the most weight — always include them when present."]
+      "event_tokens": ["3-8 semantic tags drawn from the event description — use activity tokens (dinner/interview/wedding/party/cocktail/brunch/gala/concert/ceremony/bbq/picnic/workout), setting tokens (beach/pool/resort/swim/office/restaurant/museum/garden/rooftop/bar/park/lounge/gallery/hotel/club), social context (romantic/professional/friends/family/colleagues), and time of day (morning/afternoon/evening/night). Activity tokens carry the most weight — always include them when present. IMPORTANT water-body mapping: ocean/sea/seaside/coast/shore/waterfront/harbour/marina/pier/dock/lake/lakeside/riverside/boat/yacht → use 'beach' token. pool/poolside/waterpark/hot tub/jacuzzi → use 'pool' token. resort/island retreat → use 'resort' token. swim/swimming → use 'swim' token."]
     }}
 
     Rules:
@@ -440,20 +455,65 @@ _MOCK_STYLE_DIRECTIONS = [
     },
 ]
 
+_MOCK_BEACH_STYLE_DIRECTIONS = {
+    "options": [
+        {
+            "name": "Sun-Soaked Ease",
+            "emoji": "🌊",
+            "pieces": [
+                {"label": "Swimwear", "value": "Your anchor swimwear as the hero"},
+                {"label": "Shoes", "value": "Tan leather slides or woven raffia sandals"},
+                {"label": "Outerwear", "value": "Sheer linen kimono or crochet cover-up"},
+                {"label": "Bag", "value": "Woven tote or mesh beach bag"},
+                {"label": "Sunscreen", "value": "SPF 50+ face and body — always"},
+                {"label": "Hair", "value": "Loose beach waves or low twisted bun"},
+                {"label": "Makeup", "value": "Tinted SPF, clear brow gel, waterproof mascara"},
+                {"label": "Jewelry", "value": "Shell or gold huggie hoops, waterproof only"},
+            ],
+            "why": "Lightweight layers over the swimwear keep the look effortless while protecting skin between sea and shore.",
+            "tip": "Reapply sunscreen every 90 minutes, especially after swimming — keep a SPF stick in your tote.",
+        },
+        {
+            "name": "Coastal Minimal",
+            "emoji": "🐚",
+            "pieces": [
+                {"label": "Swimwear", "value": "Your anchor swimwear, no cover-up needed"},
+                {"label": "Shoes", "value": "Barely-there flat sandals or go barefoot"},
+                {"label": "Bag", "value": "Small waterproof crossbody or zip pouch"},
+                {"label": "Sunscreen", "value": "SPF 50+ face and body — always"},
+                {"label": "Hair", "value": "Slicked-back bun or loose braid with sea salt spray"},
+                {"label": "Makeup", "value": "No makeup, or waterproof tinted lip balm only"},
+                {"label": "Jewelry", "value": "None, or a single waterproof bracelet"},
+            ],
+            "why": "Stripping back accessories keeps the focus on the swimwear silhouette and makes sea-to-sand transitions seamless.",
+            "tip": "A SPF lip balm does double duty — sun protection and a natural glossy lip in one.",
+        },
+    ]
+}
 
-def _mock_generate_style_direction(anchor_item: dict, event: dict) -> dict:
-    idx = hash(f"{anchor_item.get('category')}{event.get('occasion_type')}") % len(_MOCK_STYLE_DIRECTIONS)
+# Canonical beach-context tokens — mirrors _BEACH_TOKENS in recommender.py
+_STYLE_DIR_BEACH_TOKENS = {"beach", "pool", "swim", "resort"}
+
+
+def _mock_generate_style_direction(anchor_item: Optional[dict], event: dict, style_seed: Optional[dict] = None) -> dict:
+    event_tokens = set(event.get("event_tokens") or [])
+    if event_tokens & _STYLE_DIR_BEACH_TOKENS:
+        return _MOCK_BEACH_STYLE_DIRECTIONS
+    anchor_key = (anchor_item or {}).get("category") or "occasion"
+    taste_key = ",".join((style_seed or {}).get("preferred", [])[:2])
+    idx = hash(f"{anchor_key}{event.get('occasion_type')}{taste_key}") % len(_MOCK_STYLE_DIRECTIONS)
     return _MOCK_STYLE_DIRECTIONS[idx]
 
 
 def _real_generate_style_direction(
-    anchor_item: dict,
+    anchor_item: Optional[dict],
     event: dict,
     user_profile: dict,
-    wardrobe_items: List[Dict],
+    style_seed: Optional[dict],
 ) -> dict:
     """
-    Call GPT-4o-mini to produce 2-3 editorial outfit options built around the anchor item.
+    Call GPT-4o-mini to produce 2 editorial outfit options based on the
+    occasion, taste signals, and optional anchor item.
     Returns { "options": [ { name, emoji, pieces: [{label, value}], why, tip } ] }
     """
     from openai import OpenAI
@@ -461,15 +521,17 @@ def _real_generate_style_direction(
     client = OpenAI(api_key=get_settings().openai_api_key)
 
     # ── Anchor item description ────────────────────────────────────────────
-    anchor_color    = (anchor_item.get("color") or "").strip()
-    anchor_category = (anchor_item.get("category") or "").strip()
-    anchor_desc     = anchor_item.get("descriptors") or {}
-    anchor_detail   = ", ".join(
-        f"{k}: {v}" for k, v in anchor_desc.items() if v and k not in ("id",)
-    ) if anchor_desc else ""
-    anchor_line     = f"{anchor_color} {anchor_category}".strip()
-    if anchor_detail:
-        anchor_line += f" ({anchor_detail})"
+    anchor_line = "No fixed anchor item."
+    if anchor_item:
+        anchor_color = (anchor_item.get("color") or "").strip()
+        anchor_category = (anchor_item.get("category") or "").strip()
+        anchor_desc = anchor_item.get("descriptors") or {}
+        anchor_detail = ", ".join(
+            f"{k}: {v}" for k, v in anchor_desc.items() if v and k not in ("id",)
+        ) if anchor_desc else ""
+        anchor_line = f"{anchor_color} {anchor_category}".strip()
+        if anchor_detail:
+            anchor_line += f" ({anchor_detail})"
 
     # ── Event context ─────────────────────────────────────────────────────
     occasion   = (event.get("occasion_type") or "occasion").replace("_", " ")
@@ -477,39 +539,97 @@ def _real_generate_style_direction(
     setting    = event.get("setting", "indoor")
     temp       = event.get("temperature_context", "warm")
     tokens     = ", ".join(event.get("event_tokens") or [])
+    raw_text   = str(event.get("raw_text") or "").strip()
+    raw_json   = event.get("raw_text_json") or {}
 
     # ── User profile ──────────────────────────────────────────────────────
     body_type  = user_profile.get("body_type") or ""
+    shoulders  = user_profile.get("shoulders") or ""
     complexion = user_profile.get("complexion") or ""
     profile_block = ""
-    if body_type or complexion:
+    if body_type or shoulders or complexion:
         profile_block = "\nUser profile:"
         if body_type:
             profile_block += f"\n- Body type: {body_type}"
+        if shoulders:
+            profile_block += f"\n- Shoulders: {shoulders}"
         if complexion:
             profile_block += f"\n- Complexion: {complexion}"
 
-    # ── Available wardrobe items (lightweight summary, max 20) ───────────
-    wardrobe_lines: List[str] = []
-    for item in wardrobe_items[:20]:
-        if str(item.get("id")) == str(anchor_item.get("id")):
-            continue
-        color_  = (item.get("color") or "").strip()
-        cat_    = (item.get("category") or "").strip()
-        if color_ or cat_:
-            wardrobe_lines.append(f"- {color_} {cat_}".strip("- ").strip())
-    wardrobe_block = ""
-    if wardrobe_lines:
-        wardrobe_block = "\nAvailable wardrobe pieces to pull from:\n" + "\n".join(wardrobe_lines[:20])
+    preferred_terms = [str(term).strip() for term in (style_seed or {}).get("preferred", []) if str(term).strip()]
+    disliked_terms = [str(term).strip() for term in (style_seed or {}).get("disliked", []) if str(term).strip()]
+    taste_block = ""
+    if preferred_terms or disliked_terms:
+        taste_block = "\nTaste signals:"
+        if preferred_terms:
+            taste_block += f"\n- Usually likes: {', '.join(preferred_terms[:4])}"
+        if disliked_terms:
+            taste_block += f"\n- Usually dislikes: {', '.join(disliked_terms[:4])}"
 
-    prompt = f"""You are an expert personal stylist for a luxury fashion app.
+    raw_json_block = ""
+    if raw_json:
+        raw_json_block = f"\nStructured event brief: {json.dumps(raw_json, ensure_ascii=True)}"
+
+    # ── Beach / pool / resort / swim occasion variant ─────────────────────
+    is_beach_occasion = bool(_STYLE_DIR_BEACH_TOKENS & set(event.get("event_tokens") or []))
+
+    if is_beach_occasion:
+        prompt = f"""You are an expert personal stylist for a luxury fashion app.
+
+Anchor piece: {anchor_line}
+Occasion: {occasion} ({setting}, formality {formality:.0%}) — BEACH / WATER setting
+Temperature: {temp}
+Event context: {raw_text or tokens or occasion}{raw_json_block}{profile_block}{taste_block}
+
+Create exactly 2 complete beach/pool outfit options. Each option should have a distinct mood.
+
+Return ONLY valid JSON — no markdown, no code fences:
+{{
+  "options": [
+    {{
+      "name": "Short evocative mood name (2-4 words)",
+      "emoji": "one relevant emoji",
+      "pieces": [
+        {{"label": "Swimwear", "value": "specific swimwear with color and silhouette"}},
+        {{"label": "Shoes", "value": "beach-appropriate footwear (slides, sandals, or barefoot)"}},
+        {{"label": "Outerwear", "value": "lightweight beach layer only — kimono, linen shirt, sheer cover-up, sarong (omit if anchor is already a cover-up)"}},
+        {{"label": "Bag", "value": "beach bag style — tote, mesh, woven"}},
+        {{"label": "Sunscreen", "value": "always — SPF 50+ face and body"}},
+        {{"label": "Hair", "value": "specific beach-friendly hair suggestion"}},
+        {{"label": "Makeup", "value": "minimal only — waterproof tinted SPF, clear brow gel, waterproof mascara, or none"}},
+        {{"label": "Jewelry", "value": "waterproof only or none"}}
+      ],
+      "why": "One sentence: the specific styling reason this works for a beach/water occasion.",
+      "tip": "One practical beach-specific tip (sun protection, sea-to-land transition, comfort)."
+    }}
+  ]
+}}
+
+Rules:
+- "Swimwear" replaces Top/Base/Dress — always include it; never use the label "Top/Base/Dress"
+- Do NOT include a "Bottom" piece — swimwear is a complete base
+- Outerwear must be lightweight and beach-appropriate only (kimono, sheer cover-up, linen shirt, sarong, crochet cardigan). Never suggest blazers, coats, or any heavy layer
+- Sunscreen is mandatory — always include it in every option
+- Makeup must be minimal or none — waterproof formulas only; never suggest full glam or matte finishes
+- Jewelry must be waterproof (gold-fill, stainless steel, shell) or omitted entirely
+- If there is no anchor item, build from the occasion and taste signals
+- If there is an anchor item, build around it
+- Do not reference or depend on the user's wardrobe inventory
+- Be specific: say "rust orange bandeau bikini" not just "swimwear"
+- If body type is known, choose silhouettes that flatter it (but don't state this explicitly)
+- If complexion is known, favour palette choices that complement it
+- Use positive taste signals when they help, avoid disliked signals when reasonable
+- Keep each value under 12 words
+- Return ONLY the JSON object"""
+    else:
+        prompt = f"""You are an expert personal stylist for a luxury fashion app.
 
 Anchor piece: {anchor_line}
 Occasion: {occasion} ({setting}, formality {formality:.0%})
 Temperature: {temp}
-Event context: {tokens or occasion}{profile_block}{wardrobe_block}
+Event context: {raw_text or tokens or occasion}{raw_json_block}{profile_block}{taste_block}
 
-Create exactly 2 complete outfit options built around the anchor piece. Each option should have a distinct mood and silhouette.
+Create exactly 2 complete outfit options. Each option should have a distinct mood and silhouette.
 
 Return ONLY valid JSON — no markdown, no code fences:
 {{
@@ -534,12 +654,15 @@ Return ONLY valid JSON — no markdown, no code fences:
 }}
 
 Rules:
-- Omit "Bottom" if the anchor or base is a dress/set
+- If there is no anchor item, build the look entirely from the occasion and taste signals
+- If there is an anchor item, build around it
+- Omit "Bottom" if the anchor or base is a dress/set/jumpsuit
 - Omit "Outerwear" if occasion is summer/hot/beach indoor
-- Pull from the available wardrobe when it fits — otherwise suggest generic pieces
+- Do not reference or depend on the user's wardrobe inventory
 - Be specific: say "ivory ribbed bodysuit" not just "top"
 - If body type is known, choose silhouettes that flatter it (but don't state this explicitly)
 - If complexion is known, favour palette choices that complement it (warm-toned vs cool-toned)
+- Use positive taste signals when they help, and avoid disliked signals when reasonable
 - Keep each value under 12 words
 - Return ONLY the JSON object"""
 
@@ -562,30 +685,31 @@ Rules:
 
 
 def generate_style_direction(
-    anchor_item: dict,
+    anchor_item: Optional[dict],
     event: dict,
     user_profile: Optional[dict] = None,
-    wardrobe_items: Optional[List[Dict]] = None,
+    style_seed: Optional[dict] = None,
 ) -> dict:
     """
-    Generate 2-3 LLM-authored outfit options built around the anchor piece.
+    Generate 2 LLM-authored outfit options driven by the event, optional anchor
+    item, and taste signals.
 
     Returns:
         { "options": [ { name, emoji, pieces: [{label, value}], why, tip } ] }
     """
     settings = get_settings()
     if settings.use_mock_ai:
-        return _mock_generate_style_direction(anchor_item, event)
+        return _mock_generate_style_direction(anchor_item, event, style_seed)
     try:
         return _real_generate_style_direction(
             anchor_item,
             event,
             user_profile or {},
-            wardrobe_items or [],
+            style_seed or {},
         )
     except Exception as exc:
         logger.warning("generate_style_direction failed: %s", exc)
-        return _mock_generate_style_direction(anchor_item, event)
+        return _mock_generate_style_direction(anchor_item, event, style_seed)
 
 
 # ── Public interface ──────────────────────────────────────────────────────────
@@ -809,8 +933,11 @@ CATEGORY_DESCRIPTORS = {
     "tops": {
         "fabric_type":   list(_FABRIC_OPTIONS),
         "warmth":        ["airy", "light", "medium", "warm", "thermal"],
-        "neckline":      ["crew", "round", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
-                          "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
+        "neckline":      ["crew", "round", "boat", "V-neck", "plunging", "jewel", "square",
+                          "scoop", "sweetheart", "off-shoulder", "strapless", "halter",
+                          "high neck", "turtleneck", "collar", "cowl", "one shoulder",
+                          "tie neck", "apron neck", "queen anne", "asymmetrical",
+                          "keyhole neck", "scalloped neck", "illusion neck"],
         "sleeve_length": ["sleeveless", "cap", "short", "3/4", "long"],
         "sleeve_style":  ["puff", "bishop", "balloon", "bell", "raglan", "batwing", "cold shoulder", "flutter"],
         "fit":           ["slim", "regular", "relaxed", "loose", "oversized", "bodycon",
@@ -830,8 +957,11 @@ CATEGORY_DESCRIPTORS = {
     "dresses": {
         "fabric_type":   list(_FABRIC_OPTIONS),
         "warmth":        ["airy", "light", "medium", "warm", "thermal"],
-        "neckline":      ["crew", "round", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
-                          "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
+        "neckline":      ["crew", "round", "boat", "V-neck", "plunging", "jewel", "square",
+                          "scoop", "sweetheart", "off-shoulder", "strapless", "halter",
+                          "high neck", "turtleneck", "collar", "cowl", "one shoulder",
+                          "tie neck", "apron neck", "queen anne", "asymmetrical",
+                          "keyhole neck", "scalloped neck", "illusion neck"],
         "sleeve_length": ["sleeveless", "cap", "short", "3/4", "long"],
         "sleeve_style":  ["puff", "bishop", "balloon", "bell", "raglan", "batwing", "cold shoulder", "flutter"],
         "fit":           ["slim", "regular", "relaxed", "loose", "oversized", "bodycon",
@@ -853,8 +983,11 @@ CATEGORY_DESCRIPTORS = {
         "warmth":         ["airy", "light", "medium", "warm", "thermal"],
         "jumpsuit_style": ["tailored", "utility", "romper", "playsuit", "halter", "strapless",
                            "boiler", "evening", "boho", "wide-leg", "straight-leg", "tapered"],
-        "neckline":       ["crew", "round", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
-                           "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
+        "neckline":       ["crew", "round", "boat", "V-neck", "plunging", "jewel", "square",
+                           "scoop", "sweetheart", "off-shoulder", "strapless", "halter",
+                           "high neck", "turtleneck", "collar", "cowl", "one shoulder",
+                           "tie neck", "apron neck", "queen anne", "asymmetrical",
+                           "keyhole neck", "scalloped neck", "illusion neck"],
         "sleeve_length":  ["sleeveless", "cap", "short", "3/4", "long"],
         "sleeve_style":   ["puff", "bishop", "balloon", "bell", "raglan", "batwing", "cold shoulder", "flutter"],
         "strap_type":     ["strapless", "spaghetti", "wide", "adjustable", "racerback", "cross-back", "halter"],
@@ -872,10 +1005,15 @@ CATEGORY_DESCRIPTORS = {
     },
     # ── Outerwear ─────────────────────────────────────────────────────────────
     "outerwear": {
+        "outerwear_type":      ["blazer", "jacket", "coat", "trench", "cardigan", "bomber",
+                                "puffer", "shacket", "cape", "vest", "shrug", "coverup"],
         "fabric_type":        list(_FABRIC_OPTIONS),
         "warmth":             ["airy", "light", "medium", "warm", "thermal"],
-        "neckline":           ["crew", "round", "V-neck", "square", "scoop", "sweetheart", "off-shoulder",
-                               "halter", "high neck", "turtleneck", "collar", "cowl", "asymmetrical"],
+        "neckline":           ["crew", "round", "boat", "V-neck", "plunging", "jewel", "square",
+                               "scoop", "sweetheart", "off-shoulder", "strapless", "halter",
+                               "high neck", "turtleneck", "collar", "cowl", "one shoulder",
+                               "tie neck", "apron neck", "queen anne", "asymmetrical",
+                               "keyhole neck", "scalloped neck", "illusion neck"],
         "sleeve_length":      ["sleeveless", "cap", "short", "3/4", "long"],
         "sleeve_style":       ["puff", "bishop", "balloon", "bell", "raglan", "batwing", "cold shoulder", "flutter"],
         "fit":                ["slim", "regular", "relaxed", "loose", "oversized", "bodycon",

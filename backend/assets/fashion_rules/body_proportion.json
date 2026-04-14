@@ -1,0 +1,80 @@
+{
+  "category": "body_proportion",
+  "display_name": "Body Proportion",
+  "summary": {
+    "dos": [
+      "Adjust waistlines and lengths for balance."
+    ],
+    "donts": [
+      "Follow trends while ignoring proportion."
+    ]
+  },
+  "rules": [
+    {
+      "subtype": "Short Torso",
+      "key_inputs": [
+        "High waist"
+      ],
+      "primary_goal": "Lengthen torso",
+      "recommended_attributes": [
+        "Long tops",
+        "Low-rise"
+      ],
+      "avoid_attributes": [
+        "Cropped tops"
+      ],
+      "engine_tags": [
+        "torso_elongation"
+      ]
+    },
+    {
+      "subtype": "Long Torso",
+      "key_inputs": [
+        "Low waist"
+      ],
+      "primary_goal": "Lengthen legs",
+      "recommended_attributes": [
+        "High-waist bottoms"
+      ],
+      "avoid_attributes": [
+        "Low-rise"
+      ],
+      "engine_tags": [
+        "leg_elongation"
+      ]
+    },
+    {
+      "subtype": "Petite",
+      "key_inputs": [
+        "Short height"
+      ],
+      "primary_goal": "Add height",
+      "recommended_attributes": [
+        "Vertical lines"
+      ],
+      "avoid_attributes": [
+        "Oversized"
+      ],
+      "engine_tags": [
+        "height_add"
+      ]
+    },
+    {
+      "subtype": "Tall",
+      "key_inputs": [
+        "Long frame"
+      ],
+      "primary_goal": "Break height",
+      "recommended_attributes": [
+        "Layering",
+        "Blocking"
+      ],
+      "avoid_attributes": [
+        "Full monochrome"
+      ],
+      "engine_tags": [
+        "height_break"
+      ]
+    }
+  ]
+}

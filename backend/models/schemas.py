@@ -53,6 +53,7 @@ class UserProfile(BaseModel):
     gender: Optional[str] = "prefer_not_to_say"
     ethnicity: Optional[str] = "prefer_not_to_say"
     body_type: Optional[str] = None
+    shoulders: Optional[str] = None
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
     complexion: Optional[str] = None
@@ -70,6 +71,7 @@ class UpdateProfileRequest(BaseModel):
     gender: Optional[str] = None
     ethnicity: Optional[str] = None
     body_type:  Optional[str]   = None
+    shoulders:  Optional[str]   = None
     height_cm:     Optional[float] = None
     weight_kg:     Optional[float] = None
     complexion: Optional[str]   = None
@@ -154,6 +156,7 @@ class DiscoverProfileContext(BaseModel):
     gender: str = "prefer_not_to_say"
     ethnicity: str = "prefer_not_to_say"
     body_type: Optional[str] = None
+    shoulders: Optional[str] = None
     complexion: Optional[str] = None
     age_range: Optional[str] = None
     hairstyle: Optional[str] = None
@@ -327,7 +330,7 @@ class OutfitSuggestion(BaseModel):
     score: float                            # 0.0 → 1.0 composite ranking score
     explanation: Optional[str] = None      # legacy field retained for compatibility
     card: Optional[OutfitCard] = None      # structured quick-glance card (v2.0+)
-    user_rating: Optional[int] = None      # 1–5 star rating from user feedback
+    user_rating: Optional[int] = None      # 0–5 feedback; 0 = none of these work
     generated_at: datetime
 
     class Config:

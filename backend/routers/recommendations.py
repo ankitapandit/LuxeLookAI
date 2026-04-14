@@ -12,6 +12,7 @@ from models.schemas import GenerateOutfitsRequest, ResetFeedbackRequest
 from services.clothing_service import get_user_items
 from services.event_service import get_event
 from services.recommender import compute_look_title, generate_outfit_suggestions, wardrobe_coverage_gaps
+from services.style_learning import build_profile_style_seed
 from utils.auth import get_current_user_id
 from config import get_settings
 
@@ -536,7 +537,7 @@ def _load_user_profile(user_id: str) -> dict:
             from utils.db import get_supabase
             result = (
                 get_supabase().table(PROFILES_TABLE)
-                .select("body_type, height_cm, style_preferences, complexion, face_shape")
+                .select("body_type, shoulders, height_cm, style_preferences, complexion, face_shape")
                 .eq("id", user_id)
                 .single()
                 .execute()
@@ -547,40 +548,25 @@ def _load_user_profile(user_id: str) -> dict:
 
 
 def _build_style_direction(
-    anchor_item: dict,
+    anchor_item: Optional[dict],
     event: dict,
     user_profile: dict,
-    wardrobe_items: list,
+    style_seed: dict,
 ) -> dict:
-    """Call LLM to generate editorial outfit options built around the anchor item."""
+    """
+    Call LLM to generate editorial outfit options from occasion + taste signals,
+    then enrich each wearable piece with a Pexels image URL for moodboard display.
+    """
     from ml.llm import generate_style_direction
-    return generate_style_direction(
+    from services.style_images import enrich_style_direction_images
+
+    raw = generate_style_direction(
         anchor_item=anchor_item,
         event=event,
         user_profile=user_profile,
-        wardrobe_items=wardrobe_items,
+        style_seed=style_seed,
     )
-
-
-def _pick_style_direction_anchor(suggestions: list, item_by_id: dict) -> Optional[dict]:
-    if not suggestions:
-        return None
-
-    first = suggestions[0]
-    core_items = [
-        item_by_id.get(str(item_id))
-        for item_id in first.get("item_ids", [])
-    ]
-    core_items = [item for item in core_items if item]
-    if not core_items:
-        return None
-
-    preferred_order = ["dresses", "tops", "set", "outerwear", "bottoms", "shoes"]
-    for category in preferred_order:
-        match = next((item for item in core_items if str(item.get("category")) == category), None)
-        if match:
-            return match
-    return core_items[0]
+    return enrich_style_direction_images(raw, event)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -638,6 +624,7 @@ def generate_outfits(
     items        = get_user_items(user_id)
     user_profile = _load_user_profile(user_id)
     item_by_id   = {str(i.get("id")): i for i in items}
+    style_seed   = build_profile_style_seed(user_id)
 
     if not items:
         raise HTTPException(
@@ -679,6 +666,7 @@ def generate_outfits(
         )
 
     if not suggestions and anchor_item:
+        style_direction = _build_style_direction(anchor_item, event, user_profile, style_seed)
         coverage_hints = wardrobe_coverage_gaps(items)
         return {
             "event":           event,
@@ -701,11 +689,7 @@ def generate_outfits(
 
     suggestions = _dedupe_suggestions_by_combo(suggestions)
 
-    style_direction_anchor = anchor_item or _pick_style_direction_anchor(suggestions, item_by_id)
-    style_direction = (
-        _build_style_direction(style_direction_anchor, event, user_profile, items)
-        if style_direction_anchor else None
-    )
+    style_direction = _build_style_direction(anchor_item, event, user_profile, style_seed)
 
     # ── Step 7-8: persist + return ─────────────────────────────────────────
     # Strip score_breakdown (not a DB column) before persisting.

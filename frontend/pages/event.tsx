@@ -13,6 +13,7 @@ import OutfitSuggestionCard from "@/components/OutfitSuggestionCard";
 import EventBriefEditor, { createDefaultEventBriefValues, EventBriefValues, serializeEventBrief, summarizeEventBrief } from "@/components/EventBriefEditor";
 import LookAssemblyLoader from "@/components/LookAssemblyLoader";
 import { CalendarDays, ChevronDown, Sparkles, Info, X, RefreshCw } from "lucide-react";
+import StyleDirectionMoodboard, { getFinishPieces } from "@/components/StyleDirectionMoodboard";
 import toast from "react-hot-toast";
 
 export default function EventsPage() {
@@ -31,6 +32,19 @@ export default function EventsPage() {
   // Controls visibility of the "None of these work" tooltip
   const [showBadTip,      setShowBadTip]      = useState(false);
   const [showExpertSuggestion, setShowExpertSuggestion] = useState(true);
+  const styleOptions = styleDirectionData?.options ?? [];
+
+  function resetEventComposer() {
+    setBrief(createDefaultEventBriefValues());
+    setEventId(null);
+    setSuggestions([]);
+    setStyleDirectionData(null);
+    setAllShownIds([]);
+    setAllSeen(false);
+    setCoverageHints([]);
+    setShowBadTip(false);
+    setShowExpertSuggestion(true);
+  }
 
   async function handleGenerate() {
     setLoading(true);
@@ -49,7 +63,7 @@ export default function EventsPage() {
       console.info("[Event] event created", { eventId: event.id });
       setEventId(event.id);
       const [outfitData, items] = await Promise.all([
-        generateOutfits(event.id, 5),
+        generateOutfits(event.id, 3),
         getWardrobeItems(),
       ]);
       console.info("[Event] generate outfits response", {
@@ -83,7 +97,7 @@ export default function EventsPage() {
     try {
       const [outfitData, items] = await Promise.all([
         // Accumulate all seen IDs so previously-shown combos stay downranked
-        generateOutfits(eventId, 5, allShownIds, markAsBad),
+        generateOutfits(eventId, 3, allShownIds, markAsBad),
         getWardrobeItems(),
       ]);
       const map: Record<string, ClothingItem> = {};
@@ -152,7 +166,7 @@ export default function EventsPage() {
                 boxShadow: "0 16px 36px rgba(0,0,0,0.06)",
               }}
             >
-              <EventBriefEditor values={brief} onChange={setBrief} mobileCompact />
+              <EventBriefEditor values={brief} onChange={setBrief} onReset={resetEventComposer} mobileCompact />
             </div>
 
             <button
@@ -273,7 +287,8 @@ export default function EventsPage() {
                 ))}
               </div>
 
-              {styleDirectionData && styleDirectionData.options.length > 0 ? (
+              {/* TEXTUAL STYLE DIRECTION — kept as fallback; re-enable by removing "false &&" below */}
+              {false && (styleDirectionData?.options?.length ?? 0) > 0 ? (
                 <div
                   style={{
                     marginTop: "24px",
@@ -286,11 +301,8 @@ export default function EventsPage() {
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
                     <div>
                       <p className="type-kicker" style={{ margin: 0, fontSize: "11px", color: "var(--gold)", letterSpacing: "0.14em", textTransform: "uppercase" }}>
-                        Experts suggest
+                        Beyond your wardrobe
                       </p>
-                      <h3 style={{ margin: "8px 0 0", fontFamily: "Playfair Display, serif", fontSize: "clamp(22px, 3vw, 30px)", lineHeight: 1.05, color: "var(--charcoal)" }}>
-                        {styleDirectionData.options.length === 1 ? "One direction worth trying" : `${styleDirectionData.options.length} ways to style this`}
-                      </h3>
                     </div>
                     <button
                       type="button"
@@ -316,7 +328,7 @@ export default function EventsPage() {
 
                   {showExpertSuggestion ? (
                     <div style={{ display: "grid", gap: "16px", marginTop: "18px" }}>
-                      {styleDirectionData.options.map((option, optIndex) => (
+                      {styleOptions.map((option, optIndex) => (
                         <div
                           key={optIndex}
                           style={{
@@ -403,6 +415,120 @@ export default function EventsPage() {
                           {option.why}
                         </p>
 
+                          {option.tip ? (
+                            <p style={{ margin: "8px 0 0", color: "rgba(255,247,237,0.60)", fontSize: "12px", lineHeight: 1.6 }}>
+                              <strong style={{ color: "rgba(212,169,106,0.75)", fontStyle: "normal", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.10em", marginRight: "6px" }}>Tip</strong>
+                              {option.tip}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {/* ── Visual Style Direction Moodboard ── */}
+              {styleOptions.length > 0 ? (
+                <div
+                  style={{
+                    marginTop: "24px",
+                    padding: "20px",
+                    borderRadius: "22px",
+                    background: "linear-gradient(145deg, rgba(212,169,106,0.10) 0%, rgba(255,255,255,0.04) 100%)",
+                    border: "1px solid rgba(212,169,106,0.18)",
+                  }}
+                >
+                  {/* Header + toggle */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+                    <div>
+                      <p className="type-kicker" style={{ margin: 0, fontSize: "11px", color: "var(--gold)", letterSpacing: "0.14em", textTransform: "uppercase" }}>
+                        Beyond your wardrobe
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowExpertSuggestion((v) => !v)}
+                      aria-expanded={showExpertSuggestion}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        border: "1px solid rgba(212,169,106,0.18)",
+                        background: "rgba(17, 15, 12, 0.42)",
+                        color: "var(--charcoal)",
+                        borderRadius: "999px",
+                        padding: "8px 12px",
+                        fontSize: "12px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {showExpertSuggestion ? "Hide" : "Show"}
+                      <ChevronDown size={14} style={{ transform: showExpertSuggestion ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.18s ease" }} />
+                    </button>
+                  </div>
+
+                  {showExpertSuggestion ? (
+                    <div style={{ display: "grid", gap: "24px", marginTop: "18px" }}>
+                      {styleOptions.map((option, optIndex) => (
+                        <div
+                          key={optIndex}
+                          style={{
+                            borderRadius: "18px",
+                            background: "rgba(17, 15, 12, 0.50)",
+                            border: "1px solid rgba(212,169,106,0.14)",
+                            padding: "16px",
+                          }}
+                        >
+                          {/* Option name */}
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
+                            <span style={{ fontSize: "22px", lineHeight: 1 }}>{option.emoji}</span>
+                            <h4 style={{ margin: 0, fontFamily: "Playfair Display, serif", fontSize: "18px", color: "#FFF7ED", lineHeight: 1.15 }}>
+                              {option.name}
+                            </h4>
+                          </div>
+
+                          {/* Visual moodboard grid */}
+                          <StyleDirectionMoodboard option={option} />
+
+                          {/* Finishing notes (Hair, Makeup, etc.) */}
+                          {(() => {
+                            const finishPieces = getFinishPieces(option.pieces);
+                            if (!finishPieces.length) return null;
+                            return (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "10px" }}>
+                                {finishPieces.map((piece) => (
+                                  <span
+                                    key={piece.label}
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "baseline",
+                                      gap: "5px",
+                                      background: "rgba(255,255,255,0.04)",
+                                      color: "#FFF7ED",
+                                      border: "1px solid rgba(212,169,106,0.13)",
+                                      padding: "6px 10px",
+                                      borderRadius: "6px",
+                                      fontSize: "12px",
+                                    }}
+                                  >
+                                    <strong style={{ color: "var(--gold)", whiteSpace: "nowrap", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                                      {piece.label}
+                                    </strong>
+                                    <span style={{ whiteSpace: "normal" }}>{piece.value}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            );
+                          })()}
+
+                          {/* Why it works */}
+                          <p style={{ margin: "12px 0 0", color: "rgba(255,247,237,0.88)", fontSize: "13px", lineHeight: 1.65, fontStyle: "italic" }}>
+                            <strong style={{ color: "var(--gold)", fontStyle: "normal", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.10em", marginRight: "6px" }}>Why it works</strong>
+                            {option.why}
+                          </p>
+
+                          {/* Tip */}
                           {option.tip ? (
                             <p style={{ margin: "8px 0 0", color: "rgba(255,247,237,0.60)", fontSize: "12px", lineHeight: 1.6 }}>
                               <strong style={{ color: "rgba(212,169,106,0.75)", fontStyle: "normal", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.10em", marginRight: "6px" }}>Tip</strong>

@@ -278,6 +278,7 @@ def color_family(value: Optional[str]) -> Optional[str]:
     name = normalized.lower().strip()
 
     family_keywords: list[tuple[str, tuple[str, ...]]] = [
+        ("multicolor", ("multicolor", "multi color", "multi-colour", "multi colour", "colorblock", "colourblock", "rainbow")),
         ("black", ("black", "charcoal", "onyx", "jet")),
         ("white", ("white", "ivory", "cream", "off white", "snow")),
         ("grey", ("grey", "gray", "silver", "slate")),

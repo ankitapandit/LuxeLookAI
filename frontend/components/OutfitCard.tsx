@@ -1,8 +1,8 @@
 /**
  * components/OutfitCard.tsx — Shared outfit metric card component
  *
- * Renders the 5-row at-a-glance card (Trend-o-meter, Vibe Check, Color Theory,
- * Fit Check, Weather Sync). Used on both the Events page (inline) and the
+ * Renders the compact at-a-glance metric card (Vibe Check, Color Theory,
+ * Fit Check). Used on both the Events page (inline) and the
  * Archive page (history feed).
  */
 
@@ -24,19 +24,6 @@ export function isCurrentCardSchema(card: unknown): card is OutfitCardType {
 export default function OutfitMetricCard({ card }: { card: OutfitCardType }) {
   const rows: { icon: string; label: string; value: React.ReactNode }[] = [
     {
-      icon: "🔥",
-      label: "Trend-o-meter",
-      value: (
-        <span style={{ display: "flex", alignItems: "center", gap: "6px", justifyContent: "flex-end" }}>
-          <span style={{ color: "var(--gold)", letterSpacing: "1px" }}>
-            {"★".repeat(card.trend_stars)}
-            <span style={{ color: "var(--border)" }}>{"★".repeat(5 - card.trend_stars)}</span>
-          </span>
-          <span style={{ color: "var(--muted)", fontSize: "12px" }}>({card.trend_label})</span>
-        </span>
-      ),
-    },
-    {
       icon: "💃",
       label: "Vibe Check",
       value: card.vibe,
@@ -51,17 +38,12 @@ export default function OutfitMetricCard({ card }: { card: OutfitCardType }) {
       label: "Fit Check",
       value: card.fit_check,
     },
-    {
-      icon: "🌡️",
-      label: "Weather Sync",
-      value: card.weather_sync,
-    },
   ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
 
-      {/* ── 5-row metric table ───────────────────────────────────────── */}
+      {/* ── 3-row metric table ───────────────────────────────────────── */}
       <div style={{
         background: "var(--surface)",
         border: "1px solid var(--border)",

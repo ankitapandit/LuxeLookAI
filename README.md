@@ -4,10 +4,10 @@
 
 Built with **Next.js · FastAPI · Supabase · CLIP · Pexels · OpenAI**.
 
-Current user-facing sections are: **Wardrobe · Discover · Event · Archive · Profile**.
-Supporting flows include **Style Item** (`/style-item`) and the dedicated AI profiling photo path inside Profile.
+Current user-facing sections are: **Wardrobe · Discover · Event · Archive · Profile · Guide**.
+Supporting flows include **Style Item** (`/style-item`), the dedicated AI profiling photo path inside Profile, and the isolated **Event Scenario Tester** at `/test/event-scenarios`.
 Legacy frontend URLs `/events` and `/outfits` permanently redirect to `/event` and `/archive`.
-Sessions now restore on refresh, wardrobe uploads show live media-processing status, Discover learns from swipes without wiping learned rails, structured event briefs are stored as JSON + human summaries, and refreshed outfit batches preserve saved ratings while avoiding exact duplicate looks.
+Sessions now restore on refresh, wardrobe uploads show live media-processing status, Discover learns from swipes without wiping learned rails, structured event briefs are stored as JSON + human summaries, `Beyond your wardrobe` renders as a visual moodboard, and refreshed outfit batches preserve saved ratings while avoiding exact duplicate looks.
 
 For the current system reference, see [`docs/system-architecture.md`](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/docs/system-architecture.md).
 
@@ -37,7 +37,8 @@ luxelook-ai/
 │   │   ├── discover_search.py  # Pexels/mock provider normalization
 │   │   ├── discover_jobs.py    # Durable Discover job queue helpers
 │   │   ├── style_learning.py   # Swipe logging + learned style aggregation
-│   │   └── event_service.py    # Event creation and retrieval
+│   │   ├── event_service.py    # Event creation and retrieval
+│   │   └── style_images.py     # Visual image enrichment for style directions
 │   ├── ml/                     # AI components
 │   │   ├── embeddings.py       # CLIP embedding generation (mock + real)
 │   │   ├── tagger.py           # CLIP zero-shot clothing attribute detection
@@ -60,15 +61,19 @@ luxelook-ai/
     │   ├── discover.tsx         # Swipe-based taste-learning feed
     │   ├── event.tsx            # Describe event → AI parses → outfit suggestions
     │   ├── archive.tsx          # View outfit history + rate suggestions
+    │   ├── guide.tsx            # User-facing fashion terminology + profile guide
     │   ├── style-item.tsx       # Style around one chosen wardrobe item
     │   └── profile.tsx          # User profile, body type, face shape, photo
     ├── components/
     │   ├── layout/Navbar.tsx    # Top navigation
     │   ├── OutfitCard.tsx       # Shared outfit metric card
     │   ├── OutfitMoodboard.tsx  # Editorial outfit presentation board
+    │   ├── StyleDirectionMoodboard.tsx # Visual board for non-wardrobe style directions
     │   ├── OutfitSuggestionCard.tsx # Shared suggestion wrapper + modal
     │   ├── FaceShapeTool.tsx    # Canvas landmark tool for face shape detection
     │   └── PhotoCropper.tsx     # Modal canvas cropper for profile photo
+    ├── test/
+    │   └── eventScenarios.ts    # Saved EventBrief JSON scenarios for tester route
     ├── hooks/
     │   └── useAuth.tsx          # Shared auth/session provider
     ├── services/
@@ -204,6 +209,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 5. **Create an event** — fill the structured occasion brief (dress code, venue, weather, mood, audience, notes)
    - The backend stores both a structured `raw_text_json` payload and a clean human-readable summary
    - Occasion parsing uses the structured brief as prompt context, which improves edge cases such as beach BBQ vs. beach wedding
+   - All EventBrief form fields now contribute occasion tokens, and an explicit dress-code selection overrides weaker inferred formality
    - If you choose `Other`, the UI keeps and displays your custom text directly instead of reverting to a generic placeholder label
 6. **Get outfit suggestions** — AI builds complete looks across 8 outfit templates
    (top+bottom+shoes, top+bottom+outerwear+shoes, dress+shoes, dress+outerwear+shoes,
@@ -216,6 +222,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    - complete wardrobe-only outfits reuse the standard suggestion cards and the same structured brief editor as Event
    - the same custom `Other` behavior carries across, so bespoke occasion details stay visible as entered
    - incomplete wardrobes fall back to editorial styling guidance and missing-piece direction
+   - `Beyond your wardrobe` now renders as a visual moodboard with wearable-piece imagery plus separate Hair / Makeup finishing chips
 8. **Rate outfits** — 1–5 stars to improve future suggestions
 9. **Regenerate** — "Show me more" for a neutral refresh; "None of these work" to
    signal the current batch was wrong; ratings are tracked per combo + occasion context
@@ -223,6 +230,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    duplicate outfit combos are filtered out on refresh so fresh options surface first.
 10. **Reset** — if you've exhausted all combinations for an event a banner appears;
    "Reset & start fresh" clears combo ratings for that occasion context and starts fresh
+11. **Use Guide** — open **Guide** to see the fashion vocabulary and profile explanation layer the app uses for tagging and recommendations
+12. **Scenario-test events** — open `/test/event-scenarios` to run saved EventBrief JSON cases against the real Event recommendation flow without touching your main Event page
 
 ---
 

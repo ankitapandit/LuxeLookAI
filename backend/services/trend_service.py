@@ -35,7 +35,13 @@ import os
 from datetime import date
 from typing import Dict, List, Optional
 
-_CALENDAR_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "trend_calendar.json")
+_CALENDAR_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "..",
+    "assets",
+    "fashion_rules",
+    "trend_calendar.json",
+)
 _calendar: Optional[Dict] = None
 
 

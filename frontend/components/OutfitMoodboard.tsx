@@ -37,6 +37,7 @@ function getDisplayColor(color?: string): string {
     tan: "Tan",
     gold: "Gold",
     silver: "Silver",
+    multicolor: "Multicolor",
   };
 
   const normalized = color.toLowerCase().trim();
@@ -68,6 +69,7 @@ function parseColorSwatch(color?: string): { label: string; swatch: string } | n
     olive: "#71825A",
     gold: "#C6A25A",
     silver: "#C6C6C6",
+    multicolor: "linear-gradient(135deg, #C94735 0%, #D9AE43 24%, #5C8762 48%, #599CD5 72%, #8162C9 100%)",
   };
 
   const normalized = color.toLowerCase().trim();
@@ -93,9 +95,27 @@ function categoryLabel(category: string): string {
   return labels[category] || titleCase(category);
 }
 
+function getSubtypeLabel(item: ClothingItem): string | null {
+  const descriptors = item.descriptors || {};
+
+  if (item.category === "accessories") {
+    const accessoryType = descriptors.accessory_type?.trim();
+    if (accessoryType) return titleCase(accessoryType);
+  }
+
+  if (item.category === "jewelry") {
+    const jewelryType = descriptors.jewelry_type?.trim();
+    if (jewelryType) return titleCase(jewelryType);
+  }
+
+  const subtype = item.accessory_subtype?.trim();
+  return subtype ? titleCase(subtype) : null;
+}
+
 function getDisplayName(item: ClothingItem): string {
-  if ((item.category === "accessories" || item.category === "jewelry") && item.accessory_subtype) {
-    return titleCase(item.accessory_subtype);
+  const subtypeLabel = getSubtypeLabel(item);
+  if ((item.category === "accessories" || item.category === "jewelry") && subtypeLabel) {
+    return subtypeLabel;
   }
   if (item.item_type && !["core_garment", "footwear", "outerwear", "accessory"].includes(item.item_type)) {
     return titleCase(item.item_type);
@@ -139,6 +159,100 @@ function getRotation(itemId: string, base: number): string {
   return `${base + offset}deg`;
 }
 
+// ─── Stitch-style grid placement ─────────────────────────────────────────────
+// Fixed zone rules:
+//
+//  ┌──────────────────┬──────────────────┐
+//  │  LEFT COLUMN     │  TOP-RIGHT       │
+//  │  main garment    │  outerwear       │
+//  │  (dress / set /  │                  │
+//  │   top + bottom)  ├──────────────────┤
+//  │  + shoes below   │  BOTTOM-RIGHT    │
+//  │                  │  accessories /   │
+//  │                  │  jewelry         │
+//  └──────────────────┴──────────────────┘
+//
+// Graceful fallback when zones are empty:
+//   – No outerwear  → accessories span full right column (stacked vertically)
+//   – No accessories → outerwear spans full right column
+//   – top + bottom   → each takes ~40% of left height; shoes squeezed to 12% at bottom
+
+function getStitchPlacements(items: ClothingItem[]): StagePlacement[] {
+  const fullLook  = items.find((i) => ["dresses", "set", "swimwear", "loungewear"].includes(i.category));
+  const top       = items.find((i) => i.category === "tops");
+  const bottom    = items.find((i) => i.category === "bottoms");
+  const outerwear = items.find((i) => i.category === "outerwear");
+  const shoes     = items.find((i) => i.category === "shoes");
+  const accList   = items.filter((i) => ["accessories", "jewelry"].includes(i.category));
+
+  const placements: StagePlacement[] = [];
+
+  // Shared measurements (all in %)
+  // Left column:  left=3,  width=44  → right edge 47%
+  // Right column: left=53, width=44  → right edge 97%
+  const G  = 3;   // gutter
+  const LW = 44;  // left column width  (50 - 2*G)
+  const RW = 44;  // right column width (50 - 2*G)
+  const RL = 53;  // right column left  (50 + G)
+
+  // ── Left column: main garment + shoes ──────────────────────────────────────
+  if (fullLook) {
+    // Single full-length garment → tall, shoes fill the bottom strip
+    placements.push({ item: fullLook, left: `${G}%`, top: `${G}%`, width: `${LW}%`, height: "67%", zIndex: 3 });
+    if (shoes) {
+      placements.push({ item: shoes, left: `${G}%`, top: "73%", width: `${LW}%`, height: "23%", zIndex: 4 });
+    }
+  } else if (top && bottom) {
+    // Stack top above bottom; shoes as a thin strip at the very bottom
+    placements.push({ item: top,    left: `${G}%`, top: `${G}%`, width: `${LW}%`, height: "40%", zIndex: 4 });
+    placements.push({ item: bottom, left: `${G}%`, top: "44%",   width: `${LW}%`, height: "40%", zIndex: 3 });
+    if (shoes) {
+      placements.push({ item: shoes, left: `${G}%`, top: "85%", width: `${LW}%`, height: "12%", zIndex: 5 });
+    }
+  } else {
+    // Single top or single bottom
+    const single = top ?? bottom;
+    if (single) {
+      placements.push({ item: single, left: `${G}%`, top: `${G}%`, width: `${LW}%`, height: "67%", zIndex: 3 });
+    }
+    if (shoes) {
+      placements.push({ item: shoes, left: `${G}%`, top: "73%", width: `${LW}%`, height: "23%", zIndex: 4 });
+    }
+  }
+
+  // ── Right column: outerwear (top) + accessories (bottom) ───────────────────
+  const usedIds = new Set(placements.map((p) => p.item.id));
+  const accToShow = accList.filter((i) => !usedIds.has(i.id));
+
+  if (outerwear && accToShow.length > 0) {
+    // Both zones occupied — split right column 50 / 50
+    placements.push({ item: outerwear, left: `${RL}%`, top: `${G}%`, width: `${RW}%`, height: "46%", zIndex: 3 });
+
+    if (accToShow.length === 1) {
+      placements.push({ item: accToShow[0], left: `${RL}%`, top: "52%", width: `${RW}%`, height: "44%", zIndex: 3 });
+    } else {
+      // Two accessories side-by-side in the bottom-right zone
+      const halfW = 21;
+      const halfGap = 2;
+      placements.push({ item: accToShow[0], left: `${RL}%`,             top: "52%", width: `${halfW}%`, height: "44%", zIndex: 3 });
+      placements.push({ item: accToShow[1], left: `${RL + halfW + halfGap}%`, top: "52%", width: `${halfW}%`, height: "44%", zIndex: 3 });
+    }
+  } else if (outerwear) {
+    // No accessories — outerwear fills the full right column
+    placements.push({ item: outerwear, left: `${RL}%`, top: `${G}%`, width: `${RW}%`, height: `${94 - G * 2}%`, zIndex: 3 });
+  } else if (accToShow.length > 0) {
+    // No outerwear — accessories fill the full right column (stacked vertically)
+    if (accToShow.length === 1) {
+      placements.push({ item: accToShow[0], left: `${RL}%`, top: `${G}%`, width: `${RW}%`, height: `${94 - G * 2}%`, zIndex: 3 });
+    } else {
+      placements.push({ item: accToShow[0], left: `${RL}%`, top: `${G}%`, width: `${RW}%`, height: "46%", zIndex: 3 });
+      placements.push({ item: accToShow[1], left: `${RL}%`, top: "52%",   width: `${RW}%`, height: "44%", zIndex: 3 });
+    }
+  }
+
+  return placements;
+}
+
 function getStagePlacements(items: ClothingItem[], compact: boolean = false): StagePlacement[] {
   const fullLook = items.find((item) => ["dresses", "set", "swimwear", "loungewear"].includes(item.category));
   const top = items.find((item) => item.category === "tops");
@@ -149,34 +263,65 @@ function getStagePlacements(items: ClothingItem[], compact: boolean = false): St
 
   const placements: StagePlacement[] = [];
 
-  if (fullLook) {
-    placements.push({
-      item: fullLook,
-      left: compact ? "11%" : "8%",
-      top: compact ? "7%" : "6%",
-      width: compact ? "48%" : "54%",
-      height: compact ? "78%" : "84%",
-      rotation: getRotation(fullLook.id, compact ? -4 : -2),
-      zIndex: 4,
-    });
-    if (outerwear) placements.push({
-      item: outerwear,
-      left: compact ? "47%" : "45%",
-      top: compact ? "11%" : "10%",
-      width: compact ? "27%" : "30%",
-      height: compact ? "34%" : "40%",
-      rotation: getRotation(outerwear.id, compact ? 6 : 4),
-      zIndex: 5,
-    });
-    if (shoes) placements.push({
-      item: shoes,
-      left: compact ? "67%" : "66%",
-      top: compact ? "64%" : "62%",
-      width: compact ? "19%" : "22%",
-      height: compact ? "15%" : "18%",
-      rotation: getRotation(shoes.id, compact ? -6 : -4),
-      zIndex: 4,
-    });
+  // When there is no full-length garment, no top, and no bottom (e.g. outerwear-
+  // only look), promote outerwear to the hero slot so items don't cluster on the
+  // right with the entire left half empty.
+  const outerwearIsHero = !fullLook && !top && !bottom && !!outerwear;
+
+  if (fullLook || outerwearIsHero) {
+    const hero = fullLook ?? outerwear!;
+
+    if (outerwear && !outerwearIsHero) {
+      // fullLook + outerwear: lay them side-by-side with only slight overlap so
+      // both garments are clearly readable — set on the left, jacket on the right.
+      placements.push({
+        item: hero,
+        left: compact ? "5%" : "4%",
+        top: compact ? "6%" : "5%",
+        width: compact ? "44%" : "48%",
+        height: compact ? "76%" : "82%",
+        rotation: getRotation(hero.id, compact ? -3 : -2),
+        zIndex: 3,
+      });
+      placements.push({
+        item: outerwear,
+        left: compact ? "42%" : "40%",
+        top: compact ? "4%" : "3%",
+        width: compact ? "40%" : "44%",
+        height: compact ? "54%" : "60%",
+        rotation: getRotation(outerwear.id, compact ? 5 : 3),
+        zIndex: 5,
+      });
+      if (shoes) placements.push({
+        item: shoes,
+        left: compact ? "64%" : "62%",
+        top: compact ? "66%" : "64%",
+        width: compact ? "20%" : "24%",
+        height: compact ? "16%" : "20%",
+        rotation: getRotation(shoes.id, compact ? -5 : -3),
+        zIndex: 4,
+      });
+    } else {
+      // fullLook only (no outerwear) or outerwear-as-hero: hero fills the left column.
+      placements.push({
+        item: hero,
+        left: compact ? "11%" : "8%",
+        top: compact ? "7%" : "6%",
+        width: compact ? "48%" : "54%",
+        height: compact ? "78%" : "84%",
+        rotation: getRotation(hero.id, compact ? -4 : -2),
+        zIndex: 4,
+      });
+      if (shoes) placements.push({
+        item: shoes,
+        left: compact ? "67%" : "66%",
+        top: compact ? "64%" : "62%",
+        width: compact ? "19%" : "22%",
+        height: compact ? "15%" : "18%",
+        rotation: getRotation(shoes.id, compact ? -6 : -4),
+        zIndex: 4,
+      });
+    }
   } else {
     if (top) placements.push({
       item: top,
@@ -216,12 +361,21 @@ function getStagePlacements(items: ClothingItem[], compact: boolean = false): St
     });
   }
 
+  // Accessory slots — when outerwear is the hero, pull accessories inward so
+  // they don't cluster in the far-right void next to an empty column.
   accessories.slice(0, 3).forEach((item, index) => {
-    const accessorySlots = [
-      { left: "69%", top: "8%", width: "18%", height: "15%", rotation: getRotation(item.id, 5) },
-      { left: "74%", top: "28%", width: "15%", height: "15%", rotation: getRotation(item.id, -5) },
-      { left: "70%", top: "78%", width: "16%", height: "11%", rotation: getRotation(item.id, 4) },
-    ];
+    const accessorySlots = outerwearIsHero
+      ? [
+          // Closer to the stage centre so nothing feels isolated
+          { left: "66%", top: "6%",  width: "20%", height: "16%", rotation: getRotation(item.id, 5)  },
+          { left: "68%", top: "30%", width: "18%", height: "16%", rotation: getRotation(item.id, -4) },
+          { left: "65%", top: "56%", width: "18%", height: "14%", rotation: getRotation(item.id, 4)  },
+        ]
+      : [
+          { left: "69%", top: "8%",  width: "18%", height: "15%", rotation: getRotation(item.id, 5)  },
+          { left: "74%", top: "28%", width: "15%", height: "15%", rotation: getRotation(item.id, -5) },
+          { left: "70%", top: "78%", width: "16%", height: "11%", rotation: getRotation(item.id, 4)  },
+        ];
     const slot = accessorySlots[index];
     if (slot) {
       placements.push({ item, ...slot, zIndex: 5 - index });
@@ -317,6 +471,7 @@ export default function OutfitMoodboard({
   expanded = false,
   compact = false,
   imageMode = "cutout",
+  variant = "editorial",
 }: {
   items: ClothingItem[];
   card?: OutfitCard;
@@ -326,14 +481,173 @@ export default function OutfitMoodboard({
   expanded?: boolean;
   compact?: boolean;
   imageMode?: "cutout" | "upload";
+  /** "editorial" — original scatter layout with header above stage (default).
+   *  "stitch"    — clean 2×2 grid, no rotation, title label below the image. */
+  variant?: "editorial" | "stitch";
 }) {
   const palette = items
     .map((item) => parseColorSwatch(item.color))
     .filter((entry): entry is { label: string; swatch: string } => Boolean(entry))
     .filter((entry, index, arr) => arr.findIndex((current) => current.swatch === entry.swatch) === index)
     .slice(0, expanded ? 6 : 4);
-  const stagePlacements = getStagePlacements(items, compact);
+
   const subhead = card?.vibe || card?.color_theory || "A softer, editorial moodboard built from your own wardrobe.";
+
+  // ── Stitch variant ────────────────────────────────────────────────────────
+  if (variant === "stitch") {
+    const stitchPlacements = getStitchPlacements(items);
+
+    return (
+      <div
+        className="moodboard-shell moodboard-stitch"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          borderRadius: compact ? "20px" : expanded ? "28px" : "24px",
+          overflow: "hidden",
+          background: "#FFFFFF",
+          border: "1px solid rgba(0,0,0,0.08)",
+          boxShadow: "0 4px 16px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.05)",
+        }}
+      >
+        {/* ── Image stage ── */}
+        <div
+          className="moodboard-stage"
+          style={{
+            position: "relative",
+            // Aspect ratio approximates the sample images (portrait card)
+            aspectRatio: compact ? "3 / 4" : expanded ? "4 / 5" : "3 / 4",
+            background: "#F8F6F2",
+            overflow: "hidden",
+          }}
+        >
+          {/* Very subtle warm paper tone */}
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              backgroundImage: "radial-gradient(ellipse at 50% 0%, rgba(230,220,205,0.20) 0%, transparent 65%)",
+              pointerEvents: "none",
+              zIndex: 1,
+            }}
+          />
+
+          {stitchPlacements.map((placement) => (
+            <StageItem
+              key={placement.item.id}
+              placement={placement}
+              expanded={expanded}
+              compact={compact}
+              imageMode={imageMode}
+            />
+          ))}
+        </div>
+
+        {/* ── Bottom label bar ── */}
+        <div
+          className="moodboard-label"
+          style={{
+            padding: compact ? "14px 16px 16px" : expanded ? "20px 24px 22px" : "16px 20px 18px",
+            borderTop: "1px solid rgba(0,0,0,0.07)",
+            background: "#FFFFFF",
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+            gap: "12px",
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            {/* Eyebrow + score */}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "5px" }}>
+              <span
+                style={{
+                  fontSize: compact ? "9px" : "10px",
+                  fontWeight: 700,
+                  letterSpacing: "0.16em",
+                  textTransform: "uppercase",
+                  color: "#9A8570",
+                }}
+              >
+                {eyebrow}
+              </span>
+              {scoreLabel && (
+                <span
+                  style={{
+                    padding: "3px 9px",
+                    borderRadius: "999px",
+                    background: "rgba(114, 86, 44, 0.08)",
+                    color: "#695535",
+                    fontSize: compact ? "9px" : "10px",
+                    fontWeight: 600,
+                  }}
+                >
+                  {scoreLabel}
+                </span>
+              )}
+            </div>
+
+            {/* Title */}
+            <h3
+              style={{
+                margin: 0,
+                fontFamily: "Playfair Display, serif",
+                fontSize: compact ? "clamp(18px, 2.5vw, 22px)" : expanded ? "clamp(24px, 3vw, 34px)" : "clamp(20px, 2.8vw, 26px)",
+                lineHeight: 1.05,
+                letterSpacing: "-0.03em",
+                color: "#1A1410",
+                overflow: "hidden",
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+              }}
+            >
+              {title}
+            </h3>
+
+            {/* Subhead — vibe or color theory */}
+            <p
+              style={{
+                margin: "5px 0 0",
+                fontSize: compact ? "11px" : "12px",
+                color: "#7A6A55",
+                lineHeight: 1.45,
+                overflow: "hidden",
+                display: "-webkit-box",
+                WebkitLineClamp: 1,
+                WebkitBoxOrient: "vertical",
+              }}
+            >
+              {subhead}
+            </p>
+          </div>
+
+          {/* Color swatches — stacked vertically on the right */}
+          {palette.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px", flexShrink: 0 }}>
+              {palette.slice(0, 4).map((swatch) => (
+                <span
+                  key={`${swatch.label}-${swatch.swatch}`}
+                  title={swatch.label}
+                  style={{
+                    width: compact ? "14px" : "16px",
+                    height: compact ? "14px" : "16px",
+                    borderRadius: "999px",
+                    background: swatch.swatch,
+                    border: "2px solid rgba(255,255,255,0.9)",
+                    boxShadow: "0 2px 6px rgba(88, 65, 35, 0.14)",
+                    flexShrink: 0,
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Editorial variant (original, unchanged) ───────────────────────────────
+  const stagePlacements = getStagePlacements(items, compact);
 
   return (
     <div

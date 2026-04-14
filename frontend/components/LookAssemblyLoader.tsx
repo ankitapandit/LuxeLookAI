@@ -1,19 +1,54 @@
 import { useEffect, useState } from "react";
-import { BriefcaseBusiness, Diamond, Footprints, Gem, ShoppingBag, Shirt } from "lucide-react";
+import { ShoppingBag, Shirt } from "lucide-react";
+
+function TrousersIcon({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M8 4h8l-1 6 2 10h-4l-1-6-1 6H7l2-10-1-6Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M10 4h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function DressIcon({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 4c1 0 2 .8 2 1.8V7l2.4 1.8-1.5 2.5 3.1 7.9H6l3.1-7.9-1.5-2.5L10 7V5.8C10 4.8 11 4 12 4Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M10 7h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function SweaterIcon({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 5.5 7 7 4.5 9.5l2 2L8 10v9h8v-9l1.5 1.5 2-2L17 7l-2-1.5L13.8 7h-3.6L9 5.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M10 7h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function HeelsIcon({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 15c2.4 0 4.5-.6 6.4-1.9l2.1-1.4 2 2.6H19c.6 0 1 .4 1 1v1H9.5c-2 0-3.8-.3-5.5-1Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M14.5 14.3 12 8.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 type LoaderStep = {
   label: string;
-  hint: string;
   Icon: typeof Shirt;
 };
 
 const STEPS: LoaderStep[] = [
-  { label: "Top", hint: "pulling the lead piece into place", Icon: Shirt },
-  { label: "Shape", hint: "balancing the silhouette", Icon: Diamond },
-  { label: "Shoes", hint: "grounding the outfit", Icon: Footprints },
-  { label: "Layer", hint: "testing the outer layer", Icon: BriefcaseBusiness },
-  { label: "Jewelry", hint: "adding polish and contrast", Icon: Gem },
-  { label: "Finish", hint: "settling the final touch", Icon: ShoppingBag },
+  { label: "Top", Icon: Shirt },
+  { label: "Bottom", Icon: TrousersIcon as typeof Shirt },
+  { label: "Dress", Icon: DressIcon as typeof Shirt },
+  { label: "Shoes", Icon: HeelsIcon as typeof Shirt },
+  { label: "Layer", Icon: SweaterIcon as typeof Shirt },
+  { label: "Finish", Icon: ShoppingBag },
 ];
 
 export default function LookAssemblyLoader({
@@ -32,19 +67,17 @@ export default function LookAssemblyLoader({
     return () => window.clearInterval(intervalId);
   }, []);
 
-  const activeStep = STEPS[activeIndex];
-
   return (
     <div
       style={{
-        padding: "24px",
+        padding: "26px",
         borderRadius: "24px",
-        border: "1px solid rgba(212,169,106,0.14)",
+        border: "1px solid rgba(255,255,255,0.06)",
         background:
-          "radial-gradient(circle at top right, rgba(212,169,106,0.10), transparent 28%), linear-gradient(180deg, rgba(251,247,239,0.88), rgba(245,236,221,0.80))",
-        boxShadow: "0 18px 42px rgba(0,0,0,0.08)",
+          "radial-gradient(circle at top right, rgba(212,169,106,0.10), transparent 26%), linear-gradient(180deg, #17130F 0%, #221C16 58%, #2A2018 100%)",
+        boxShadow: "0 22px 54px rgba(0,0,0,0.16)",
         display: "grid",
-        gap: "20px",
+        gap: "22px",
       }}
     >
       <div style={{ display: "grid", gap: "8px" }}>
@@ -53,7 +86,7 @@ export default function LookAssemblyLoader({
           style={{
             margin: 0,
             fontSize: "11px",
-            color: "rgba(54,41,29,0.56)",
+            color: "rgba(247,240,230,0.56)",
             letterSpacing: "0.14em",
             textTransform: "uppercase",
           }}
@@ -66,12 +99,12 @@ export default function LookAssemblyLoader({
             fontFamily: "Playfair Display, serif",
             fontSize: "clamp(28px, 4vw, 40px)",
             lineHeight: 0.95,
-            color: "var(--charcoal)",
+            color: "#FFF7ED",
           }}
         >
           {title}
         </h3>
-        <p style={{ margin: 0, color: "rgba(54,41,29,0.72)", lineHeight: 1.65, maxWidth: "34rem" }}>
+        <p style={{ margin: 0, color: "rgba(247,240,230,0.72)", lineHeight: 1.65, maxWidth: "34rem" }}>
           {subtitle}
         </p>
       </div>
@@ -79,18 +112,19 @@ export default function LookAssemblyLoader({
       <div
         style={{
           borderRadius: "22px",
-          border: "1px solid rgba(212,169,106,0.12)",
-          background: "rgba(255,255,255,0.38)",
-          padding: "18px",
+          border: "1px solid rgba(255,255,255,0.05)",
+          background: "rgba(255,255,255,0.03)",
+          padding: "20px 16px 16px",
           display: "grid",
-          gap: "16px",
+          gap: "18px",
         }}
       >
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(84px, 1fr))",
-            gap: "12px",
+            gridTemplateColumns: "repeat(auto-fit, minmax(88px, 1fr))",
+            gap: "14px",
+            alignItems: "start",
           }}
         >
           {STEPS.map(({ label, Icon }, index) => {
@@ -100,43 +134,39 @@ export default function LookAssemblyLoader({
               <div
                 key={label}
                 style={{
-                  borderRadius: "18px",
-                  padding: "14px 10px",
-                  border: isActive
-                    ? "1px solid rgba(212,169,106,0.36)"
-                    : "1px solid rgba(54,41,29,0.08)",
-                  background: isActive
-                    ? "linear-gradient(180deg, rgba(212,169,106,0.22), rgba(212,169,106,0.08))"
-                    : isPast
-                      ? "rgba(212,169,106,0.10)"
-                      : "rgba(255,255,255,0.42)",
+                  padding: "6px 4px",
                   display: "grid",
                   justifyItems: "center",
-                  gap: "8px",
+                  gap: "10px",
                   transform: isActive ? "translateY(-2px)" : "none",
                   transition: "all 180ms ease",
                 }}
               >
                 <div
                   style={{
-                    width: "42px",
-                    height: "42px",
-                    borderRadius: "14px",
                     display: "grid",
                     placeItems: "center",
-                    background: isActive ? "rgba(255,247,237,0.96)" : "rgba(54,41,29,0.05)",
-                    color: isActive ? "var(--gold-deep)" : "rgba(54,41,29,0.62)",
-                    boxShadow: isActive ? "0 10px 22px rgba(212,169,106,0.20)" : "none",
+                    color: isActive
+                      ? "#D4A96A"
+                      : isPast
+                        ? "rgba(212,169,106,0.74)"
+                        : "rgba(247,240,230,0.42)",
+                    filter: isActive ? "drop-shadow(0 6px 16px rgba(212,169,106,0.18))" : "none",
                   }}
                 >
-                  <Icon size={18} />
+                  <Icon size={24} />
                 </div>
                 <span
                   style={{
                     fontSize: "12px",
                     fontWeight: 600,
-                    color: isActive ? "var(--charcoal)" : "rgba(54,41,29,0.66)",
+                    color: isActive
+                      ? "#FFF7ED"
+                      : isPast
+                        ? "rgba(247,240,230,0.76)"
+                        : "rgba(247,240,230,0.46)",
                     textAlign: "center",
+                    letterSpacing: "0.01em",
                   }}
                 >
                   {label}
@@ -146,30 +176,23 @@ export default function LookAssemblyLoader({
           })}
         </div>
 
-        <div style={{ display: "grid", gap: "8px" }}>
+        <div
+          style={{
+            height: "4px",
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.08)",
+            overflow: "hidden",
+          }}
+        >
           <div
             style={{
-              height: "5px",
+              width: `${((activeIndex + 1) / STEPS.length) * 100}%`,
+              height: "100%",
               borderRadius: "999px",
-              background: "rgba(54,41,29,0.10)",
-              overflow: "hidden",
+              background: "linear-gradient(90deg, rgba(212,169,106,0.72), rgba(212,169,106,1))",
+              transition: "width 220ms ease",
             }}
-          >
-            <div
-              style={{
-                width: `${((activeIndex + 1) / STEPS.length) * 100}%`,
-                height: "100%",
-                borderRadius: "999px",
-                background: "linear-gradient(90deg, rgba(212,169,106,0.72), rgba(212,169,106,1))",
-                transition: "width 220ms ease",
-              }}
-            />
-          </div>
-          <p style={{ margin: 0, color: "rgba(54,41,29,0.72)", fontSize: "13px", lineHeight: 1.5 }}>
-            <span style={{ fontWeight: 600, color: "var(--charcoal)" }}>{activeStep.label}</span>
-            {" · "}
-            {activeStep.hint}
-          </p>
+          />
         </div>
       </div>
     </div>

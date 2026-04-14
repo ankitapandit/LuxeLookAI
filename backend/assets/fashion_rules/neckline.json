@@ -1,0 +1,101 @@
+{
+  "category": "neckline",
+  "display_name": "Neckline",
+  "summary": {
+    "dos": [
+      "Match neckline to face and bust, for example V-neck for elongation."
+    ],
+    "donts": [
+      "Ignore proportions, for example using a high neck on a round face."
+    ]
+  },
+  "rules": [
+    {
+      "subtype": "V-Neck",
+      "key_inputs": [
+        "Round face",
+        "Large bust",
+        "Broad shoulders"
+      ],
+      "primary_goal": "Elongate and slim",
+      "recommended_attributes": [
+        "Deep cuts",
+        "Vertical lines"
+      ],
+      "avoid_attributes": [
+        "High necks"
+      ],
+      "engine_tags": [
+        "elongating",
+        "slimming"
+      ]
+    },
+    {
+      "subtype": "Crew/High Neck",
+      "key_inputs": [
+        "Long face",
+        "Small bust"
+      ],
+      "primary_goal": "Add volume",
+      "recommended_attributes": [
+        "Covered necklines"
+      ],
+      "avoid_attributes": [
+        "Deep V"
+      ],
+      "engine_tags": [
+        "volume_add"
+      ]
+    },
+    {
+      "subtype": "Boat Neck",
+      "key_inputs": [
+        "Narrow shoulders",
+        "Pear"
+      ],
+      "primary_goal": "Widen upper body",
+      "recommended_attributes": [
+        "Horizontal necklines"
+      ],
+      "avoid_attributes": [
+        "Broad shoulders"
+      ],
+      "engine_tags": [
+        "upper_balance"
+      ]
+    },
+    {
+      "subtype": "Sweetheart",
+      "key_inputs": [
+        "Hourglass",
+        "Small/medium bust"
+      ],
+      "primary_goal": "Enhance curves",
+      "recommended_attributes": [
+        "Curved necklines"
+      ],
+      "avoid_attributes": [
+        "Flat necklines"
+      ],
+      "engine_tags": [
+        "bust_enhance"
+      ]
+    },
+    {
+      "subtype": "Halter",
+      "key_inputs": [
+        "Athletic"
+      ],
+      "primary_goal": "Highlight shoulders",
+      "recommended_attributes": [
+        "Open shoulder cuts"
+      ],
+      "avoid_attributes": [
+        "Broad shoulders"
+      ],
+      "engine_tags": [
+        "shoulder_focus"
+      ]
+    }
+  ]
+}

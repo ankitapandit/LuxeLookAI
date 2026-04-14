@@ -7,13 +7,34 @@
 
 import axios, { AxiosInstance } from "axios";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const CONFIGURED_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export const AUTH_TOKEN_KEY = "luxelook_token";
 export const AUTH_USER_ID_KEY = "luxelook_user_id";
 export const AUTH_CHANGED_EVENT = "luxelook-auth-changed";
 
+function resolveBaseUrl(): string {
+  if (!isBrowser()) {
+    return CONFIGURED_BASE_URL;
+  }
+
+  try {
+    const url = new URL(CONFIGURED_BASE_URL);
+    const browserHost = window.location.hostname;
+    const isConfiguredLocalHost = ["localhost", "127.0.0.1"].includes(url.hostname);
+    const isBrowserLocalHost = ["localhost", "127.0.0.1"].includes(browserHost);
+
+    if (isConfiguredLocalHost && !isBrowserLocalHost) {
+      url.hostname = browserHost;
+    }
+
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return CONFIGURED_BASE_URL;
+  }
+}
+
 // ── Axios instance ────────────────────────────────────────────────────────
-const api: AxiosInstance = axios.create({ baseURL: BASE_URL });
+const api: AxiosInstance = axios.create({ baseURL: resolveBaseUrl() });
 
 export interface StoredAuth {
   token: string | null;
@@ -200,9 +221,10 @@ export async function getWardrobeMediaStatus(itemIds: string[]): Promise<Clothin
  * Sends the image to the AI tagger and returns predicted tags.
  * Nothing is saved — this is preview-only so the user can review and correct.
  */
-export async function tagPreview(file: File): Promise<TagPreview> {
+export async function tagPreview(file: File, categoryOverride?: string): Promise<TagPreview> {
   const form = new FormData();
   form.append("file", file);
+  if (categoryOverride) form.append("category_override", categoryOverride);
   const { data } = await api.post<TagPreview>("/clothing/tag-preview", form, {
     headers: { "Content-Type": "multipart/form-data" },
   });
@@ -546,6 +568,8 @@ export interface OutfitSuggestion {
 export interface StyleDirectionPiece {
   label: string;
   value: string;
+  /** Pexels image URL for wearable pieces; null for hair/makeup/etc. */
+  image_url?: string | null;
 }
 
 export interface StyleDirectionOption {
@@ -637,6 +661,7 @@ export interface UserProfile {
   gender?: string;
   ethnicity?: string;
   body_type?: string;
+  shoulders?: string;
   height_cm?: number;
   weight_kg?: number;
   age_range?: string;
@@ -654,6 +679,7 @@ export interface UpdateProfileRequest {
   gender?: string;
   ethnicity?: string;
   body_type?: string;
+  shoulders?: string;
   height_cm?: number;
   weight_kg?: number;
   age_range?: string;

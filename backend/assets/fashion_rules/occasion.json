@@ -1,0 +1,99 @@
+{
+  "category": "occasion",
+  "display_name": "Occasion",
+  "summary": {
+    "dos": [
+      "Align the outfit with the formality level."
+    ],
+    "donts": [
+      "Overdress or underdress the context."
+    ]
+  },
+  "rules": [
+    {
+      "subtype": "Formal",
+      "key_inputs": [
+        "Events",
+        "Dinners"
+      ],
+      "primary_goal": "Elegance",
+      "recommended_attributes": [
+        "Tailored",
+        "Luxe"
+      ],
+      "avoid_attributes": [
+        "Casual wear"
+      ],
+      "engine_tags": [
+        "formal"
+      ]
+    },
+    {
+      "subtype": "Cocktail",
+      "key_inputs": [
+        "Social evenings"
+      ],
+      "primary_goal": "Chic balance",
+      "recommended_attributes": [
+        "Fitted",
+        "Stylish"
+      ],
+      "avoid_attributes": [
+        "Over-casual"
+      ],
+      "engine_tags": [
+        "semi_formal"
+      ]
+    },
+    {
+      "subtype": "Business",
+      "key_inputs": [
+        "Work"
+      ],
+      "primary_goal": "Professional",
+      "recommended_attributes": [
+        "Structured",
+        "Neutral"
+      ],
+      "avoid_attributes": [
+        "Loud styles"
+      ],
+      "engine_tags": [
+        "professional"
+      ]
+    },
+    {
+      "subtype": "Casual",
+      "key_inputs": [
+        "Everyday"
+      ],
+      "primary_goal": "Comfort",
+      "recommended_attributes": [
+        "Relaxed fits"
+      ],
+      "avoid_attributes": [
+        "Overdressed"
+      ],
+      "engine_tags": [
+        "comfort"
+      ]
+    },
+    {
+      "subtype": "Festive",
+      "key_inputs": [
+        "Parties"
+      ],
+      "primary_goal": "Statement",
+      "recommended_attributes": [
+        "Bold",
+        "Sparkly"
+      ],
+      "avoid_attributes": [
+        "Minimalism"
+      ],
+      "engine_tags": [
+        "statement"
+      ]
+    }
+  ]
+}

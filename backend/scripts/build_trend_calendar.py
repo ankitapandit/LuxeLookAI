@@ -18,7 +18,7 @@ Usage
 -----
     python scripts/build_trend_calendar.py path/to/styles.csv [--output path/to/trend_calendar.json]
 
-Output is written to backend/data/trend_calendar.json by default.
+Output is written to backend/assets/fashion_rules/trend_calendar.json by default.
 
 Refresh cadence: run once per season (4x / year).
 """
@@ -235,8 +235,14 @@ def main() -> None:
     parser.add_argument("csv_path", help="Path to Myntra styles.csv")
     parser.add_argument(
         "--output", "-o",
-        default=os.path.join(os.path.dirname(__file__), "..", "data", "trend_calendar.json"),
-        help="Output path (default: backend/data/trend_calendar.json)",
+        default=os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "assets",
+            "fashion_rules",
+            "trend_calendar.json",
+        ),
+        help="Output path (default: backend/assets/fashion_rules/trend_calendar.json)",
     )
     args = parser.parse_args()
 

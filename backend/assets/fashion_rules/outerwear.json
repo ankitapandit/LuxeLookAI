@@ -1,0 +1,420 @@
+{
+  "category": "outerwear",
+  "display_name": "Outerwear",
+  "summary": {
+    "dos": [
+      "Use outerwear to shape, polish, soften, or contrast the outfit depending on the occasion and core silhouette.",
+      "Match the outer layer's weight, formality, and visual intensity to both the occasion and the base outfit."
+    ],
+    "donts": [
+      "Do not throw a casual topper over a formal look unless the styling intentionally down-dresses it.",
+      "Do not let the outer layer overpower the outfit when it should only support or finish it."
+    ]
+  },
+  "rules": [
+    {
+      "subtype": "Blazer (tailored) — Black / Neutral",
+      "key_inputs": [
+        "Dresses",
+        "Trousers",
+        "Skirts",
+        "Work",
+        "Formal",
+        "Date"
+      ],
+      "primary_goal": "Elevate the outfit instantly",
+      "recommended_attributes": [
+        "Low to medium contrast",
+        "Structured silhouette",
+        "Neutral polish"
+      ],
+      "avoid_attributes": [
+        "Very relaxed casual styling when the goal is ease over structure"
+      ],
+      "engine_tags": [
+        "structure",
+        "elevating",
+        "high_formality"
+      ]
+    },
+    {
+      "subtype": "Blazer — Bold / Colored",
+      "key_inputs": [
+        "Neutral outfits",
+        "Work",
+        "Smart casual"
+      ],
+      "primary_goal": "Add personality to basics",
+      "recommended_attributes": [
+        "Medium to high contrast",
+        "Quiet outfit base",
+        "One strong tailored focal layer"
+      ],
+      "avoid_attributes": [
+        "Already busy outfits",
+        "Too many other statement pieces"
+      ],
+      "engine_tags": [
+        "statement",
+        "tailored_personality",
+        "smart_casual"
+      ]
+    },
+    {
+      "subtype": "Leather Jacket — Black",
+      "key_inputs": [
+        "Dresses",
+        "Denim",
+        "Casual",
+        "Night out"
+      ],
+      "primary_goal": "Add edge and contrast",
+      "recommended_attributes": [
+        "Medium contrast",
+        "Feminine or simple base looks",
+        "Clean, confident finish"
+      ],
+      "avoid_attributes": [
+        "Softly romantic looks that should stay delicate",
+        "Very formal contexts"
+      ],
+      "engine_tags": [
+        "edge",
+        "contrast",
+        "night_out"
+      ]
+    },
+    {
+      "subtype": "Leather Jacket — Colored",
+      "key_inputs": [
+        "Simple outfits",
+        "Casual"
+      ],
+      "primary_goal": "Act as a focal outer layer",
+      "recommended_attributes": [
+        "High contrast",
+        "Simple outfit base",
+        "Intentional statement styling"
+      ],
+      "avoid_attributes": [
+        "Already loud looks",
+        "Overly formal settings"
+      ],
+      "engine_tags": [
+        "statement",
+        "focal_outerwear",
+        "casual"
+      ]
+    },
+    {
+      "subtype": "Denim Jacket — Blue",
+      "key_inputs": [
+        "Dresses",
+        "Casual outfits",
+        "Day out"
+      ],
+      "primary_goal": "Relax and down-dress the look",
+      "recommended_attributes": [
+        "Low contrast",
+        "Casual layering",
+        "Daytime ease"
+      ],
+      "avoid_attributes": [
+        "Strictly formal dressing"
+      ],
+      "engine_tags": [
+        "relaxation",
+        "casual_layer",
+        "down_dressing"
+      ]
+    },
+    {
+      "subtype": "Denim Jacket — Colored",
+      "key_inputs": [
+        "Neutral outfits",
+        "Casual"
+      ],
+      "primary_goal": "Add a playful tone",
+      "recommended_attributes": [
+        "Medium contrast",
+        "Simple base outfit",
+        "Casual personality"
+      ],
+      "avoid_attributes": [
+        "Over-styled or formal outfits"
+      ],
+      "engine_tags": [
+        "playful",
+        "casual_statement",
+        "medium_contrast"
+      ]
+    },
+    {
+      "subtype": "Trench Coat — Beige / Neutral",
+      "key_inputs": [
+        "Dresses",
+        "Workwear",
+        "Work",
+        "Travel"
+      ],
+      "primary_goal": "Add classic polish",
+      "recommended_attributes": [
+        "Low contrast",
+        "Refined structure",
+        "Travel-ready layering"
+      ],
+      "avoid_attributes": [
+        "Very sporty or highly casual styling"
+      ],
+      "engine_tags": [
+        "polish",
+        "classic",
+        "travel"
+      ]
+    },
+    {
+      "subtype": "Trench Coat — Dark (black/navy)",
+      "key_inputs": [
+        "Structured outfits",
+        "Work",
+        "Formal"
+      ],
+      "primary_goal": "Offer a more formal structured layer",
+      "recommended_attributes": [
+        "Medium contrast",
+        "Tailored foundations",
+        "Sharpened silhouette"
+      ],
+      "avoid_attributes": [
+        "Soft casual looks that need lightness rather than structure"
+      ],
+      "engine_tags": [
+        "formal_structure",
+        "tailored",
+        "high_formality"
+      ]
+    },
+    {
+      "subtype": "Coat (Wool / Longline) — Neutral",
+      "key_inputs": [
+        "Winter outfits",
+        "Formal",
+        "Work"
+      ],
+      "primary_goal": "Deliver warmth and winter polish",
+      "recommended_attributes": [
+        "Low contrast",
+        "Long clean lines",
+        "Structured warmth"
+      ],
+      "avoid_attributes": [
+        "Hot-weather styling",
+        "Lightweight resort looks"
+      ],
+      "engine_tags": [
+        "winter_polish",
+        "warmth",
+        "structure"
+      ]
+    },
+    {
+      "subtype": "Coat — Bold",
+      "key_inputs": [
+        "Minimal outfits",
+        "Fashion",
+        "Events"
+      ],
+      "primary_goal": "Become the primary visual statement",
+      "recommended_attributes": [
+        "High contrast",
+        "Minimal outfit base",
+        "Clear visual hierarchy"
+      ],
+      "avoid_attributes": [
+        "Already loud outfits"
+      ],
+      "engine_tags": [
+        "statement",
+        "primary_visual",
+        "fashion"
+      ]
+    },
+    {
+      "subtype": "Puffer Jacket — Neutral",
+      "key_inputs": [
+        "Athleisure",
+        "Casual",
+        "Winter"
+      ],
+      "primary_goal": "Prioritize function and comfort",
+      "recommended_attributes": [
+        "Low contrast",
+        "Comfort-first styling",
+        "Cold-weather practicality"
+      ],
+      "avoid_attributes": [
+        "Formal dressing",
+        "Polished evening looks"
+      ],
+      "engine_tags": [
+        "function",
+        "comfort",
+        "winter"
+      ]
+    },
+    {
+      "subtype": "Puffer Jacket — Bold",
+      "key_inputs": [
+        "Neutral casual outfits",
+        "Casual"
+      ],
+      "primary_goal": "Add street-style energy",
+      "recommended_attributes": [
+        "Medium to high contrast",
+        "Simple casual base",
+        "Confident cold-weather styling"
+      ],
+      "avoid_attributes": [
+        "Formal settings"
+      ],
+      "engine_tags": [
+        "street_style",
+        "statement",
+        "casual"
+      ]
+    },
+    {
+      "subtype": "Cardigan — Neutral",
+      "key_inputs": [
+        "Dresses",
+        "Tops",
+        "Denim",
+        "Casual",
+        "Work"
+      ],
+      "primary_goal": "Provide soft, light layering",
+      "recommended_attributes": [
+        "Low contrast",
+        "Easy layering",
+        "Gentle polish"
+      ],
+      "avoid_attributes": [
+        "Looks that need a sharper structured finish"
+      ],
+      "engine_tags": [
+        "soft_layering",
+        "easy_polish",
+        "light_layer"
+      ]
+    },
+    {
+      "subtype": "Cardigan — Textured / Oversized",
+      "key_inputs": [
+        "Simple outfits",
+        "Casual"
+      ],
+      "primary_goal": "Add dimension and soft volume",
+      "recommended_attributes": [
+        "Medium contrast",
+        "Simple base outfit",
+        "Relaxed styling"
+      ],
+      "avoid_attributes": [
+        "Already bulky silhouettes",
+        "Highly structured dress codes"
+      ],
+      "engine_tags": [
+        "dimension",
+        "volume",
+        "casual_layer"
+      ]
+    },
+    {
+      "subtype": "Bomber Jacket — Neutral",
+      "key_inputs": [
+        "Denim",
+        "Streetwear",
+        "Casual"
+      ],
+      "primary_goal": "Add edge casually",
+      "recommended_attributes": [
+        "Medium contrast",
+        "Casual outfit base",
+        "Sporty structure"
+      ],
+      "avoid_attributes": [
+        "Very formal outfits"
+      ],
+      "engine_tags": [
+        "sporty",
+        "casual_edge",
+        "streetwear"
+      ]
+    },
+    {
+      "subtype": "Bomber Jacket — Bold",
+      "key_inputs": [
+        "Minimal outfits",
+        "Casual"
+      ],
+      "primary_goal": "Act as a street-style focal point",
+      "recommended_attributes": [
+        "High contrast",
+        "Minimal base outfit",
+        "Casual confidence"
+      ],
+      "avoid_attributes": [
+        "Competing statement layers"
+      ],
+      "engine_tags": [
+        "statement",
+        "street_style",
+        "focal_layer"
+      ]
+    },
+    {
+      "subtype": "Cape / Shawl — Neutral",
+      "key_inputs": [
+        "Dresses",
+        "Formal",
+        "Events"
+      ],
+      "primary_goal": "Add elegant flow",
+      "recommended_attributes": [
+        "Low contrast",
+        "Fluid overlay",
+        "Refined softness"
+      ],
+      "avoid_attributes": [
+        "Sporty or highly casual looks"
+      ],
+      "engine_tags": [
+        "flow",
+        "elegant_overlay",
+        "eventwear"
+      ]
+    },
+    {
+      "subtype": "Cape / Shawl — Embellished",
+      "key_inputs": [
+        "Simple outfits",
+        "Formal",
+        "Party"
+      ],
+      "primary_goal": "Create an event-focused statement layer",
+      "recommended_attributes": [
+        "High contrast",
+        "Simple outfit base",
+        "One clear eventwear focal point"
+      ],
+      "avoid_attributes": [
+        "Already embellished looks"
+      ],
+      "engine_tags": [
+        "statement",
+        "formal_event",
+        "overlay"
+      ]
+    }
+  ]
+}

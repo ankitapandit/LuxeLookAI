@@ -105,7 +105,7 @@ function summarizeArchiveEvent(rawText: string, rawTextJson?: Record<string, unk
     ].filter(Boolean);
 
     const followupSegments = [
-      audience ? `With ${audience}` : "",
+      audience ? `with ${audience}` : "",
       duration ? `for about ${duration}` : "",
       styleMood ? `keep the look ${styleMood}` : "",
     ].filter(Boolean);
@@ -146,6 +146,7 @@ export default function OutfitsPage() {
   const [collapsedMap,   setCollapsedMap]   = useState<Record<string, boolean>>({});
   const [loadingMsg,     setLoadingMsg]     = useState("Analysing your wardrobe…");
   const [pageLoading,    setPageLoading]    = useState(true);
+  const visibleEvents = events.filter((ev) => (suggestionsMap[ev.id] || []).length > 0);
 
   const toggleCollapsed = (evId: string) =>
     setCollapsedMap(prev => ({ ...prev, [evId]: !prev[evId] }));
@@ -182,7 +183,7 @@ export default function OutfitsPage() {
         const needsUpgrade = existing.length > 0 && existing.every(isOutdated);
         if (!needsUpgrade) return;
         try {
-          const fresh = await generateOutfits(ev.id, 5);
+          const fresh = await generateOutfits(ev.id, 3);
           suggMap[ev.id] = fresh.suggestions;
         } catch {
           // Upgrade failed silently — old suggestions kept, card section hidden
@@ -237,7 +238,7 @@ export default function OutfitsPage() {
     setGeneratingMap(prev => ({ ...prev, [evId]: true }));
     setCollapsedMap(prev => ({ ...prev, [evId]: false }));
     try {
-      const [outfitData, items] = await Promise.all([generateOutfits(evId, 5), getWardrobeItems()]);
+      const [outfitData, items] = await Promise.all([generateOutfits(evId, 3), getWardrobeItems()]);
       const map: Record<string, ClothingItem> = {};
       items.forEach(i => { map[i.id] = i; });
       setWardrobeMap(map);
@@ -294,7 +295,7 @@ export default function OutfitsPage() {
           <h1 className="type-page-title" style={{ fontSize: "34px", color: "var(--charcoal)" }}>Archive</h1>
         </div>
 
-        {events.length === 0 ? (
+        {events.length === 0 || visibleEvents.length === 0 ? (
           <div
             style={{
               textAlign: "center",
@@ -325,7 +326,7 @@ export default function OutfitsPage() {
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "48px" }}>
-            {events.filter(ev => (suggestionsMap[ev.id] || []).length > 0).map((ev) => {
+            {visibleEvents.map((ev) => {
               const suggestions  = suggestionsMap[ev.id] || [];
               const isGenerating = generatingMap[ev.id]  || false;
               const isCollapsed  = collapsedMap[ev.id]   === true;

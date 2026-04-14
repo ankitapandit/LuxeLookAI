@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "description": "Category-level fashion rule knowledge extracted from the unified fashion rule engine and do/don't tables.",
+  "categories": [
+    {
+      "key": "neckline",
+      "display_name": "Neckline",
+      "file": "neckline.json"
+    },
+    {
+      "key": "body_type",
+      "display_name": "Body Type",
+      "file": "body_type.json"
+    },
+    {
+      "key": "body_proportion",
+      "display_name": "Body Proportion",
+      "file": "body_proportion.json"
+    },
+    {
+      "key": "color_theory",
+      "display_name": "Color Theory",
+      "file": "color_theory.json"
+    },
+    {
+      "key": "skin_tone",
+      "display_name": "Skin Tone",
+      "file": "skin_tone.json"
+    },
+    {
+      "key": "occasion",
+      "display_name": "Occasion",
+      "file": "occasion.json"
+    },
+    {
+      "key": "outerwear",
+      "display_name": "Outerwear",
+      "file": "outerwear.json"
+    },
+    {
+      "key": "shoes",
+      "display_name": "Shoes",
+      "file": "shoes.json"
+    },
+    {
+      "key": "accessories",
+      "display_name": "Accessories",
+      "file": "accessories.json"
+    },
+    {
+      "key": "jewelry",
+      "display_name": "Jewelry",
+      "file": "jewelry.json"
+    }
+  ]
+}
