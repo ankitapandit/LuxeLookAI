@@ -33,6 +33,10 @@ function resolveBaseUrl(): string {
   }
 }
 
+export function getApiBaseUrl(): string {
+  return resolveBaseUrl();
+}
+
 // ── Axios instance ────────────────────────────────────────────────────────
 const api: AxiosInstance = axios.create({ baseURL: resolveBaseUrl() });
 
@@ -110,6 +114,33 @@ export interface AuthResponse {
   user_id: string;
 }
 
+export interface PageVisitStartRequest {
+  session_id: string;
+  page_key: string;
+  referrer_page_key?: string | null;
+  source?: string;
+  context_json?: Record<string, unknown>;
+  entered_at?: string;
+}
+
+export interface PageVisitStartResponse {
+  visit_id: string;
+  entered_at: string;
+}
+
+export interface PageVisitEndRequest {
+  visit_id: string;
+  left_at?: string;
+  duration_ms?: number;
+}
+
+export interface PageVisitEndResponse {
+  status: string;
+  visit_id: string;
+  left_at: string;
+  duration_ms?: number | null;
+}
+
 /** Register a new account. Stores the token on success. */
 export async function signup(email: string, password: string): Promise<AuthResponse> {
   const { data } = await api.post<AuthResponse>("/auth/signup", { email, password });
@@ -131,6 +162,39 @@ export function logout() {
 
 export function isLoggedIn(): boolean {
   return !!getStoredAuth().token;
+}
+
+export async function startPageVisit(payload: PageVisitStartRequest): Promise<PageVisitStartResponse> {
+  const { data } = await api.post<PageVisitStartResponse>("/activity/page-visits/start", payload);
+  return data;
+}
+
+export async function endPageVisit(payload: PageVisitEndRequest): Promise<PageVisitEndResponse> {
+  const { data } = await api.post<PageVisitEndResponse>("/activity/page-visits/end", payload);
+  return data;
+}
+
+export function endPageVisitKeepalive(payload: PageVisitEndRequest): boolean {
+  if (!isBrowser()) return false;
+  const { token } = getStoredAuth();
+  if (!token) return false;
+
+  try {
+    fetch(`${getApiBaseUrl()}/activity/page-visits/end`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).catch(() => {
+      // Best-effort logging only.
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ── Clothing ──────────────────────────────────────────────────────────────
@@ -546,6 +610,12 @@ export interface OutfitCard {
   weather_sync: string;
   /** Optional risk flag — only present when dress-code rules are stretched. */
   risk_flag?: string | null;
+  /**
+   * Multi-dimensional event alignment score as a rounded percentage (0–100).
+   * Combines dress_code, mood, time_of_day, weather and purpose dims.
+   * Shown as the primary "Event Fit" badge on outfit cards (v2.5+).
+   */
+  event_fit_pct?: number;
   /** Legacy field retained for compatibility; no longer shown in the UI. */
   verdict?: string;
 }

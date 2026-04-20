@@ -38,3 +38,5 @@ theme-preview.html
 # Claire files
 .claire/
 
+# Local Next.js dev builds
+frontend/.next*

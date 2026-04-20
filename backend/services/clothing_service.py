@@ -405,6 +405,7 @@ def _apply_item_filters_mock(
     formality: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     def matches(item: Dict[str, Any]) -> bool:
+        normalized_formality = (formality or "").strip().lower()
         if category and item.get("category") != category:
             return False
         if season:
@@ -415,13 +416,17 @@ def _apply_item_filters_mock(
             score = item.get("formality_score")
             if score is None:
                 return False
-            if formality == "Formal" and score < 0.75:
+            if normalized_formality == "formal" and score < 0.75:
                 return False
-            if formality == "Smart casual" and (score < 0.50 or score >= 0.75):
+            if normalized_formality == "business formal" and (score < 0.68 or score >= 0.78):
                 return False
-            if formality == "Casual" and (score < 0.25 or score >= 0.50):
+            if normalized_formality == "business casual" and (score < 0.55 or score >= 0.68):
                 return False
-            if formality == "Loungewear" and score >= 0.25:
+            if normalized_formality == "smart casual" and (score < 0.42 or score >= 0.55):
+                return False
+            if normalized_formality == "casual" and (score < 0.20 or score >= 0.42):
+                return False
+            if normalized_formality == "loungewear" and score >= 0.20:
                 return False
         return True
 
@@ -639,14 +644,19 @@ def _get_items_page_real(
         query = query.eq("category", category)
     if season:
         query = query.eq("season", season)
-    if formality == "Formal":
+    normalized_formality = (formality or "").strip().lower()
+    if normalized_formality == "formal":
         query = query.gte("formality_score", 0.75)
-    elif formality == "Smart casual":
-        query = query.gte("formality_score", 0.50).lt("formality_score", 0.75)
-    elif formality == "Casual":
-        query = query.gte("formality_score", 0.25).lt("formality_score", 0.50)
-    elif formality == "Loungewear":
-        query = query.lt("formality_score", 0.25)
+    elif normalized_formality == "business formal":
+        query = query.gte("formality_score", 0.68).lt("formality_score", 0.78)
+    elif normalized_formality == "business casual":
+        query = query.gte("formality_score", 0.55).lt("formality_score", 0.68)
+    elif normalized_formality == "smart casual":
+        query = query.gte("formality_score", 0.42).lt("formality_score", 0.55)
+    elif normalized_formality == "casual":
+        query = query.gte("formality_score", 0.20).lt("formality_score", 0.42)
+    elif normalized_formality == "loungewear":
+        query = query.lt("formality_score", 0.20)
 
     rows_result = _execute_supabase_request(lambda: (
         query.order("created_at", desc=True)

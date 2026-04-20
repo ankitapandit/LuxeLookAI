@@ -76,9 +76,11 @@ async def tag_preview(
     # Map numeric formality score → human label matching frontend FORMALITY_DESCRIPTIONS
     formality_score = tags.get("formality_score", 0.5)
     formality_label = (
-        "Black tie"       if formality_score >= 0.85 else
-        "Business formal" if formality_score >= 0.65 else
-        "Smart casual"    if formality_score >= 0.42 else
+        "Black Tie"       if formality_score >= 0.85 else
+        "Cocktail"        if formality_score >= 0.78 else
+        "Business Formal" if formality_score >= 0.68 else
+        "Business Casual" if formality_score >= 0.55 else
+        "Smart Casual"    if formality_score >= 0.42 else
         "Casual"          if formality_score >= 0.20 else
         "Loungewear"
     )
@@ -106,7 +108,7 @@ async def upload_item(
     color:             Optional[str] = Form(None),
     pattern:           Optional[str] = Form(None, description="e.g. 'stripes', 'floral'"),
     season:            Optional[str] = Form(None),
-    formality_label:   Optional[str] = Form(None, description="e.g. 'Smart casual'"),
+    formality_label:   Optional[str] = Form(None, description="e.g. 'Smart Casual'"),
     item_type:         Optional[str] = Form(None),
     accessory_subtype: Optional[str] = Form(None),
     descriptors:       Optional[str] = Form(None, description="JSON-encoded descriptor overrides"),
@@ -128,7 +130,11 @@ async def upload_item(
 
     # Build overrides from all user-provided fields
     _FORMALITY_SCORE_MAP_LOCAL = {
-        "Black tie": 0.95, "Business formal": 0.75, "Smart casual": 0.55,
+        "Black Tie": 0.95, "Black tie": 0.95,
+        "Cocktail": 0.80,
+        "Business Formal": 0.75, "Business formal": 0.75,
+        "Business Casual": 0.62, "Business casual": 0.62,
+        "Smart Casual": 0.55, "Smart casual": 0.55,
         "Casual": 0.30, "Loungewear": 0.10,
     }
     manual_tags: dict = {}
@@ -165,8 +171,14 @@ async def upload_item(
 
 # Formality label → numeric score (must match FORMALITY_DESCRIPTIONS in tagger.py)
 _FORMALITY_SCORE_MAP = {
+    "Black Tie":        0.95,
     "Black tie":        0.95,
+    "Cocktail":         0.80,
+    "Business Formal":  0.75,
     "Business formal":  0.75,
+    "Business Casual":  0.62,
+    "Business casual":  0.62,
+    "Smart Casual":     0.55,
     "Smart casual":     0.55,
     "Casual":           0.30,
     "Loungewear":       0.10,
@@ -187,7 +199,7 @@ def correct_item(
     """
     Correct any tag on an already-saved item.
     All fields are now user-editable: category, color, season, formality, descriptors.
-    formality_label is the human string (e.g. 'Smart casual') — backend maps to score.
+    formality_label is the human string (e.g. 'Smart Casual') — backend maps to score.
     descriptors is a JSON string e.g. '{"fabric_type":"polyester"}'.
     """
     corrections: dict = {}

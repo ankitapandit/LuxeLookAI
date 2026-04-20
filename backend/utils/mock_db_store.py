@@ -23,6 +23,9 @@ _tables: Dict[str, Dict[str, dict]] = {
     "discover_candidates": {},
     "discover_ignored_urls": {},
     "discover_style_interactions": {},
+    "discover_user_state": {},
+    "discover_family_memory": {},
+    "user_page_visits": {},
     "user_style_preferences": {},
     "discover_jobs": {},
 }

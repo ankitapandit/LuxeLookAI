@@ -7,7 +7,7 @@ Each schema mirrors the database tables defined in the spec.
 
 from __future__ import annotations
 from datetime import datetime
-from typing import List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
@@ -285,6 +285,33 @@ class DiscoverPrewarmResponse(BaseModel):
     ready_count: int = 0
     queued_job_id: Optional[str] = None
     queued_job_status: Optional[str] = None
+
+
+class PageVisitStartRequest(BaseModel):
+    session_id: str
+    page_key: str
+    referrer_page_key: Optional[str] = None
+    source: str = "web"
+    context_json: Dict[str, Any] = Field(default_factory=dict)
+    entered_at: Optional[datetime] = None
+
+
+class PageVisitStartResponse(BaseModel):
+    visit_id: str
+    entered_at: datetime
+
+
+class PageVisitEndRequest(BaseModel):
+    visit_id: str
+    left_at: Optional[datetime] = None
+    duration_ms: Optional[int] = None
+
+
+class PageVisitEndResponse(BaseModel):
+    status: str = "ok"
+    visit_id: str
+    left_at: datetime
+    duration_ms: Optional[int] = None
 
 
 # ── Outfit Suggestions ────────────────────────────────────────────────────────

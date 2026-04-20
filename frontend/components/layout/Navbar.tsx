@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/hooks/useAuth";
 import { Sparkles, ShirtIcon, CalendarDays, LogOut, User, Menu, X, WandSparkles, BookOpen } from "lucide-react";
+import logo from "../../assets/logo.png";
 
 export default function Navbar() {
   const router = useRouter();
@@ -48,19 +49,20 @@ export default function Navbar() {
       {/* ── Brand ─────────────────────────────────────────────────────── */}
       <Link href={isAuthenticated ? "/wardrobe" : "/"} style={{ textDecoration: "none" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <Sparkles size={20} color="var(--gold)" />
-          <span
-            style={{
-              fontFamily: "Playfair Display, serif",
-              fontSize: "20px",
-              fontWeight: 700,
-              color: "var(--charcoal)",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            LuxeLook
-            <span style={{ color: "var(--gold)" }}>AI</span>
-          </span>
+          {/*<Sparkles size={20} color="var(--gold)" />*/}
+          <img src={logo.src} alt="LuxeLook AI" className="h-16 w-16" />
+          {/*<span*/}
+          {/*  style={{*/}
+          {/*    fontFamily: "Playfair Display, serif",*/}
+          {/*    fontSize: "20px",*/}
+          {/*    fontWeight: 700,*/}
+          {/*    color: "var(--charcoal)",*/}
+          {/*    letterSpacing: "-0.02em",*/}
+          {/*  }}*/}
+          {/*>*/}
+          {/*  LuxeLook*/}
+          {/*  <span style={{ color: "var(--gold)" }}>AI</span>*/}
+          {/*</span>*/}
         </div>
       </Link>
 

@@ -1,48 +1,10 @@
 import { useState } from "react";
 import Image from "next/image";
 import { ClothingItem, OutfitCard } from "@/services/api";
+import { getDisplayColorName, getItemDisplayName } from "@/utils/itemDisplay";
 
 function shouldBypassImageOptimization(src: string): boolean {
   return src.startsWith("blob:") || src.startsWith("data:");
-}
-
-function titleCase(value: string): string {
-  return value
-    .replace(/[_-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function getDisplayColor(color?: string): string {
-  if (!color) return "";
-  if (color.startsWith("#")) return color.toUpperCase();
-
-  const overrides: Record<string, string> = {
-    black: "Black",
-    white: "White",
-    navy: "Navy",
-    beige: "Beige",
-    red: "Red",
-    green: "Green",
-    grey: "Grey",
-    gray: "Grey",
-    brown: "Brown",
-    pink: "Pink",
-    blue: "Blue",
-    yellow: "Yellow",
-    orange: "Orange",
-    purple: "Purple",
-    cream: "Cream",
-    tan: "Tan",
-    gold: "Gold",
-    silver: "Silver",
-    multicolor: "Multicolor",
-  };
-
-  const normalized = color.toLowerCase().trim();
-  if (overrides[normalized]) return overrides[normalized];
-  return titleCase(color);
 }
 
 function parseColorSwatch(color?: string): { label: string; swatch: string } | null {
@@ -78,54 +40,10 @@ function parseColorSwatch(color?: string): { label: string; swatch: string } | n
   return matched ? { label: color, swatch: preset[matched] } : null;
 }
 
-function categoryLabel(category: string): string {
-  const labels: Record<string, string> = {
-    tops: "Top",
-    bottoms: "Bottom",
-    dresses: "Dress",
-    outerwear: "Layer",
-    shoes: "Shoes",
-    accessories: "Accessory",
-    jewelry: "Jewelry",
-    set: "Set",
-    swimwear: "Swim",
-    loungewear: "Lounge",
-  };
-
-  return labels[category] || titleCase(category);
-}
-
-function getSubtypeLabel(item: ClothingItem): string | null {
-  const descriptors = item.descriptors || {};
-
-  if (item.category === "accessories") {
-    const accessoryType = descriptors.accessory_type?.trim();
-    if (accessoryType) return titleCase(accessoryType);
-  }
-
-  if (item.category === "jewelry") {
-    const jewelryType = descriptors.jewelry_type?.trim();
-    if (jewelryType) return titleCase(jewelryType);
-  }
-
-  const subtype = item.accessory_subtype?.trim();
-  return subtype ? titleCase(subtype) : null;
-}
-
-function getDisplayName(item: ClothingItem): string {
-  const subtypeLabel = getSubtypeLabel(item);
-  if ((item.category === "accessories" || item.category === "jewelry") && subtypeLabel) {
-    return subtypeLabel;
-  }
-  if (item.item_type && !["core_garment", "footwear", "outerwear", "accessory"].includes(item.item_type)) {
-    return titleCase(item.item_type);
-  }
-  return categoryLabel(item.category);
-}
-
 function getItemHoverLabel(item: ClothingItem): string {
-  const color = getDisplayColor(item.color);
-  return color ? `${getDisplayName(item)} · ${color}` : getDisplayName(item);
+  const color = getDisplayColorName(item.color);
+  const name = getItemDisplayName(item);
+  return color ? `${name} · ${color}` : name;
 }
 
 function getImageSrc(item: ClothingItem, imageMode: "cutout" | "upload"): string {
@@ -430,7 +348,7 @@ function StageItem({
     >
       <Image
         src={imageSrc}
-        alt={getDisplayName(placement.item)}
+        alt={getItemDisplayName(placement.item)}
         fill
         unoptimized={shouldBypassImageOptimization(imageSrc)}
         sizes={expanded ? "(max-width: 900px) 55vw, 620px" : compact ? "(max-width: 900px) 44vw, 380px" : "(max-width: 900px) 48vw, 420px"}
@@ -466,8 +384,6 @@ export default function OutfitMoodboard({
   items,
   card,
   title,
-  eyebrow,
-  scoreLabel,
   expanded = false,
   compact = false,
   imageMode = "cutout",
@@ -476,8 +392,6 @@ export default function OutfitMoodboard({
   items: ClothingItem[];
   card?: OutfitCard;
   title: string;
-  eyebrow: string;
-  scoreLabel?: string;
   expanded?: boolean;
   compact?: boolean;
   imageMode?: "cutout" | "upload";
@@ -547,45 +461,16 @@ export default function OutfitMoodboard({
         <div
           className="moodboard-label"
           style={{
-            padding: compact ? "14px 16px 16px" : expanded ? "20px 24px 22px" : "16px 20px 18px",
+            padding: compact ? "14px 16px 15px" : expanded ? "18px 24px 20px" : "15px 20px 16px",
             borderTop: "1px solid rgba(0,0,0,0.07)",
             background: "#FFFFFF",
             display: "flex",
-            alignItems: "flex-end",
+            alignItems: "flex-start",
             justifyContent: "space-between",
             gap: "12px",
           }}
         >
           <div style={{ minWidth: 0 }}>
-            {/* Eyebrow + score */}
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "5px" }}>
-              <span
-                style={{
-                  fontSize: compact ? "9px" : "10px",
-                  fontWeight: 700,
-                  letterSpacing: "0.16em",
-                  textTransform: "uppercase",
-                  color: "#9A8570",
-                }}
-              >
-                {eyebrow}
-              </span>
-              {scoreLabel && (
-                <span
-                  style={{
-                    padding: "3px 9px",
-                    borderRadius: "999px",
-                    background: "rgba(114, 86, 44, 0.08)",
-                    color: "#695535",
-                    fontSize: compact ? "9px" : "10px",
-                    fontWeight: 600,
-                  }}
-                >
-                  {scoreLabel}
-                </span>
-              )}
-            </div>
-
             {/* Title */}
             <h3
               style={{
@@ -623,7 +508,7 @@ export default function OutfitMoodboard({
 
           {/* Color swatches — stacked vertically on the right */}
           {palette.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px", flexShrink: 0 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px", flexShrink: 0, alignSelf: "flex-start", marginTop: compact ? "2px" : "4px" }}>
               {palette.slice(0, 4).map((swatch) => (
                 <span
                   key={`${swatch.label}-${swatch.swatch}`}
@@ -674,34 +559,6 @@ export default function OutfitMoodboard({
         }}
       >
         <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: compact ? "8px" : "12px" }}>
-            <span
-              style={{
-                fontSize: compact ? "10px" : expanded ? "11px" : "10px",
-                fontWeight: 700,
-                letterSpacing: "0.16em",
-                textTransform: "uppercase",
-                color: "#7A6A55",
-              }}
-            >
-              {eyebrow}
-            </span>
-            {scoreLabel ? (
-              <span
-              style={{
-                  padding: compact ? "4px 10px" : expanded ? "6px 12px" : "5px 11px",
-                  borderRadius: "999px",
-                  background: "rgba(114, 86, 44, 0.08)",
-                  color: "#695535",
-                  fontSize: compact ? "10px" : expanded ? "12px" : "11px",
-                  fontWeight: 600,
-                }}
-              >
-                {scoreLabel}
-              </span>
-            ) : null}
-          </div>
-
           <h3
             style={{
               margin: 0,
@@ -741,7 +598,7 @@ export default function OutfitMoodboard({
         </div>
 
         {palette.length > 0 ? (
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "flex-end", alignSelf: "flex-start", marginTop: compact ? "2px" : "4px" }}>
             {palette.map((swatch) => (
               <span
                 key={`${swatch.label}-${swatch.swatch}`}

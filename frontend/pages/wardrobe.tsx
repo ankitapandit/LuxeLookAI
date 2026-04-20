@@ -19,6 +19,7 @@ import { useDropzone } from "react-dropzone";
 import Head from "next/head";
 import Image from "next/image";
 import Navbar from "@/components/layout/Navbar";
+import { getItemDisplayName } from "@/utils/itemDisplay";
 import {
   tagPreview, uploadClothingItem, getTagOptions, correctItem,
   deleteClothingItem, purgeArchivedClothingItem, getWardrobeItemsPage, getDeletedItems, restoreClothingItem,
@@ -26,34 +27,6 @@ import {
 } from "@/services/api";
 import { AlertCircle, Upload, Archive, ShirtIcon, Loader, CheckCircle, Pencil, X, Pipette, RotateCcw, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
-
-// Maps any color value → a human-readable name.
-// For preset keys ("black", "navy") returns the label directly.
-// For custom hex values, finds the nearest preset color by RGB distance.
-function resolveColorName(color: string): string {
-  if (!color) return "";
-  // Preset key → label
-  const preset = SOLID_COLORS.find(c => c.key === color);
-  if (preset) return preset.label;
-  if (color === "pattern") return "Pattern";
-  // Custom hex → nearest preset by Euclidean RGB distance
-  if (color.startsWith("#") && color.length === 7) {
-    const r = parseInt(color.slice(1, 3), 16);
-    const g = parseInt(color.slice(3, 5), 16);
-    const b = parseInt(color.slice(5, 7), 16);
-    let nearest = SOLID_COLORS[0];
-    let minDist = Infinity;
-    for (const c of SOLID_COLORS) {
-      const pr = parseInt(c.hex.slice(1, 3), 16);
-      const pg = parseInt(c.hex.slice(3, 5), 16);
-      const pb = parseInt(c.hex.slice(5, 7), 16);
-      const dist = Math.sqrt((r-pr)**2 + (g-pg)**2 + (b-pb)**2);
-      if (dist < minDist) { minDist = dist; nearest = c; }
-    }
-    return `~${nearest.label}`;  // ~ prefix signals it's approximate
-  }
-  return color;
-}
 
 // Maps any stored color name back to the nearest SOLID_COLORS key so the
 // correct swatch is highlighted in the edit modal for existing items.
@@ -471,9 +444,11 @@ function getMediaBadgeLabel(item: ClothingItem): string | null {
 
 function getFormalityEditLabel(score: number | undefined): string {
   if (score === undefined || score === null) return "";
-  if (score >= 0.85) return "Black tie";
-  if (score >= 0.65) return "Business formal";
-  if (score >= 0.42) return "Smart casual";
+  if (score >= 0.85) return "Black Tie";
+  if (score >= 0.78) return "Cocktail";
+  if (score >= 0.68) return "Business Formal";
+  if (score >= 0.55) return "Business Casual";
+  if (score >= 0.42) return "Smart Casual";
   if (score >= 0.20) return "Casual";
   return "Loungewear";
 }
@@ -902,9 +877,12 @@ export default function WardrobePage() {
   // Helper: map formality_score to the same bucket label used in the filter
   function formalityBucket(score: number | undefined): string {
     if (score === undefined || score === null) return "";
-    if (score >= 0.75) return "Formal";
-    if (score >= 0.50) return "Smart casual";
-    if (score >= 0.25) return "Casual";
+    if (score >= 0.85) return "Black Tie";
+    if (score >= 0.78) return "Cocktail";
+    if (score >= 0.68) return "Business Formal";
+    if (score >= 0.55) return "Business Casual";
+    if (score >= 0.42) return "Smart Casual";
+    if (score >= 0.20) return "Casual";
     return "Loungewear";
   }
 
@@ -1174,7 +1152,7 @@ export default function WardrobePage() {
                 <div style={{ flex: "1 1 350px", minWidth: "280px", paddingLeft: "20px" }}>
                   <p className="type-micro" style={{ fontSize: "10px", fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Dress code</p>
                   <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
-                    {["all", "Loungewear", "Casual", "Smart casual", "Formal"].map(f => (
+                    {["all", "Loungewear", "Casual", "Smart Casual", "Business Casual", "Business Formal", "Cocktail", "Black Tie"].map(f => (
                       <button key={f} onClick={() => setFilterFormality(f)} style={{
                         padding: "4px 12px", borderRadius: "20px", fontSize: "12px",
                         fontWeight: filterFormality === f ? 600 : 400, cursor: "pointer",
@@ -1365,7 +1343,7 @@ export default function WardrobePage() {
                     </div>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <p style={{ fontSize: "12px", fontWeight: 600, color: "var(--cream)", textTransform: "capitalize", marginBottom: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {item.category} · {resolveColorName(item.color || "") || "Processing"}
+                        {getItemDisplayName(item) || "Processing"}
                       </p>
                       <p style={{ fontSize: "12px", color: isFailed ? "#FCA5A5" : "rgba(244,238,228,0.72)", lineHeight: 1.4 }}>
                         {getMediaStatusLabel(item)}
@@ -2036,9 +2014,12 @@ function ItemCard({ item, priority = false, onEdit, onRequestDelete }: {
 }) {
   const formalityLabel =
     item.formality_score !== undefined
-      ? item.formality_score >= 0.75 ? "Formal"
-      : item.formality_score >= 0.50 ? "Smart casual"
-      : item.formality_score >= 0.25 ? "Casual"
+      ? item.formality_score >= 0.85 ? "Black Tie"
+      : item.formality_score >= 0.78 ? "Cocktail"
+      : item.formality_score >= 0.68 ? "Business Formal"
+      : item.formality_score >= 0.55 ? "Business Casual"
+      : item.formality_score >= 0.42 ? "Smart Casual"
+      : item.formality_score >= 0.20 ? "Casual"
       : "Loungewear"
       : null;
 
@@ -2053,7 +2034,7 @@ function ItemCard({ item, priority = false, onEdit, onRequestDelete }: {
       <div style={{ aspectRatio: "3/4", overflow: "hidden", background: "var(--surface)", position: "relative" }}>
           <ManagedImage
             src={item.thumbnail_url || item.image_url}
-            alt={`${item.category} - ${resolveColorName(item.color || "")}`}
+            alt={getItemDisplayName(item)}
             fallbackSrc={`https://placehold.co/300x400/F5F0E8/8A8580?text=${encodeURIComponent(item.category)}`}
             fill
             sizes="(max-width: 768px) 50vw, 200px"
@@ -2087,7 +2068,7 @@ function ItemCard({ item, priority = false, onEdit, onRequestDelete }: {
       <div style={{ padding: "12px" }}>
         <p style={{ fontWeight: 500, fontSize: "14px", textTransform: "capitalize", marginBottom: "4px" }}>
           <span style={{ display: "inline-block", width: "10px", height: "10px", borderRadius: "50%", background: colorDisplay as string, marginRight: "6px", verticalAlign: "middle", border: "1px solid var(--border)" }} />
-          {item.category} - {resolveColorName(item.color || "")}
+          {getItemDisplayName(item)}
         </p>
         <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
           {item.season && (
@@ -2204,7 +2185,7 @@ function ItemEditModal({
           <div>
             <p style={{ fontWeight: 600, fontSize: "15px", color: "var(--charcoal)" }}>Edit Tags</p>
             <p style={{ color: "var(--muted)", fontSize: "12px", textTransform: "capitalize" }}>
-              {item.category} · {resolveColorName(item.color || "")}
+              {getItemDisplayName(item)}
             </p>
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: "4px" }}>
@@ -2359,7 +2340,7 @@ function DeleteItemDialog({
           Archive this item?
         </p>
         <p style={{ color: "var(--muted)", fontSize: "13px", marginBottom: "18px", textTransform: "capitalize" }}>
-          {item.category} · {resolveColorName(item.color || "")}
+          {getItemDisplayName(item)}
         </p>
         <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
           <button onClick={onClose} className="btn-secondary">Cancel</button>
@@ -2401,7 +2382,7 @@ function PermanentDeleteDialog({
           Delete this archived item forever?
         </p>
         <p style={{ color: "var(--muted)", fontSize: "13px", marginBottom: "18px", textTransform: "capitalize" }}>
-          {item.category} · {resolveColorName(item.color || "")}
+          {getItemDisplayName(item)}
         </p>
         <p style={{ color: "var(--muted)", fontSize: "13px", lineHeight: 1.5, marginBottom: "18px" }}>
           This will remove the record and associated media permanently. You will not be able to restore it.

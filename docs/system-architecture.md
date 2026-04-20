@@ -28,6 +28,8 @@ LuxeLook AI is a modular monolith:
 - `DB-backed background jobs` for Discover and media processing
 - `hybrid AI` where CLIP / Hugging Face powers local visual understanding and the backend retains a provider abstraction for external search sources
 - `visual style-direction enrichment` for non-wardrobe recommendations, using image search plus structured style-direction pieces
+- `first-party page-visit logging` for route-level product telemetry
+- `family-memory Discover serving state` to reduce repeated same-type cards across active Discover days
 
 The backend is the trust boundary.
 - The frontend calls FastAPI over HTTP and carries the user JWT.
@@ -113,17 +115,26 @@ flowchart TB
 6. The feed serves ready candidates to the UI.
 7. User swipes like / love / dislike.
 8. Swipe events are written to `discover_style_interactions`.
-9. Preference rows in `user_style_preferences` are recomputed after enough evidence accumulates.
-10. Ignored URLs are updated only from actual interactions, not merely from being shown.
+9. Family-level serving memory updates in `discover_user_state` and `discover_family_memory`, controlling cooldowns, recent-family spacing, and allowed same-day follow-ups.
+10. Preference rows in `user_style_preferences` are recomputed after enough evidence accumulates.
+11. Ignored URLs are updated only from actual interactions, not merely from being shown.
 
-### 5. Archive
+### 5. Page visits
+
+1. Frontend starts one active page visit row when a route becomes active.
+2. Same-page refreshes resume the existing active visit instead of creating a duplicate row.
+3. When the user opens another page, the previous row is closed with `left_at` and `duration_ms`.
+4. The next route starts a new visit row.
+5. This provides route-level product telemetry without click-by-click or replay-style tracking.
+
+### 6. Archive
 
 1. A wardrobe item is soft-deleted by the user.
 2. The row is marked inactive and archived.
 3. Archived items remain recoverable.
 4. After the purge window, archived items may be permanently removed by cleanup logic.
 
-### 6. Guide
+### 7. Guide
 
 1. User opens the Guide page.
 2. The frontend renders in-app reference content for dress codes, season readings, descriptor families, and profile usage.
@@ -167,8 +178,11 @@ In this app:
 | `discover_candidates` | owner, backend worker | backend worker | RLS + backend `service_role` | Cache of warm-up candidates |
 | `discover_style_interactions` | owner, backend | backend | RLS + backend `service_role` | Raw swipe log |
 | `discover_ignored_urls` | owner, backend worker | backend worker | RLS + backend `service_role` | Only actual interactions should populate this |
+| `discover_user_state` | owner, backend | backend | RLS + backend `service_role` | Discover active-day state + recent-family history |
+| `discover_family_memory` | owner, backend | backend | RLS + backend `service_role` | Per-family cooldown and follow-up memory |
 | `user_style_preferences` | owner, backend | backend | RLS + backend `service_role` | Derived taste summary |
 | `discover_jobs` | owner, backend worker | backend worker | RLS + backend `service_role` | Durable job queue |
+| `user_page_visits` | owner, backend | backend | RLS + backend `service_role` | Route-level first-party page telemetry |
 | `storage.objects` wardrobe/profile buckets | owner, backend | owner, backend | storage policies + backend `service_role` | Media files and profile photos |
 
 ### New user safety
@@ -185,13 +199,14 @@ If you ever move more CRUD directly into the browser, then the RLS policies shou
 
 ### Domain overview
 
-LuxeLook AI has five main data domains:
+LuxeLook AI has six main data domains:
 
 1. `Identity & profile`
 2. `Wardrobe`
 3. `Occasions & outfit suggestions`
 4. `Style vocabulary / taxonomy`
 5. `Discover taste learning`
+6. `Route-level product activity`
 
 ### Conceptual ER diagram
 
@@ -206,8 +221,11 @@ erDiagram
     USERS ||--o{ DISCOVER_CANDIDATES : "warms"
     USERS ||--o{ DISCOVER_STYLE_INTERACTIONS : "swipes"
     USERS ||--o{ DISCOVER_IGNORED_URLS : "excludes"
+    USERS ||--o{ DISCOVER_USER_STATE : "tracks active Discover days"
+    USERS ||--o{ DISCOVER_FAMILY_MEMORY : "stores family cooldowns"
     USERS ||--o{ USER_STYLE_PREFERENCES : "learns"
     USERS ||--o{ DISCOVER_JOBS : "queues"
+    USERS ||--o{ USER_PAGE_VISITS : "navigates"
 
     STYLE_CATALOG ||--o{ USER_STYLE_PREFERENCES : "references by style_id/style_key"
     STYLE_TAXONOMY }o--o{ CLOTHING_ITEMS : "supplies tagging vocabulary"
@@ -313,6 +331,23 @@ erDiagram
       timestamptz created_at
     }
 
+    DISCOVER_USER_STATE {
+      uuid id PK
+      uuid user_id FK
+      text last_active_day_key
+      int active_day_number
+      timestamptz last_active_at
+    }
+
+    DISCOVER_FAMILY_MEMORY {
+      uuid id PK
+      uuid user_id FK
+      text family_key
+      text family_label
+      int cooldown_until_active_day
+      timestamptz last_discover_active_at
+    }
+
     DISCOVER_IGNORED_URLS {
       uuid id PK
       uuid user_id FK
@@ -341,6 +376,15 @@ erDiagram
       jsonb payload
       jsonb result
       int attempts
+    }
+
+    USER_PAGE_VISITS {
+      uuid id PK
+      uuid user_id FK
+      text session_id
+      text page_key
+      timestamptz entered_at
+      timestamptz left_at
     }
 ```
 
@@ -478,6 +522,34 @@ Purpose:
 Why it exists:
 - gives the app async execution without introducing a heavier orchestration system
 
+#### 13. `public.discover_user_state`
+
+Purpose:
+- per-user Discover active-day state and recent-family history
+
+Why it exists:
+- lets Discover cooldowns run on actual Discover usage days instead of wall-clock days
+- preserves recent family spacing across feed refreshes
+
+#### 14. `public.discover_family_memory`
+
+Purpose:
+- per-user memory for a learned visual family
+
+Important fields:
+- `family_key`
+- `family_label`
+- `cooldown_until_active_day`
+- `last_discover_active_at`
+
+#### 15. `public.user_page_visits`
+
+Purpose:
+- route-level first-party page telemetry
+
+Important rule:
+- one active row is reused across same-page refreshes and only closed when the user opens another page
+
 ## Access Control Details
 
 ### RLS strategy
@@ -490,8 +562,11 @@ The app uses Row Level Security for user-owned tables:
 - `discover_candidates`
 - `discover_style_interactions`
 - `discover_ignored_urls`
+- `discover_user_state`
+- `discover_family_memory`
 - `user_style_preferences`
 - `discover_jobs`
+- `user_page_visits`
 
 Current policy shape:
 - select/update/insert are scoped with `auth.uid() = user_id` or `auth.uid() = id`

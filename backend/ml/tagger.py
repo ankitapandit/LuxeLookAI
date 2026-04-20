@@ -119,9 +119,11 @@ SEASON_DESCRIPTIONS: Dict[str, str] = {
 # User picks a named level; backend maps it to a numeric score.
 FORMALITY_DESCRIPTIONS: List[Tuple[str, float, str]] = [
     # (display_label,    score, tooltip_hint)
-    ("Black tie",        0.95,  "Gown, tuxedo, formal suit"),
-    ("Business formal",  0.75,  "Blazer, tailored trousers, dress shirt"),
-    ("Smart casual",     0.55,  "Chinos, blouse, casual dress — neat but relaxed"),
+    ("Black Tie",        0.95,  "Gown, tuxedo, formal suit"),
+    ("Cocktail",         0.80,  "Dressy eveningwear, polished separates, heels or refined shoes"),
+    ("Business Formal",  0.75,  "Blazer, tailored trousers, dress shirt"),
+    ("Business Casual",  0.62,  "Office-ready separates, knitwear, polished flats or loafers"),
+    ("Smart Casual",     0.55,  "Chinos, blouse, casual dress — neat but relaxed"),
     ("Casual",           0.30,  "Everyday comfort — jeans, t-shirt"),
     ("Loungewear",       0.10,  "Gym wear, athleisure, hoodies"),
 ]

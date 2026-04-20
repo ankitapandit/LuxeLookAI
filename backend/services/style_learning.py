@@ -33,7 +33,56 @@ logger = logging.getLogger(__name__)
 TABLE_INTERACTIONS = "discover_style_interactions"
 TABLE_IGNORED_URLS = "discover_ignored_urls"
 TABLE_PREFERENCES = "user_style_preferences"
+TABLE_DISCOVER_USER_STATE = "discover_user_state"
+TABLE_DISCOVER_FAMILY_MEMORY = "discover_family_memory"
 DAILY_DISCOVER_LIMIT = 10
+POSITIVE_FOLLOWUP_LIMIT = 2
+NEGATIVE_VALIDATION_LIMIT = 1
+POSITIVE_COOLDOWN_DAYS = 3
+NEGATIVE_COOLDOWN_DAYS = 7
+DISCOVER_RECENT_FAMILY_WINDOW = 12
+DISCOVER_STRICT_REPEAT_GAP = 4
+FAMILY_DIMENSION_PRIORITY: Dict[str, int] = {
+    "fabric": 0,
+    "pattern": 1,
+    "color_family": 2,
+    "vibe": 3,
+    "styling_detail": 4,
+    "silhouette": 5,
+}
+GENERIC_FAMILY_STYLE_KEYS = {
+    "clean",
+    "polished",
+    "modern",
+    "casual",
+    "classic",
+    "elevated",
+    "statement",
+    "top",
+    "bottom",
+    "dress",
+    "jumpsuit",
+    "outerwear",
+    "shoes",
+    "accessory",
+    "jewelry",
+    "set",
+    "swimwear",
+    "loungewear",
+    "spring",
+    "summer",
+    "fall",
+    "winter",
+    "all",
+    "casual_event",
+    "smart_casual",
+    "business",
+    "formal",
+    "party",
+    "date",
+    "travel",
+    "resort",
+}
 
 ACTION_WEIGHTS: Dict[str, float] = {
     "love": 2.0,
@@ -44,6 +93,14 @@ ACTION_WEIGHTS: Dict[str, float] = {
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _client_day_key(timezone_name: Optional[str] = None) -> str:
+    try:
+        target_tz = ZoneInfo(timezone_name) if timezone_name else datetime.now().astimezone().tzinfo or timezone.utc
+    except Exception:
+        target_tz = timezone.utc
+    return datetime.now(target_tz).date().isoformat()
 
 
 def _canonical_url(url: str) -> str:
@@ -121,6 +178,10 @@ def _table_upsert(table: str, row: dict, conflict: str) -> dict:
                 existing = select_one(table, {"user_id": row["user_id"], "normalized_url": row["normalized_url"]})
             elif conflict == "user_id,style_id":
                 existing = select_one(table, {"user_id": row["user_id"], "style_id": row["style_id"]})
+            elif conflict == "user_id":
+                existing = select_one(table, {"user_id": row["user_id"]})
+            elif conflict == "user_id,family_key":
+                existing = select_one(table, {"user_id": row["user_id"], "family_key": row["family_key"]})
             else:
                 existing = select_one(table, {"user_id": row["user_id"]})
             if existing:
@@ -199,6 +260,266 @@ def _style_row_from_id(style_id: str) -> Optional[dict]:
     if normalized in lookup:
         return lookup[normalized]
     return None
+
+
+def build_discover_family_signature(
+    style_ids: Optional[Iterable[str]] = None,
+    style_tags: Optional[Iterable[str]] = None,
+) -> Tuple[str, str, List[str]]:
+    canonical_rows: List[dict] = []
+    seen_keys: set[str] = set()
+
+    def add_row(row: Optional[dict]) -> None:
+        if not row:
+            return
+        style_key = str(row.get("style_key") or "").strip().lower()
+        if not style_key or style_key in seen_keys:
+            return
+        seen_keys.add(style_key)
+        canonical_rows.append(row)
+
+    normalized_ids = [str(style_id).strip() for style_id in (style_ids or []) if str(style_id).strip()]
+    normalized_tags = [normalize_style_tag(str(tag)) for tag in (style_tags or []) if str(tag).strip()]
+
+    for style_id in normalized_ids:
+        add_row(_style_row_from_id(style_id))
+
+    if not canonical_rows and normalized_tags:
+        resolved_ids, _ = get_style_ids_for_tags(normalized_tags)
+        for style_id in resolved_ids:
+            add_row(_style_row_from_id(style_id))
+
+    prioritized_rows = [
+        row for row in canonical_rows
+        if str(row.get("dimension") or "") in FAMILY_DIMENSION_PRIORITY
+        and str(row.get("style_key") or "").strip().lower() not in GENERIC_FAMILY_STYLE_KEYS
+    ]
+    prioritized_rows.sort(
+        key=lambda row: (
+            FAMILY_DIMENSION_PRIORITY.get(str(row.get("dimension") or ""), 999),
+            int(row.get("sort_order") or 0),
+            str(row.get("label") or row.get("style_key") or ""),
+        )
+    )
+
+    selected_rows: List[dict] = []
+    used_dimensions: set[str] = set()
+    for row in prioritized_rows:
+        dimension = str(row.get("dimension") or "")
+        if dimension in used_dimensions:
+            continue
+        selected_rows.append(row)
+        used_dimensions.add(dimension)
+        if len(selected_rows) >= 2:
+            break
+
+    if not selected_rows:
+        fallback_rows = [
+            row for row in canonical_rows
+            if str(row.get("style_key") or "").strip().lower() not in GENERIC_FAMILY_STYLE_KEYS
+        ]
+        selected_rows = fallback_rows[:2]
+    if selected_rows:
+        family_keys = [str(row.get("style_key") or "").strip().lower() for row in selected_rows if str(row.get("style_key") or "").strip()]
+        family_labels = [str(row.get("label") or row.get("style_key") or "").strip() for row in selected_rows if str(row.get("label") or row.get("style_key") or "").strip()]
+        if family_keys and family_labels:
+            return "|".join(family_keys), " ".join(family_labels), family_labels
+
+    fallback_tokens = sorted({
+        token for token in normalized_tags
+        if token and token not in GENERIC_FAMILY_STYLE_KEYS
+    })[:2]
+    fallback_labels = [token.replace("_", " ").title() for token in fallback_tokens]
+    if fallback_tokens and fallback_labels:
+        return "|".join(fallback_tokens), " ".join(fallback_labels), fallback_labels
+
+    generic_fallback_tokens = sorted({token for token in normalized_tags if token})[:2]
+    generic_fallback_labels = [token.replace("_", " ").title() for token in generic_fallback_tokens]
+    if generic_fallback_tokens and generic_fallback_labels:
+        return "|".join(generic_fallback_tokens), " ".join(generic_fallback_labels), generic_fallback_labels
+
+    return "", "", []
+
+
+def load_discover_family_memory_map(user_id: str) -> Dict[str, dict]:
+    rows = _table_load(TABLE_DISCOVER_FAMILY_MEMORY, {"user_id": user_id})
+    memory: Dict[str, dict] = {}
+    for row in rows:
+        family_key = str(row.get("family_key") or "").strip()
+        if family_key:
+            memory[family_key] = row
+    return memory
+
+
+def touch_discover_user_state(user_id: str, timezone_name: Optional[str] = None) -> dict:
+    day_key = _client_day_key(timezone_name)
+    existing_rows = _table_load(TABLE_DISCOVER_USER_STATE, {"user_id": user_id})
+    existing = existing_rows[0] if existing_rows else {}
+    active_day_number = int(existing.get("active_day_number") or 0)
+    if existing.get("last_active_day_key") != day_key:
+        active_day_number += 1
+
+    row = {
+        "id": str(existing.get("id") or uuid.uuid5(uuid.NAMESPACE_URL, f"discover-user-state:{user_id}")),
+        "user_id": user_id,
+        "last_active_day_key": day_key,
+        "active_day_number": max(1, active_day_number),
+        "last_active_at": _now_iso(),
+        "recent_family_keys": existing.get("recent_family_keys") or [],
+        "created_at": existing.get("created_at") or _now_iso(),
+        "updated_at": _now_iso(),
+    }
+    return _table_upsert(TABLE_DISCOVER_USER_STATE, row, conflict="user_id")
+
+
+def get_recent_discover_family_keys(user_state: Optional[dict]) -> List[str]:
+    if not user_state:
+        return []
+    values = user_state.get("recent_family_keys") or []
+    return [str(value).strip() for value in values if str(value).strip()]
+
+
+def record_recent_discover_families(user_state: dict, served_family_keys: List[str]) -> dict:
+    existing_recent = get_recent_discover_family_keys(user_state)
+    new_recent = list(existing_recent)
+    for family_key in served_family_keys:
+        cleaned = str(family_key).strip()
+        if not cleaned:
+            continue
+        if cleaned in new_recent:
+            new_recent.remove(cleaned)
+        new_recent.insert(0, cleaned)
+    row = dict(user_state)
+    row["recent_family_keys"] = new_recent[:DISCOVER_RECENT_FAMILY_WINDOW]
+    row["updated_at"] = _now_iso()
+    return _table_upsert(TABLE_DISCOVER_USER_STATE, row, conflict="user_id")
+
+
+def should_suppress_discover_family(memory: Optional[dict], active_day_number: int) -> bool:
+    if not memory:
+        return False
+    cooldown_until = int(memory.get("cooldown_until_active_day") or 0)
+    return cooldown_until > 0 and active_day_number < cooldown_until
+
+
+def can_reinforce_discover_family(memory: Optional[dict], active_day_number: int) -> bool:
+    if not memory:
+        return False
+    positive_seed_day = int(memory.get("positive_seed_active_day") or 0)
+    positive_followups_served = int(memory.get("positive_followups_served") or 0)
+    if positive_seed_day == active_day_number and positive_followups_served < POSITIVE_FOLLOWUP_LIMIT:
+        return True
+
+    negative_seed_day = int(memory.get("negative_seed_active_day") or 0)
+    negative_followups_served = int(memory.get("negative_followups_served") or 0)
+    return negative_seed_day == active_day_number and negative_followups_served < NEGATIVE_VALIDATION_LIMIT
+
+
+def _reset_family_daily_counters(memory: dict, day_key: str, active_day_number: int) -> dict:
+    if memory.get("last_shown_day_key") == day_key:
+        return memory
+    reset = dict(memory)
+    reset["shown_count_today"] = 0
+    reset["last_shown_day_key"] = day_key
+    reset["last_shown_active_day"] = active_day_number
+    return reset
+
+
+def mark_discover_family_served(
+    user_id: str,
+    family_key: str,
+    family_label: str,
+    active_day_number: int,
+    day_key: str,
+) -> dict:
+    existing = load_discover_family_memory_map(user_id).get(family_key, {})
+    memory = _reset_family_daily_counters(existing, day_key, active_day_number)
+    shown_count_today = int(memory.get("shown_count_today") or 0) + 1
+
+    positive_seed_day = int(memory.get("positive_seed_active_day") or 0)
+    positive_followups_served = int(memory.get("positive_followups_served") or 0)
+    negative_seed_day = int(memory.get("negative_seed_active_day") or 0)
+    negative_followups_served = int(memory.get("negative_followups_served") or 0)
+    cooldown_until_active_day = int(memory.get("cooldown_until_active_day") or 0)
+
+    if positive_seed_day == active_day_number:
+        positive_followups_served += 1
+        if positive_followups_served >= POSITIVE_FOLLOWUP_LIMIT:
+            cooldown_until_active_day = max(cooldown_until_active_day, active_day_number + POSITIVE_COOLDOWN_DAYS)
+
+    if negative_seed_day == active_day_number:
+        negative_followups_served += 1
+        if negative_followups_served >= NEGATIVE_VALIDATION_LIMIT:
+            cooldown_until_active_day = max(cooldown_until_active_day, active_day_number + NEGATIVE_COOLDOWN_DAYS)
+
+    row = {
+        "id": str(memory.get("id") or uuid.uuid5(uuid.NAMESPACE_URL, f"{user_id}:{family_key}")),
+        "user_id": user_id,
+        "family_key": family_key,
+        "family_label": family_label or memory.get("family_label") or family_key.replace("|", " ").title(),
+        "shown_count_today": shown_count_today,
+        "last_shown_at": _now_iso(),
+        "last_shown_day_key": day_key,
+        "last_shown_active_day": active_day_number,
+        "last_positive_at": memory.get("last_positive_at"),
+        "last_negative_at": memory.get("last_negative_at"),
+        "positive_seed_active_day": positive_seed_day,
+        "positive_followups_served": positive_followups_served,
+        "negative_seed_active_day": negative_seed_day,
+        "negative_followups_served": negative_followups_served,
+        "cooldown_until_active_day": cooldown_until_active_day,
+        "last_discover_active_at": _now_iso(),
+        "created_at": memory.get("created_at") or _now_iso(),
+        "updated_at": _now_iso(),
+    }
+    return _table_upsert(TABLE_DISCOVER_FAMILY_MEMORY, row, conflict="user_id,family_key")
+
+
+def mark_discover_family_interaction(
+    user_id: str,
+    family_key: str,
+    family_label: str,
+    action: str,
+    active_day_number: int,
+    day_key: str,
+) -> dict:
+    existing = load_discover_family_memory_map(user_id).get(family_key, {})
+    memory = _reset_family_daily_counters(existing, day_key, active_day_number)
+    action_value = str(action or "").strip().lower()
+
+    row = {
+        "id": str(memory.get("id") or uuid.uuid5(uuid.NAMESPACE_URL, f"{user_id}:{family_key}")),
+        "user_id": user_id,
+        "family_key": family_key,
+        "family_label": family_label or memory.get("family_label") or family_key.replace("|", " ").title(),
+        "shown_count_today": int(memory.get("shown_count_today") or 0),
+        "last_shown_at": memory.get("last_shown_at"),
+        "last_shown_day_key": memory.get("last_shown_day_key") or day_key,
+        "last_shown_active_day": int(memory.get("last_shown_active_day") or active_day_number),
+        "last_positive_at": memory.get("last_positive_at"),
+        "last_negative_at": memory.get("last_negative_at"),
+        "positive_seed_active_day": int(memory.get("positive_seed_active_day") or 0),
+        "positive_followups_served": int(memory.get("positive_followups_served") or 0),
+        "negative_seed_active_day": int(memory.get("negative_seed_active_day") or 0),
+        "negative_followups_served": int(memory.get("negative_followups_served") or 0),
+        "cooldown_until_active_day": int(memory.get("cooldown_until_active_day") or 0),
+        "last_discover_active_at": _now_iso(),
+        "created_at": memory.get("created_at") or _now_iso(),
+        "updated_at": _now_iso(),
+    }
+
+    if action_value in {"love", "like"}:
+        row["last_positive_at"] = _now_iso()
+        row["positive_seed_active_day"] = active_day_number
+        row["positive_followups_served"] = 0
+        row["negative_seed_active_day"] = 0
+        row["negative_followups_served"] = 0
+    elif action_value == "dislike":
+        row["last_negative_at"] = _now_iso()
+        row["negative_seed_active_day"] = active_day_number
+        row["negative_followups_served"] = 0
+
+    return _table_upsert(TABLE_DISCOVER_FAMILY_MEMORY, row, conflict="user_id,family_key")
 
 
 def load_style_preferences(user_id: str) -> List[dict]:
@@ -309,7 +630,11 @@ def get_top_style_terms(user_id: str, limit: int = 2) -> Tuple[List[str], List[s
     return [term for term in preferred if term], [term for term in disliked if term]
 
 
-def record_discover_interaction(user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+def record_discover_interaction(
+    user_id: str,
+    payload: Dict[str, Any],
+    timezone_name: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Persist a raw swipe action and mark the URL as seen so it will not be
     re-served in the next feed refresh.
@@ -318,6 +643,10 @@ def record_discover_interaction(user_id: str, payload: Dict[str, Any]) -> Dict[s
     style_tags = [normalize_style_tag(tag) for tag in (payload.get("style_tags") or []) if str(tag).strip()]
     if not style_ids and style_tags:
         style_ids, _ = get_style_ids_for_tags(style_tags)
+    family_key, family_label, _ = build_discover_family_signature(style_ids, style_tags)
+    user_state = touch_discover_user_state(user_id, timezone_name)
+    active_day_number = int(user_state.get("active_day_number") or 1)
+    day_key = str(user_state.get("last_active_day_key") or _client_day_key(timezone_name))
 
     normalized_url = _canonical_url(payload.get("normalized_url") or payload.get("source_url") or "")
     row = {
@@ -334,6 +663,8 @@ def record_discover_interaction(user_id: str, payload: Dict[str, Any]) -> Dict[s
         "search_query": payload.get("search_query"),
         "style_ids": style_ids,
         "style_tags": style_tags,
+        "family_key": family_key,
+        "family_label": family_label,
         "action": payload.get("action") or "like",
         "person_count": int(payload.get("person_count") or 1),
         "is_single_person": bool(payload.get("is_single_person", True)),
@@ -356,6 +687,16 @@ def record_discover_interaction(user_id: str, payload: Dict[str, Any]) -> Dict[s
                 "last_action": row["action"],
                 "reason": "interaction",
             },
+        )
+
+    if family_key:
+        mark_discover_family_interaction(
+            user_id,
+            family_key,
+            family_label,
+            str(row["action"]),
+            active_day_number,
+            day_key,
         )
 
     return interaction

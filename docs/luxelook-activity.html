@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LuxeLook AI Activity Map</title>
+    <style>
+      :root {
+        --bg: #f6f1ea;
+        --paper: #fffdf9;
+        --ink: #261f18;
+        --muted: #6d6154;
+        --line: #d8c9b5;
+        --accent: #b7874e;
+        --accent-soft: #f1e0c8;
+        --panel: #fbf6ef;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+        line-height: 1.55;
+      }
+
+      .page {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 40px 44px 64px;
+      }
+
+      h1,
+      h2,
+      h3 {
+        font-family: "Playfair Display", Georgia, serif;
+        letter-spacing: -0.02em;
+        margin: 0 0 12px;
+      }
+
+      h1 {
+        font-size: 38px;
+        line-height: 1.05;
+      }
+
+      h2 {
+        font-size: 26px;
+        margin-top: 34px;
+      }
+
+      h3 {
+        font-size: 20px;
+        margin-top: 22px;
+      }
+
+      p,
+      li {
+        font-size: 14px;
+      }
+
+      .lede {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 16px;
+      }
+
+      .meta {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+
+      .card {
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 22px 24px;
+        margin-top: 18px;
+        break-inside: avoid;
+      }
+
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+
+      .taglist {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--ink);
+        font-size: 12px;
+      }
+
+      .diagram {
+        width: 100%;
+        margin-top: 14px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel);
+        padding: 14px;
+      }
+
+      svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      .caption {
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      ul,
+      ol {
+        margin: 8px 0 0 20px;
+        padding: 0;
+      }
+
+      .section-kicker {
+        color: var(--accent);
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        font-size: 11px;
+        margin-bottom: 8px;
+      }
+
+      .note {
+        border-left: 3px solid var(--accent);
+        padding-left: 12px;
+        color: var(--muted);
+        margin-top: 12px;
+      }
+
+      .small {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      @media print {
+        body {
+          background: white;
+        }
+
+        .page {
+          max-width: none;
+          padding: 18px 22px 28px;
+        }
+
+        .card,
+        .diagram {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <div class="section-kicker">LuxeLook AI</div>
+      <h1>Activity Map</h1>
+      <p class="lede">
+        Diagram-first reference for the current LuxeLook AI user flows, system
+        boundaries, and feature surfaces.
+      </p>
+      <div class="meta">Updated 2026-04-16</div>
+
+      <section class="card">
+        <h2>What This PDF Is</h2>
+        <p>
+          This PDF is the readable companion to
+          <strong><code>docs/luxelook-activity.md</code></strong>. The Markdown
+          file remains the fuller source of truth; this version makes the system
+          easier to interpret by using clearer diagrams and tighter summaries.
+        </p>
+        <div class="taglist">
+          <span class="tag">Use-case view</span>
+          <span class="tag">Component view</span>
+          <span class="tag">Activity flow</span>
+          <span class="tag">Sequence-style summaries</span>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Current User-Facing Surfaces</h2>
+        <div class="taglist">
+          <span class="tag">/</span>
+          <span class="tag">/wardrobe</span>
+          <span class="tag">/discover</span>
+          <span class="tag">/event</span>
+          <span class="tag">/archive</span>
+          <span class="tag">/style-item</span>
+          <span class="tag">/profile</span>
+          <span class="tag">/guide</span>
+          <span class="tag">/test/event-scenarios</span>
+        </div>
+        <p class="note">
+          Legacy redirects still exist for <code>/events</code> → <code>/event</code>
+          and <code>/outfits</code> → <code>/archive</code>.
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>Use-Case View</h2>
+        <div class="diagram">
+          <svg viewBox="0 0 900 440" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 z" fill="#8b6b43"/>
+              </marker>
+            </defs>
+            <circle cx="90" cy="220" r="34" fill="#f1e0c8" stroke="#b7874e" stroke-width="2"/>
+            <text x="90" y="226" text-anchor="middle" font-size="18" fill="#261f18" font-family="DM Sans">User</text>
+
+            <g font-family="DM Sans" font-size="16" fill="#261f18">
+              <rect x="250" y="34" width="190" height="52" rx="16" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="345" y="66" text-anchor="middle">Sign up / log in</text>
+
+              <rect x="500" y="34" width="250" height="52" rx="16" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="625" y="66" text-anchor="middle">Upload and correct wardrobe</text>
+
+              <rect x="250" y="120" width="190" height="52" rx="16" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="345" y="152" text-anchor="middle">Swipe Discover feed</text>
+
+              <rect x="500" y="120" width="250" height="52" rx="16" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="625" y="152" text-anchor="middle">Generate event outfits</text>
+
+              <rect x="250" y="206" width="190" height="52" rx="16" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="345" y="238" text-anchor="middle">Style around one item</text>
+
+              <rect x="500" y="206" width="250" height="52" rx="16" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="625" y="238" text-anchor="middle">Explore broader style directions</text>
+
+              <rect x="250" y="292" width="190" height="52" rx="16" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="345" y="324" text-anchor="middle">Revisit Archive</text>
+
+              <rect x="500" y="292" width="250" height="52" rx="16" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="625" y="324" text-anchor="middle">Edit profile + AI traits</text>
+
+              <rect x="250" y="378" width="190" height="52" rx="16" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="345" y="410" text-anchor="middle">Read Guide</text>
+
+              <rect x="500" y="378" width="250" height="52" rx="16" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="625" y="410" text-anchor="middle">Run test scenarios</text>
+            </g>
+
+            <g stroke="#8b6b43" stroke-width="2.5" fill="none" marker-end="url(#arrow)">
+              <line x1="124" y1="190" x2="250" y2="60"/>
+              <line x1="124" y1="205" x2="500" y2="60"/>
+              <line x1="124" y1="220" x2="250" y2="146"/>
+              <line x1="124" y1="228" x2="500" y2="146"/>
+              <line x1="124" y1="236" x2="250" y2="232"/>
+              <line x1="124" y1="244" x2="500" y2="232"/>
+              <line x1="124" y1="252" x2="250" y2="318"/>
+              <line x1="124" y1="260" x2="500" y2="318"/>
+              <line x1="124" y1="274" x2="250" y2="404"/>
+              <line x1="124" y1="290" x2="500" y2="404"/>
+            </g>
+          </svg>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Component View</h2>
+        <div class="diagram">
+          <svg viewBox="0 0 900 540" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 z" fill="#8b6b43"/>
+              </marker>
+            </defs>
+            <g font-family="DM Sans" fill="#261f18">
+              <rect x="20" y="22" width="220" height="490" rx="22" fill="#fbf6ef" stroke="#d8c9b5"/>
+              <text x="130" y="52" text-anchor="middle" font-size="22">Frontend</text>
+              <rect x="42" y="82" width="176" height="52" rx="14" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="130" y="114" text-anchor="middle" font-size="15">Landing + auth</text>
+              <rect x="42" y="154" width="176" height="132" rx="14" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="130" y="186" text-anchor="middle" font-size="15">Wardrobe / Discover /</text>
+              <text x="130" y="208" text-anchor="middle" font-size="15">Event / Style Item /</text>
+              <text x="130" y="230" text-anchor="middle" font-size="15">Archive / Profile / Guide</text>
+              <rect x="42" y="306" width="176" height="52" rx="14" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="130" y="338" text-anchor="middle" font-size="15">Event scenario tester</text>
+
+              <rect x="290" y="22" width="340" height="490" rx="22" fill="#fbf6ef" stroke="#d8c9b5"/>
+              <text x="460" y="52" text-anchor="middle" font-size="22">Backend</text>
+              <rect x="316" y="82" width="124" height="52" rx="14" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="378" y="114" text-anchor="middle" font-size="15">Auth router</text>
+              <rect x="452" y="82" width="152" height="52" rx="14" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="528" y="114" text-anchor="middle" font-size="15">Clothing router/service</text>
+              <rect x="316" y="154" width="124" height="52" rx="14" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="378" y="186" text-anchor="middle" font-size="15">Discover services</text>
+              <rect x="452" y="154" width="152" height="52" rx="14" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="528" y="186" text-anchor="middle" font-size="15">Event service</text>
+              <rect x="316" y="226" width="124" height="52" rx="14" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="378" y="258" text-anchor="middle" font-size="15">Recommender</text>
+              <rect x="452" y="226" width="152" height="52" rx="14" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="528" y="258" text-anchor="middle" font-size="15">Profile router</text>
+              <rect x="316" y="298" width="124" height="52" rx="14" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="378" y="330" text-anchor="middle" font-size="15">Tagger + LLM</text>
+              <rect x="452" y="298" width="152" height="52" rx="14" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="528" y="330" text-anchor="middle" font-size="15">Style image enrichment</text>
+
+              <rect x="680" y="22" width="200" height="230" rx="22" fill="#fbf6ef" stroke="#d8c9b5"/>
+              <text x="780" y="52" text-anchor="middle" font-size="22">Data</text>
+              <rect x="704" y="90" width="152" height="56" rx="14" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="780" y="124" text-anchor="middle" font-size="15">Supabase Postgres</text>
+              <rect x="704" y="164" width="152" height="56" rx="14" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="780" y="198" text-anchor="middle" font-size="15">Supabase Storage</text>
+
+              <rect x="680" y="282" width="200" height="230" rx="22" fill="#fbf6ef" stroke="#d8c9b5"/>
+              <text x="780" y="312" text-anchor="middle" font-size="22">Providers</text>
+              <rect x="704" y="350" width="152" height="56" rx="14" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="780" y="384" text-anchor="middle" font-size="15">Pexels / image search</text>
+              <rect x="704" y="424" width="152" height="56" rx="14" fill="#fffdf9" stroke="#d8c9b5"/>
+              <text x="780" y="458" text-anchor="middle" font-size="15">CLIP / HF models</text>
+            </g>
+
+            <g stroke="#8b6b43" stroke-width="2.2" fill="none" marker-end="url(#arrow2)">
+              <line x1="218" y1="108" x2="316" y2="108"/>
+              <line x1="218" y1="192" x2="452" y2="108"/>
+              <line x1="218" y1="216" x2="316" y2="180"/>
+              <line x1="218" y1="240" x2="452" y2="180"/>
+              <line x1="218" y1="264" x2="316" y2="252"/>
+              <line x1="218" y1="288" x2="452" y2="252"/>
+              <line x1="218" y1="332" x2="452" y2="252"/>
+
+              <line x1="440" y1="108" x2="704" y2="118"/>
+              <line x1="604" y1="108" x2="704" y2="192"/>
+              <line x1="440" y1="180" x2="704" y2="118"/>
+              <line x1="604" y1="180" x2="704" y2="118"/>
+              <line x1="440" y1="252" x2="704" y2="118"/>
+              <line x1="604" y1="324" x2="704" y2="378"/>
+              <line x1="440" y1="324" x2="704" y2="452"/>
+              <line x1="440" y1="180" x2="704" y2="378"/>
+            </g>
+          </svg>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Activity View: Event Recommendation</h2>
+        <div class="diagram">
+          <svg viewBox="0 0 900 380" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrow3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 z" fill="#8b6b43"/>
+              </marker>
+            </defs>
+            <g font-family="DM Sans" font-size="15" fill="#261f18" stroke="#d8c9b5">
+              <rect x="30" y="24" width="180" height="46" rx="16" fill="#fffdf9"/>
+              <text x="120" y="53" text-anchor="middle" stroke="none">Open Event page</text>
+
+              <rect x="30" y="96" width="180" height="54" rx="16" fill="#fffdf9"/>
+              <text x="120" y="128" text-anchor="middle" stroke="none">Fill structured EventBrief</text>
+
+              <rect x="30" y="176" width="180" height="54" rx="16" fill="#fffdf9"/>
+              <text x="120" y="208" text-anchor="middle" stroke="none">Store event + raw_text_json</text>
+
+              <rect x="300" y="96" width="210" height="54" rx="16" fill="#fffdf9"/>
+              <text x="405" y="128" text-anchor="middle" stroke="none">Hydrate tokens from all fields</text>
+
+              <rect x="300" y="176" width="210" height="54" rx="16" fill="#fffdf9"/>
+              <text x="405" y="208" text-anchor="middle" stroke="none">Score wardrobe combinations</text>
+
+              <path d="M630 176 L710 208 L630 240 L550 208 Z" fill="#fffdf9"/>
+              <text x="630" y="204" text-anchor="middle" stroke="none">Enough strong</text>
+              <text x="630" y="222" text-anchor="middle" stroke="none">wardrobe looks?</text>
+
+              <rect x="720" y="84" width="150" height="54" rx="16" fill="#fffdf9"/>
+              <text x="795" y="116" text-anchor="middle" stroke="none">Return wardrobe looks</text>
+
+              <rect x="720" y="176" width="150" height="54" rx="16" fill="#fffdf9"/>
+              <text x="795" y="208" text-anchor="middle" stroke="none">Generate broader style</text>
+
+              <rect x="720" y="256" width="150" height="54" rx="16" fill="#fffdf9"/>
+              <text x="795" y="288" text-anchor="middle" stroke="none">Attach style images</text>
+
+              <rect x="300" y="288" width="210" height="54" rx="16" fill="#fffdf9"/>
+              <text x="405" y="320" text-anchor="middle" stroke="none">Render results in Event UI</text>
+            </g>
+
+            <g stroke="#8b6b43" stroke-width="2.4" fill="none" marker-end="url(#arrow3)">
+              <line x1="120" y1="70" x2="120" y2="96"/>
+              <line x1="120" y1="150" x2="120" y2="176"/>
+              <line x1="210" y1="203" x2="300" y2="123"/>
+              <line x1="210" y1="203" x2="300" y2="203"/>
+              <line x1="510" y1="203" x2="550" y2="208"/>
+              <line x1="710" y1="208" x2="720" y2="116"/>
+              <line x1="710" y1="208" x2="720" y2="203"/>
+              <line x1="795" y1="230" x2="795" y2="256"/>
+              <line x1="720" y1="111" x2="510" y2="315"/>
+              <line x1="720" y1="283" x2="510" y2="315"/>
+            </g>
+
+            <g font-family="DM Sans" font-size="12" fill="#6d6154">
+              <text x="685" y="156">Yes</text>
+              <text x="690" y="198">No / needs inspiration</text>
+            </g>
+          </svg>
+        </div>
+      </section>
+
+      <section class="grid-2">
+        <section class="card">
+          <h2>Authentication</h2>
+          <ol>
+            <li>Browser loads the Next.js app shell.</li>
+            <li><code>useAuth</code> restores the cached JWT when possible.</li>
+            <li>Frontend calls FastAPI auth routes.</li>
+            <li>Backend uses mock auth or Supabase Auth by environment.</li>
+            <li>JWT is returned and the session becomes authenticated.</li>
+          </ol>
+        </section>
+
+        <section class="card">
+          <h2>Wardrobe Upload</h2>
+          <ol>
+            <li>User drops an image into Wardrobe.</li>
+            <li>Frontend calls <code>/clothing/tag-preview</code>.</li>
+            <li>Backend tags category, color, season, formality, and descriptors.</li>
+            <li>Duplicate detection runs before save.</li>
+            <li>Category changes rerun preview tagging before upload.</li>
+            <li>Final upload persists the item and starts media processing.</li>
+          </ol>
+        </section>
+      </section>
+
+      <section class="grid-2">
+        <section class="card">
+          <h2>Discover / The Edit</h2>
+          <ol>
+            <li>Backend builds a taste-seeded Discover feed.</li>
+            <li>Pexels images are fetched and filtered to usable fashion results.</li>
+            <li>Style tags are extracted and cached.</li>
+            <li>User swipes like, love, or dislike.</li>
+            <li>Raw interactions are stored.</li>
+            <li>Learned preferences refresh into <code>user_style_preferences</code>.</li>
+          </ol>
+        </section>
+
+        <section class="card">
+          <h2>Event + Beyond Your Wardrobe</h2>
+          <ol>
+            <li>EventBrief plus <code>raw_text_json</code> is stored.</li>
+            <li>All brief fields become event tokens.</li>
+            <li>User-selected dress code overrides weaker inferred formality.</li>
+            <li>Wardrobe combinations are scored and returned.</li>
+            <li>LLM style directions add broader editorial options.</li>
+            <li>Wearable pieces can receive external reference imagery.</li>
+          </ol>
+        </section>
+      </section>
+
+      <section class="grid-2">
+        <section class="card">
+          <h2>Style Item</h2>
+          <ol>
+            <li>User picks one anchor wardrobe item.</li>
+            <li>The same structured brief editor is used as Event.</li>
+            <li>The recommender tries to build around that anchor.</li>
+            <li>If the wardrobe cannot fully support the look, editorial direction fills the gap.</li>
+          </ol>
+        </section>
+
+        <section class="card">
+          <h2>Archive</h2>
+          <ol>
+            <li>Archive loads stored events and stored suggestions.</li>
+            <li>Structured event JSON is rebuilt into readable event summaries.</li>
+            <li>Users revisit, compare, and rate historical looks.</li>
+            <li>Existing combo ratings persist when the same look reappears.</li>
+          </ol>
+        </section>
+      </section>
+
+      <section class="grid-2">
+        <section class="card">
+          <h2>Ratings, Skips, and Refresh</h2>
+          <ol>
+            <li>Users can rate looks from 1 to 5.</li>
+            <li><code>0</code> is valid for <em>None of these looks</em>.</li>
+            <li>Refresh avoids exact duplicate combos when better alternatives exist.</li>
+            <li>Stored combo ratings carry forward to recurring looks.</li>
+          </ol>
+        </section>
+
+        <section class="card">
+          <h2>Profile + AI Profiling</h2>
+          <ol>
+            <li>Users save body details and styling traits.</li>
+            <li>Visible avatar and AI profiling photo remain separate.</li>
+            <li>AI can suggest face shape, body type, complexion, and hair traits.</li>
+            <li>Saved profile traits feed future recommendation logic and Discover seeding.</li>
+          </ol>
+        </section>
+      </section>
+
+      <section class="grid-2">
+        <section class="card">
+          <h2>Guide</h2>
+          <ol>
+            <li>The Guide is a frontend-only education surface.</li>
+            <li>It explains dress codes, seasons, descriptor families, and profile usage.</li>
+            <li>It helps users correct AI tags with clearer fashion vocabulary.</li>
+          </ol>
+        </section>
+
+        <section class="card">
+          <h2>Event Scenario Tester</h2>
+          <ol>
+            <li>Tester loads saved EventBrief JSON scenarios.</li>
+            <li>It uses the same shared form as the main Event page.</li>
+            <li>It calls the real recommendation flow.</li>
+            <li>Results render below, including style-direction moodboards.</li>
+          </ol>
+        </section>
+      </section>
+
+      <section class="card">
+        <h2>What Changed Since the Old PDF</h2>
+        <ul>
+          <li>The current app uses <code>/event</code> and <code>/archive</code>, not legacy <code>/events</code> and <code>/outfits</code>.</li>
+          <li>The app now includes a Guide page and a Style Item page.</li>
+          <li>The Event flow is structured around EventBrief + <code>raw_text_json</code>.</li>
+          <li><em>Beyond your wardrobe</em> now has visual moodboards and image enrichment.</li>
+          <li>Discover preference reliability and auto-refresh behavior are newer than the old PDF.</li>
+          <li>The isolated <code>/test/event-scenarios</code> surface did not exist in the old document.</li>
+        </ul>
+        <p class="small">
+          Canonical detailed source: <code>docs/luxelook-activity.md</code>
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

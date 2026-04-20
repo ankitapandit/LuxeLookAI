@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
-from routers import auth, clothing, discover, event, recommendations, feedback, profile
+from routers import activity, auth, clothing, discover, event, recommendations, feedback, profile
 from workers.discover_worker import run_loop
 
 
@@ -49,6 +49,7 @@ app.add_middleware(
 
 # ── Route Registration ────────────────────────────────────────────────────────
 app.include_router(auth.router,            prefix="/auth",        tags=["Auth"])
+app.include_router(activity.router,        prefix="/activity",    tags=["Activity"])
 app.include_router(clothing.router,        prefix="/clothing",    tags=["Clothing"])
 app.include_router(discover.router,        prefix="/discover",    tags=["Discover"])
 app.include_router(event.router,           prefix="/event",       tags=["Event"])
