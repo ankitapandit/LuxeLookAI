@@ -407,11 +407,10 @@ export default function OutfitsPage() {
                       {/* Suggestions carousel */}
                       {!isGenerating && suggestions.length > 0 && (
                         <div className="outfit-carousel">
-                          {suggestions.map((s, idx) => (
+                          {suggestions.map((s) => (
                             <div key={s.id} className="outfit-card-wrap">
                               <OutfitSuggestionCard
                                 suggestion={s}
-                                rank={idx + 1}
                                 wardrobeMap={wardrobeMap}
                                 onRate={(rating) => handleRate(s.id, ev.id, rating)}
                               />

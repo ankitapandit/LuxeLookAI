@@ -174,6 +174,8 @@ create table if not exists discover_style_interactions (
   search_query    text,
   style_ids       text[] default '{}',
   style_tags      text[] default '{}',
+  family_key      text,
+  family_label    text,
   action          text not null check (action in ('love', 'like', 'dislike')),
   person_count    int default 1,
   is_single_person boolean default true,
@@ -184,6 +186,75 @@ create table if not exists discover_style_interactions (
 
 create index if not exists idx_discover_swipe_user on discover_style_interactions(user_id);
 create index if not exists idx_discover_swipe_url on discover_style_interactions(user_id, normalized_url);
+create index if not exists idx_discover_swipe_family on discover_style_interactions(user_id, family_key, created_at);
+
+
+-- ── Discover User State ───────────────────────────────────────────────────
+create table if not exists discover_user_state (
+  id                  uuid primary key default gen_random_uuid(),
+  user_id             uuid not null references users(id) on delete cascade,
+  last_active_day_key text,
+  active_day_number   int default 0,
+  last_active_at      timestamptz,
+  recent_family_keys  text[] default '{}',
+  updated_at          timestamptz default now(),
+  created_at          timestamptz default now(),
+  unique (user_id)
+);
+
+create index if not exists idx_discover_user_state_user on discover_user_state(user_id);
+
+
+-- ── Discover Family Memory ────────────────────────────────────────────────
+create table if not exists discover_family_memory (
+  id                         uuid primary key default gen_random_uuid(),
+  user_id                    uuid not null references users(id) on delete cascade,
+  family_key                 text not null,
+  family_label               text not null,
+  shown_count_today          int default 0,
+  last_shown_at              timestamptz,
+  last_shown_day_key         text,
+  last_shown_active_day      int default 0,
+  last_positive_at           timestamptz,
+  last_negative_at           timestamptz,
+  positive_seed_active_day   int default 0,
+  positive_followups_served  int default 0,
+  negative_seed_active_day   int default 0,
+  negative_followups_served  int default 0,
+  cooldown_until_active_day  int default 0,
+  last_discover_active_at    timestamptz,
+  updated_at                 timestamptz default now(),
+  created_at                 timestamptz default now(),
+  unique (user_id, family_key)
+);
+
+create index if not exists idx_discover_family_memory_user on discover_family_memory(user_id);
+create index if not exists idx_discover_family_memory_cooldown on discover_family_memory(user_id, cooldown_until_active_day);
+
+
+-- ── User Page Visits ──────────────────────────────────────────────────────
+create table if not exists user_page_visits (
+  id                uuid primary key default gen_random_uuid(),
+  user_id           uuid not null references users(id) on delete cascade,
+  session_id        text not null,
+  page_key          text not null,
+  referrer_page_key text,
+  entered_at        timestamptz not null default now(),
+  left_at           timestamptz,
+  duration_ms       int,
+  source            text not null default 'web',
+  context_json      jsonb default '{}',
+  created_at        timestamptz not null default now()
+);
+
+create index if not exists idx_user_page_visits_user_entered
+  on user_page_visits (user_id, entered_at desc);
+
+create index if not exists idx_user_page_visits_page_entered
+  on user_page_visits (page_key, entered_at desc);
+
+create index if not exists idx_user_page_visits_session
+  on user_page_visits (user_id, session_id, entered_at desc);
 
 
 -- ── Discover Candidate Cache ──────────────────────────────────────────────
@@ -279,6 +350,9 @@ alter table style_catalog      enable row level security;
 alter table discover_candidates enable row level security;
 alter table discover_ignored_urls enable row level security;
 alter table discover_style_interactions enable row level security;
+alter table discover_user_state enable row level security;
+alter table discover_family_memory enable row level security;
+alter table user_page_visits enable row level security;
 alter table user_style_preferences enable row level security;
 alter table discover_jobs enable row level security;
 
@@ -310,7 +384,16 @@ comment on table public.discover_jobs is
   'Durable background job queue for Discover warm-up and candidate seeding. Stores queued/running/failed job state, payloads, dedupe keys, retry counters, and job results.';
 
 comment on table public.discover_style_interactions is
-  'Per-card Discover interaction log. Records like, love, and dislike actions together with style tags, card metadata, and analysis context used for preference learning.';
+  'Per-card Discover interaction log. Records like, love, and dislike actions together with style tags, normalized family signatures, card metadata, and analysis context used for preference learning.';
+
+comment on table public.discover_user_state is
+  'Discover-only per-user activity state. Tracks the user''s active Discover day number and last Discover usage day key so cooldown logic can be based on Discover usage days rather than wall-clock dates.';
+
+comment on table public.discover_family_memory is
+  'Per-user family-level serving memory for Discover. Tracks normalized style-family keys, same-day follow-up counts, cooldown windows, and last positive or negative signals so the feed can avoid bombarding the user with the same visual type.';
+
+comment on table public.user_page_visits is
+  'Minimal authenticated route-level page visit logging. Stores page entry and best-effort exit timestamps plus session and referrer information for first-party product understanding without clickstream or movement tracking.';
 
 comment on table public.style_catalog is
   'Canonical Discover style vocabulary. Stores normalized style signals such as silhouette, fabric, pattern, vibe, styling detail, garment type, season, and occasion for tag resolution and preference learning.';
@@ -350,6 +433,24 @@ create policy "Users can view own discover interactions"
   on discover_style_interactions for select using (auth.uid() = user_id);
 create policy "Users can insert own discover interactions"
   on discover_style_interactions for insert with check (auth.uid() = user_id);
+create policy "Users can view own discover user state"
+  on discover_user_state for select using (auth.uid() = user_id);
+create policy "Users can insert own discover user state"
+  on discover_user_state for insert with check (auth.uid() = user_id);
+create policy "Users can update own discover user state"
+  on discover_user_state for update using (auth.uid() = user_id);
+create policy "Users can view own discover family memory"
+  on discover_family_memory for select using (auth.uid() = user_id);
+create policy "Users can insert own discover family memory"
+  on discover_family_memory for insert with check (auth.uid() = user_id);
+create policy "Users can update own discover family memory"
+  on discover_family_memory for update using (auth.uid() = user_id);
+create policy "Users can view own page visits"
+  on user_page_visits for select using (auth.uid() = user_id);
+create policy "Users can insert own page visits"
+  on user_page_visits for insert with check (auth.uid() = user_id);
+create policy "Users can update own page visits"
+  on user_page_visits for update using (auth.uid() = user_id);
 
 create policy "Users can view own style preferences"
   on user_style_preferences for select using (auth.uid() = user_id);

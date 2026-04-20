@@ -1,26 +1,29 @@
 """
 services/recommender.py — Core outfit recommendation engine
 =============================================================
-v2.0.0 — outfit-level intelligence with V2 scoring components:
+v2.5.0 — multi-dimensional event alignment replaces single-axis appropriateness.
 
   V1 scorer (used by attach_accessories):
     score = w1*color_harmony + w2*formality + w3*season
           + w4*embedding_similarity + w5*preference + w6*style_coherence
 
   V2 scorer (used by generate_outfit_suggestions):
-    score = C*compatibility + A*appropriateness + P*preference
+    score = C*compatibility + E*event_appropriate + P*preference
           + F*flattery + T*trend + N*novelty + D*diversity + S*polish − R*risk_penalty
 
   V2 components:
-    compatibility   — pairwise item compat (color story + silhouette + formality match)
-    appropriateness — extended occasion fit (formality + season + venue + dress-code)
-    preference      — personal style (feedback history + body-type priors)
-    flattery        — physical fit (body type + proportion + neckline + complexion-color)
-    trend           — seasonal trend relevance (trend_calendar.json via trend_service)
-    novelty         — freshness vs recently shown outfit history
-    diversity       — completeness bonus for covering expected outfit slots
-    polish          — finishing-piece quality (shoes + outerwear + jewelry + accessories)
-    risk_penalty    — dress-code / confidence penalty (subtracted from final)
+    compatibility     — pairwise item compat (color story + silhouette + formality match)
+    event_appropriate — multi-dim event alignment (services/event_appropriate.py):
+                          dress_code 0.30 · mood 0.25 · time_of_day 0.20 · weather 0.15 · purpose 0.10
+                        Hard veto: dress_code < 0.40 OR (time specified AND time_of_day < 0.35)
+                        → outfit eliminated (score forced to 0.0)
+    preference        — personal style (feedback history + body-type priors)
+    flattery          — physical fit (body type + proportion + neckline + complexion-color)
+    trend             — seasonal trend relevance (trend_calendar.json via trend_service)
+    novelty           — freshness vs recently shown outfit history
+    diversity         — completeness bonus for covering expected outfit slots
+    polish            — finishing-piece quality (shoes + outerwear + jewelry + accessories)
+    risk_penalty      — dress-code / confidence penalty (subtracted from final)
 
 Pipeline:
   1. Filter items to valid candidates for the occasion
@@ -36,7 +39,7 @@ import itertools
 import json as _json
 import logging
 import pathlib as _pathlib
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Set, Tuple
 from uuid import uuid4
 from datetime import datetime
 
@@ -66,6 +69,32 @@ _JEWELRY_RULES         = _load_rule_asset("jewelry.json")
 _ACCESSORIES_RULES     = _load_rule_asset("accessories.json")
 
 logger = logging.getLogger(__name__)
+_DEBUG_SCORE_STAGES = {"template_best", "selected_outfit"}
+
+
+def _debug_outfit_signature(items: List[Dict]) -> str:
+    parts = []
+    for item in items:
+        cat = _normalize_category_name(item.get("category")) or "unknown"
+        item_id = str(item.get("id") or "")[:8]
+        label = (item.get("item_type") or item.get("subcategory") or "").strip().lower()
+        if label:
+            parts.append(f"{cat}:{label}:{item_id}")
+        else:
+            parts.append(f"{cat}:{item_id}")
+    return " | ".join(parts)
+
+
+def _debug_print_score(stage: str, items: List[Dict], **values: Any) -> None:
+    if stage not in _DEBUG_SCORE_STAGES:
+        return
+    fields = [f"stage={stage}", f"outfit={_debug_outfit_signature(items)}"]
+    for key, value in values.items():
+        if isinstance(value, float):
+            fields.append(f"{key}={value:.4f}")
+        else:
+            fields.append(f"{key}={value}")
+    print("[Recommender][Score] " + " ".join(fields), flush=True)
 
 # ── Scoring weights ────────────────────────────────────────────────────────────
 WEIGHTS = {
@@ -80,17 +109,23 @@ assert abs(sum(WEIGHTS.values()) - 1.0) < 1e-9, "Weights must sum to 1.0"
 
 # ── V2 scoring weights (outfit-level intelligence) ─────────────────────────────
 # Scores the outfit as a composed look, not a sum of independent items.
+#
+# v2.5 — Introduced event_appropriate (multi-dim event alignment) to replace the
+# single-axis appropriateness scorer.  Weight redistributed:
+#   compatibility  0.23 → 0.17  (less emphasis on pair-matching, event fit matters more)
+#   appropriateness 0.24 removed; replaced by event_appropriate 0.35
+#   preference     0.20 → 0.15  (personal taste yields to event requirements)
 WEIGHTS_V2 = {
-    "compatibility":   0.23,  # C — pairwise item compat (color story + silhouette + formality match)
-    "appropriateness": 0.24,  # A — occasion fit (formality + season + venue + dress-code)
-    "preference":      0.20,  # P — personal style (feedback history + body-type priors)
-    "flattery":        0.12,  # F — physical fit (body type + proportion + neckline + complexion-color)
-    "trend":           0.08,  # T — seasonal trend relevance (trend_calendar.json)
-    "novelty":         0.03,  # N — freshness vs recently shown outfit history
-    "diversity":       0.02,  # D — outfit slot completeness bonus
-    "polish":          0.05,  # S — finishing-piece quality (shoe + outerwear + jewelry + accessory fit)
+    "compatibility":      0.17,  # C — pairwise item compat (color story + silhouette + formality)
+    "event_appropriate":  0.35,  # E — multi-dim event alignment (dress_code/mood/time/weather/purpose)
+    "preference":         0.15,  # P — personal style (feedback history + body-type priors)
+    "flattery":           0.12,  # F — physical fit (body type + proportion + neckline + complexion-color)
+    "trend":              0.08,  # T — seasonal trend relevance (trend_calendar.json)
+    "novelty":            0.03,  # N — freshness vs recently shown outfit history
+    "diversity":          0.02,  # D — outfit slot completeness bonus
+    "polish":             0.05,  # S — finishing-piece quality (shoe + outerwear + jewelry + accessory fit)
 }
-RISK_WEIGHT = 0.03            # R — dress-code / confidence penalty (subtracted from final)
+RISK_WEIGHT = 0.03              # R — dress-code / confidence penalty (subtracted from final)
 assert abs(sum(WEIGHTS_V2.values()) + RISK_WEIGHT - 1.0) < 1e-9, "WEIGHTS_V2 + RISK_WEIGHT must sum to 1.0"
 
 # ── Formality tolerance band ───────────────────────────────────────────────────
@@ -940,6 +975,20 @@ def score_flattery(
             if rule.get("subtype", "").lower() == (bucket or ""):
                 tags.extend(rule.get("engine_tags") or [])
 
+    _debug_print_score(
+        "flattery",
+        outfit_items,
+        body_type_score=bt_score,
+        proportion_score=prop_score,
+        neckline_score=neck_score,
+        complexion_score=comp_score,
+        flattery=flattery,
+        body_type=body_type or "none",
+        shoulders=shoulders or "none",
+        complexion=complexion or "none",
+        tags=",".join(tags) if tags else "none",
+    )
+
     return flattery, tags
 
 
@@ -1427,6 +1476,17 @@ def score_polish(
                 tags.extend(rule.get("engine_tags") or [])
                 break
 
+    _debug_print_score(
+        "polish",
+        outfit_items,
+        shoe_fit=shoe_score,
+        outerwear_fit=outer_score,
+        jewelry_fit=jewel_score,
+        accessory_balance=acc_score,
+        polish=polish,
+        tags=",".join(tags) if tags else "none",
+    )
+
     return polish, list(dict.fromkeys(tags))  # deduplicate while preserving order
 
 
@@ -1654,6 +1714,17 @@ def score_compatibility(items: List[Dict]) -> Tuple[float, Dict[str, str]]:
         "silhouette":   silhouette_tag,
         "pattern_note": "clean lines" if pattern_score >= 0.85 else "bold pattern mix",
     }
+    _debug_print_score(
+        "compatibility",
+        items,
+        pairwise_avg=pairwise_avg,
+        color_story_score=color_story_score,
+        silhouette_score=silhouette_score,
+        pattern_score=pattern_score,
+        compatibility=combined,
+        color_story=color_story_tag,
+        silhouette=silhouette_tag,
+    )
     return round(combined, 4), tags
 
 
@@ -1806,7 +1877,18 @@ def score_appropriateness_v2(items: List[Dict], occasion: Dict) -> Tuple[float, 
     # swimwear a clear +0.10 appropriateness advantage at beach events.
     combined = 0.50 * formality_score + 0.25 * season_score + 0.25 * venue_score
     combined = combined + beach_affinity_bonus * 0.50  # ← removed min(1.0) cap; multiplier raised 0.25→0.50
-    return round(combined, 4), label
+    combined = round(combined, 4)
+    _debug_print_score(
+        "appropriateness",
+        items,
+        formality_score=formality_score,
+        season_score=season_score,
+        venue_score=venue_score,
+        beach_affinity_bonus=beach_affinity_bonus,
+        appropriateness=combined,
+        label=label,
+    )
+    return combined, label
 
 
 def score_novelty(items: List[Dict], outfit_history_embeddings: List[List[float]]) -> float:
@@ -1830,7 +1912,14 @@ def score_novelty(items: List[Dict], outfit_history_embeddings: List[List[float]
     )
     # Normalize cosine similarity from [-1,1] → [0,1] then invert for novelty
     novelty = 1.0 - (max_sim + 1.0) / 2.0
-    return round(max(0.0, min(1.0, novelty)), 4)
+    novelty = round(max(0.0, min(1.0, novelty)), 4)
+    _debug_print_score(
+        "novelty",
+        items,
+        max_history_similarity=max_sim,
+        novelty=novelty,
+    )
+    return novelty
 
 
 def score_diversity_completeness(items: List[Dict], occasion: Dict) -> Tuple[float, str]:
@@ -1856,15 +1945,21 @@ def score_diversity_completeness(items: List[Dict], occasion: Dict) -> Tuple[flo
     is_beach = bool({"beach", "pool", "swim", "resort"} & event_tokens)
 
     if has_swim and is_beach and has_outer:
+        _debug_print_score("diversity", items, diversity=0.9, label="complete beach look")
         return 0.9, "complete beach look"
     if has_swim and is_beach:
+        _debug_print_score("diversity", items, diversity=0.82, label="complete swim look")
         return 0.82, "complete swim look"
     if core_complete and has_shoes and has_outer and event_formality >= 0.4:
+        _debug_print_score("diversity", items, diversity=0.95, label="complete layered look")
         return 0.95, "complete layered look"
     if core_complete and has_shoes:
+        _debug_print_score("diversity", items, diversity=0.85, label="complete look")
         return 0.85, "complete look"
     if core_complete and not has_shoes:
+        _debug_print_score("diversity", items, diversity=0.65, label="missing footwear")
         return 0.65, "missing footwear"
+    _debug_print_score("diversity", items, diversity=0.50, label="incomplete outfit")
     return 0.50, "incomplete outfit"
 
 
@@ -1957,7 +2052,14 @@ def score_risk_penalty(items: List[Dict], occasion: Dict) -> Tuple[float, str]:
 
     penalty = min(penalty, 0.50)
     label   = "; ".join(reasons) if reasons else "no significant risk"
-    return round(penalty, 4), label
+    penalty = round(penalty, 4)
+    _debug_print_score(
+        "risk_penalty",
+        items,
+        risk_penalty=penalty,
+        reasons=label,
+    )
+    return penalty, label
 
 
 def score_outfit_v2(
@@ -1975,6 +2077,15 @@ def score_outfit_v2(
 
     Returns (composite_score, score_breakdown) where score_breakdown contains
     per-component scores and human-readable tags used to seed the LLM explanation.
+
+    event_appropriate score (E) — multi-dimensional event alignment:
+      30% dress_code   — formality alignment vs event dress code
+      25% mood         — item signals vs stated style mood (elegant/romantic/bold/…)
+      20% time_of_day  — evening vs daytime item coding (hard veto when wrong)
+      15% weather      — fabric/coverage/footwear vs weather conditions
+      10% purpose      — occasion purpose fit (date night, dinner, party, work…)
+    Hard veto: dress_code < 0.40 OR (time specified AND time_of_day < 0.35) → score 0.0
+    See services/event_appropriate.py for full implementation.
 
     Preference score is a four-signal composite:
       25% combo-level feedback weight   (exact item combo reputation)
@@ -2000,15 +2111,18 @@ def score_outfit_v2(
     # C — Compatibility
     compat_score, compat_tags = score_compatibility(outfit_items)
 
-    # A — Appropriateness (v2 extended)
-    approp_score, approp_label = score_appropriateness_v2(outfit_items, occasion)
+    # E — Event Appropriate (multi-dimensional event alignment — replaces single-axis A)
+    from services.event_appropriate import score_event_appropriate
+    ea_score, ea_dim_scores, ea_label = score_event_appropriate(outfit_items, occasion)
 
     # N — Novelty (computed before P and T so both can use real novelty signal)
     novelty_score = score_novelty(outfit_items, outfit_history_embeddings or [])
 
     # P — Preference (four-signal composite)
     body_score     = score_body_type_fit(outfit_items, user_body_type)
-    attr_score     = score_attribute_match(outfit_items, occasion, compat_score, approp_score,
+    # Pass ea_score in place of approp_score so attr_score prediction uses
+    # the richer event alignment signal rather than old single-axis score.
+    attr_score     = score_attribute_match(outfit_items, occasion, compat_score, ea_score,
                                            novelty_score, attribute_prefs or {})
     centroid_score = score_user_style_centroid(outfit_items, user_style_centroid)
     pref_score     = round(
@@ -2026,7 +2140,7 @@ def score_outfit_v2(
     try:
         from services.trend_service import score_trend
         predicted_attrs = _predict_outfit_attrs(
-            outfit_items, occasion, compat_score, approp_score, novelty_score
+            outfit_items, occasion, compat_score, ea_score, novelty_score
         )
         item_colors = _item_colors(outfit_items)
         trend_score = score_trend(item_colors, predicted_attrs)
@@ -2043,36 +2157,67 @@ def score_outfit_v2(
     risk_penalty, risk_label = score_risk_penalty(outfit_items, occasion)
 
     composite = (
-        WEIGHTS_V2["compatibility"]   * compat_score
-        + WEIGHTS_V2["appropriateness"] * approp_score
-        + WEIGHTS_V2["preference"]      * pref_score
-        + WEIGHTS_V2["flattery"]        * flattery_score
-        + WEIGHTS_V2["trend"]           * trend_score
-        + WEIGHTS_V2["novelty"]         * novelty_score
-        + WEIGHTS_V2["diversity"]       * diversity_score
-        + WEIGHTS_V2["polish"]          * polish_score
-        - RISK_WEIGHT                   * risk_penalty
+        WEIGHTS_V2["compatibility"]     * compat_score
+        + WEIGHTS_V2["event_appropriate"] * ea_score
+        + WEIGHTS_V2["preference"]        * pref_score
+        + WEIGHTS_V2["flattery"]          * flattery_score
+        + WEIGHTS_V2["trend"]             * trend_score
+        + WEIGHTS_V2["novelty"]           * novelty_score
+        + WEIGHTS_V2["diversity"]         * diversity_score
+        + WEIGHTS_V2["polish"]            * polish_score
+        - RISK_WEIGHT                     * risk_penalty
     )
     composite = round(max(0.0, min(1.0, composite)), 4)
 
+    _debug_print_score(
+        "v2_preference",
+        outfit_items,
+        user_feedback_weight=user_feedback_weight,
+        body_type_fit=body_score,
+        attribute_match=attr_score,
+        style_centroid=centroid_score,
+        preference=pref_score,
+    )
+
+    _debug_print_score(
+        "v2_composite",
+        outfit_items,
+        compatibility=compat_score,
+        event_appropriate=ea_score,
+        ea_dress_code=ea_dim_scores.get("dress_code"),
+        ea_mood=ea_dim_scores.get("mood"),
+        ea_time_of_day=ea_dim_scores.get("time_of_day"),
+        ea_weather=ea_dim_scores.get("weather"),
+        ea_purpose=ea_dim_scores.get("purpose"),
+        preference=pref_score,
+        flattery=flattery_score,
+        trend=trend_score,
+        novelty=novelty_score,
+        diversity=diversity_score,
+        polish=polish_score,
+        risk_penalty=risk_penalty,
+        composite=composite,
+    )
+
     score_breakdown = {
-        "compatibility":   round(compat_score, 3),
-        "appropriateness": round(approp_score, 3),
-        "preference":      round(pref_score, 3),
-        "flattery":        round(flattery_score, 3),
-        "trend":           round(trend_score, 3),
-        "novelty":         round(novelty_score, 3),
-        "diversity":       round(diversity_score, 3),
-        "polish":          round(polish_score, 3),
-        "risk_penalty":    round(risk_penalty, 3),
-        "composite":       composite,
+        "compatibility":      round(compat_score, 3),
+        "event_appropriate":  round(ea_score, 3),
+        "event_dim_scores":   {k: round(v, 3) for k, v in ea_dim_scores.items()},
+        "preference":         round(pref_score, 3),
+        "flattery":           round(flattery_score, 3),
+        "trend":              round(trend_score, 3),
+        "novelty":            round(novelty_score, 3),
+        "diversity":          round(diversity_score, 3),
+        "polish":             round(polish_score, 3),
+        "risk_penalty":       round(risk_penalty, 3),
+        "composite":          composite,
         "tags": {
             **compat_tags,
-            "occasion":      approp_label,
-            "completeness":  diversity_label,
-            "risk":          risk_label,
+            "occasion":       ea_label,
+            "completeness":   diversity_label,
+            "risk":           risk_label,
             "flattery_rules": flattery_tags,
-            "polish_rules":  polish_tags,
+            "polish_rules":   polish_tags,
         },
     }
     return composite, score_breakdown
@@ -2100,25 +2245,70 @@ _LIGHT_OUTERWEAR  = {"blazer", "cardigan", "denim jacket", "bomber", "vest", "ca
 _HEAVY_OUTERWEAR  = {"coat", "puffer", "trench", "overcoat", "leather jacket", "parka"}
 _NEUTRAL_COLORS   = {"black", "white", "grey", "gray", "beige", "brown", "cream", "tan", "camel", "khaki", "ivory", "nude", "charcoal", "silver"}
 _TITLE_COLOR_WORDS = {
-    "black": "Noir",
-    "white": "Ivory",
-    "beige": "Sand",
-    "brown": "Mocha",
-    "pink": "Rose",
-    "red": "Rouge",
-    "blue": "Azure",
-    "navy": "Midnight",
-    "green": "Sage",
-    "grey": "Slate",
-    "gray": "Slate",
-    "yellow": "Honey",
-    "orange": "Amber",
-    "purple": "Plum",
-    "cream": "Cream",
-    "tan": "Tan",
-    "gold": "Gilded",
-    "silver": "Silver",
+    # Neutrals
+    "black":      "Noir",
+    "white":      "Ivory",
+    "ivory":      "Ivory",
+    "cream":      "Cream",
+    "beige":      "Sand",
+    "nude":       "Nude",
+    "tan":        "Tan",
+    "camel":      "Camel",
+    "khaki":      "Khaki",
+    "brown":      "Mocha",
+    "chocolate":  "Mocha",
+    "charcoal":   "Slate",
+    "grey":       "Slate",
+    "gray":       "Slate",
+    "silver":     "Silver",
+    # Warm
+    "red":        "Rouge",
+    "burgundy":   "Burgundy",
+    "wine":       "Burgundy",
+    "maroon":     "Burgundy",
+    "oxblood":    "Burgundy",
+    "coral":      "Coral",
+    "rust":       "Rust",
+    "terracotta": "Rust",
+    "orange":     "Amber",
+    "mustard":    "Honey",
+    "yellow":     "Honey",
+    "gold":       "Gilded",
+    "pink":       "Rose",
+    "blush":      "Blush",
+    "mauve":      "Mauve",
+    "dusty rose": "Blush",
+    "fuchsia":    "Fuchsia",
+    "hot pink":   "Fuchsia",
+    # Cool
+    "blue":       "Azure",
+    "cobalt":     "Azure",
+    "navy":       "Midnight",
+    "midnight":   "Midnight",
+    "electric blue": "Azure",
+    "teal":       "Teal",
+    "turquoise":  "Aqua",
+    "aqua":       "Aqua",
+    "mint":       "Mint",
+    "green":      "Sage",
+    "sage":       "Sage",
+    "olive":      "Olive",
+    "khaki green":"Olive",
+    "army green": "Olive",
+    "forest":     "Forest",
+    "forest green": "Forest",
+    "emerald":    "Emerald",
+    "lime":       "Lime",
+    "chartreuse": "Lime",
+    "lavender":   "Lavender",
+    "lilac":      "Lavender",
+    "purple":     "Plum",
+    "plum":       "Plum",
+    "indigo":     "Plum",
+    # Special
     "multicolor": "Mosaic",
+    "leopard":    "Wild",
+    "animal print": "Wild",
 }
 
 
@@ -2135,10 +2325,54 @@ def _item_colors(items: List[Dict[str, Any]]) -> List[str]:
 def _normalize_category_name(category: Any) -> str:
     raw = str(category or "").strip().lower()
     return {
-        "jumpsuit": "jumpsuits",
-        "romper": "jumpsuits",
-        "playsuit": "jumpsuits",
+        "jumpsuit":  "jumpsuits",
+        "romper":    "jumpsuits",
+        "playsuit":  "jumpsuits",
+        # Swimwear spelling / spacing variants the tagger or manual correction may produce
+        "swim wear": "swimwear",
+        "swim":      "swimwear",
+        "bathing suit": "swimwear",
+        "swimsuit":  "swimwear",
+        "bikini":    "swimwear",
+        "monokini":  "swimwear",
+        "tankini":   "swimwear",
     }.get(raw, raw)
+
+
+# Descriptor keys that are ONLY present on swimwear items (assigned by the LLM
+# describe_clothing call for swimwear category).  If an item carries either key
+# it is swimwear regardless of how the category field is stored.
+_SWIMWEAR_DESCRIPTOR_KEYS: Set[str] = {"swimwear_style", "coverage_level"}
+
+# item_type tokens that identify swimwear when the category field is unreliable
+_SWIMWEAR_ITYPE_TOKENS: Set[str] = {
+    "swimsuit", "bikini", "monokini", "tankini", "swimwear",
+    "swim dress", "one-piece swim", "swim top", "swim bottom",
+    "bathing suit", "rash guard", "swim shorts", "boardshorts",
+}
+
+
+def _is_swimwear_piece(item: Dict) -> bool:
+    """
+    True when the item is swimwear, using three independent signals so that
+    a miscategorised swimsuit (e.g. stored as 'tops' or 'set') is still caught.
+
+    Signal priority:
+      1. Normalised category field == "swimwear"
+      2. Descriptor contains a swimwear-only key (swimwear_style / coverage_level)
+         — these keys are ONLY written by the LLM for swimwear items.
+      3. item_type contains an explicit swimwear keyword.
+    """
+    cat = _normalize_category_name(item.get("category"))
+    if cat == "swimwear":
+        return True
+    desc = item.get("descriptors") or {}
+    if _SWIMWEAR_DESCRIPTOR_KEYS & set(desc.keys()):
+        return True
+    itype = (item.get("item_type") or "").lower()
+    if any(tok in itype for tok in _SWIMWEAR_ITYPE_TOKENS):
+        return True
+    return False
 
 
 def _is_finishing_category(category: Any) -> bool:
@@ -2315,20 +2549,43 @@ def _color_theory_label(raw_color_label: str, items: List[Dict]) -> str:
     return palette
 
 
-def _look_title(items: List[Dict], occasion: Dict, fit_check: str, color_theory: str) -> str:
-    colors = _item_colors(items)
-    unique_colors = list(dict.fromkeys(colors))
+_ACCESSORY_CATS = {"accessories", "accessory", "jewelry", "bag"}
+
+# All possible second-word choices for title deduplication fallback
+_TITLE_SECOND_WORDS = [
+    "Layering", "Poise", "Afterglow", "Power", "Contour",
+    "Motion", "Ease", "Structure", "Edit", "Moment", "Statement",
+]
+
+
+def _look_title(
+    items: List[Dict],
+    occasion: Dict,
+    fit_check: str,
+    color_theory: str,
+    used_titles: Optional[Set[str]] = None,
+) -> str:
+    # ── Dominant color: prefer core garment colors over accessories / bags ─────
+    # Accessories (ivory belt, beige bag) should not override the outfit's
+    # actual colour story, so we try core-garment colours first and fall back
+    # to the full item list only when no core colour maps to a title word.
+    core_items = [i for i in items if _normalize_category_name(i.get("category")) not in _ACCESSORY_CATS]
+    all_items_ordered = core_items + [i for i in items if i not in core_items]
+
+    core_colors = list(dict.fromkeys(_item_colors(core_items)))
+    all_colors  = list(dict.fromkeys(_item_colors(all_items_ordered)))
+
+    dominant = next((_TITLE_COLOR_WORDS[c] for c in core_colors if c in _TITLE_COLOR_WORDS), None)
+    if not dominant:
+        dominant = next((_TITLE_COLOR_WORDS[c] for c in all_colors if c in _TITLE_COLOR_WORDS), None)
+    if not dominant:
+        if "Contrast" in color_theory:   dominant = "Contrast"
+        elif "Neutral" in color_theory:  dominant = "Neutral"
+        else:                            dominant = "Curated"
+
+    # ── Second word based on outfit character ─────────────────────────────────
     categories = {_normalize_category_name(item.get("category")) for item in items}
     tokens = set(occasion.get("event_tokens") or []) | {str(occasion.get("occasion_type") or "").lower()}
-
-    dominant = next((_TITLE_COLOR_WORDS[color] for color in unique_colors if color in _TITLE_COLOR_WORDS), None)
-    if not dominant:
-        if "Contrast" in color_theory:
-            dominant = "Contrast"
-        elif "Neutral" in color_theory:
-            dominant = "Neutral"
-        else:
-            dominant = "Curated"
 
     if "outerwear" in categories and fit_check in {"Tailored", "Structured"}:
         second = "Layering"
@@ -2349,7 +2606,26 @@ def _look_title(items: List[Dict], occasion: Dict, fit_check: str, color_theory:
     else:
         second = "Edit"
 
-    return f"{dominant} {second}"
+    title = f"{dominant} {second}"
+
+    # ── Deduplication: try alternate second words when title is already used ──
+    if used_titles is not None and title in used_titles:
+        # Try secondary color from the palette as new dominant
+        for alt_color in core_colors + all_colors:
+            alt_word = _TITLE_COLOR_WORDS.get(alt_color)
+            if alt_word and alt_word != dominant:
+                candidate = f"{alt_word} {second}"
+                if candidate not in used_titles:
+                    return candidate
+        # Try alternate second words with original dominant
+        for alt_second in _TITLE_SECOND_WORDS:
+            if alt_second != second:
+                candidate = f"{dominant} {alt_second}"
+                if candidate not in used_titles:
+                    return candidate
+        # Ultimate fallback: keep original (rare edge case with tiny wardrobes)
+
+    return title
 
 
 def compute_look_title(items: List[Dict], occasion: Dict, fit_check: str, color_theory: str) -> str:
@@ -2446,6 +2722,7 @@ def _build_outfit_card(
     items:           List[Dict],
     occasion:        Dict,
     score_breakdown: Dict,
+    used_titles:     Optional[Set[str]] = None,
 ) -> Dict:
     """
     Build a structured at-a-glance outfit card from scorer outputs.
@@ -2464,9 +2741,13 @@ def _build_outfit_card(
     """
     tags    = score_breakdown.get("tags", {})
     compat  = score_breakdown.get("compatibility", 0.5)
-    approp  = score_breakdown.get("appropriateness", 0.5)
+    # event_appropriate replaces appropriateness as the primary occasion-fit signal
+    approp  = score_breakdown.get("event_appropriate",
+              score_breakdown.get("appropriateness", 0.5))
     novelty = score_breakdown.get("novelty", 0.5)
     risk_label = tags.get("risk", "no significant risk")
+    # event_fit_pct: rounded % of the multi-dim event alignment score (for UI badge)
+    event_fit_pct = round(approp * 100)
 
     raw_color_label  = tags.get("color_story", "mixed palette")
     silhouette_tag   = tags.get("silhouette",  "")
@@ -2507,7 +2788,7 @@ def _build_outfit_card(
 
     # ── 🌡️ Weather Sync ──────────────────────────────────────────────────────
     weather_sync = _weather_sync_label(approp, temp, setting, items)
-    look_title = _look_title(items, occasion, fit_check, color_theory)
+    look_title = _look_title(items, occasion, fit_check, color_theory, used_titles=used_titles)
 
     # ── Risk flag ─────────────────────────────────────────────────────────────
     risk_flag = None
@@ -2515,15 +2796,16 @@ def _build_outfit_card(
         risk_flag = risk_label
 
     return {
-        "trend_stars":  trend_stars,
-        "trend_label":  trend_label,
-        "look_title":   look_title,
-        "vibe":         vibe,
-        "color_theory": color_theory,
-        "fit_check":    fit_check,
-        "weather_sync": weather_sync,
-        "risk_flag":    risk_flag,
-        "verdict":      "",
+        "trend_stars":    trend_stars,
+        "trend_label":    trend_label,
+        "look_title":     look_title,
+        "vibe":           vibe,
+        "color_theory":   color_theory,
+        "fit_check":      fit_check,
+        "weather_sync":   weather_sync,
+        "risk_flag":      risk_flag,
+        "event_fit_pct":  event_fit_pct,   # multi-dim event alignment % (replaces match %)
+        "verdict":        "",
     }
 
 
@@ -2593,7 +2875,20 @@ def score_outfit(
         + WEIGHTS["coherence"]  * coherence_score
     )
 
-    return round(final, 4)
+    final = round(final, 4)
+    _debug_print_score(
+        "v1_finishing",
+        outfit_items,
+        color=color_score,
+        formality=formality_score,
+        season=season_score,
+        embedding=embedding_score,
+        preference=preference_score,
+        coherence=coherence_score,
+        final=final,
+    )
+
+    return final
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2685,8 +2980,40 @@ def filter_candidates(items: List[Dict], occasion: Dict) -> Dict[str, List[Dict]
     """
     Partition items into role buckets, filtering out items whose formality
     is more than 2× the tolerance band away from the event formality.
+
+    Weather hard gates (applied after formality gate):
+    ──────────────────────────────────────────────────
+    Hot / warm weather
+      → Heavy insulating outerwear (coat, puffer, trench, parka, shearling…)
+        is excluded from the outerwear bucket.  Light layers (blazer, cardigan,
+        denim jacket, bomber, vest, cape) remain.  Outerwear is optional in combo
+        assembly so an empty outerwear bucket never reduces displayable outfits.
+
+    Rainy weather
+      → Clearly impractical shoes (flat open sandals, slides, flip-flops and
+        suede/nubuck fabric shoes) are removed from the shoes bucket.
+        Safety valve: if every shoe in the wardrobe would be excluded the gate
+        is lifted entirely so the user still gets outfit suggestions (scoring
+        already penalises the impractical shoes heavily in that edge case).
     """
     event_formality = occasion.get("formality_level", 0.5)
+
+    # ── Weather signal parsing ─────────────────────────────────────────────────
+    _temp_ctx    = (occasion.get("temperature_context") or "").lower()
+    _rtj         = occasion.get("raw_text_json") or {}
+    _raw_weather = str(_rtj.get("weather") or "").lower() if _rtj else ""
+    _weather_txt = f"{_temp_ctx} {_raw_weather}".strip()
+
+    _is_hot   = any(w in _weather_txt for w in ("hot", "warm", "humid", "heat"))
+    _is_rainy = any(w in _weather_txt for w in ("rain", "rainy", "drizzle", "wet", "storm"))
+
+    # Heavy insulating outerwear that is impractical / uncomfortable at hot events.
+    # Light layers (blazer, cardigan, denim jacket, bomber, vest, cape, shrug) are
+    # intentionally absent — they remain valid candidates at warm temperatures.
+    _HOT_OUTER_EXCLUDE: Set[str] = {
+        "coat", "wool coat", "overcoat", "puffer", "parka",
+        "trench", "shearling", "anorak", "fur coat", "faux fur coat",
+    }
 
     buckets: Dict[str, List[Dict]] = {
         "tops":        [],
@@ -2712,8 +3039,12 @@ def filter_candidates(items: List[Dict], occasion: Dict) -> Dict[str, List[Dict]
 
         # Swimwear always qualifies at beach/pool — its near-zero formality score
         # should never gate-keep it when the occasion explicitly calls for it.
-        if is_beach_event and category == "swimwear":
-            buckets["swimwear"].append(item)
+        # _is_swimwear_piece() checks category, descriptors, AND item_type so a
+        # miscategorised swimsuit (stored as "tops" etc.) is still correctly routed.
+        if _is_swimwear_piece(item):
+            if is_beach_event:
+                buckets["swimwear"].append(item)
+            # else: silently dropped — swimwear never appears at non-beach events
             continue
 
         # Outerwear at beach is restricted to beach-appropriate pieces only
@@ -2728,8 +3059,53 @@ def filter_candidates(items: List[Dict], occasion: Dict) -> Dict[str, List[Dict]
         if formality_diff > FORMALITY_TOLERANCE * 2:
             continue  # too casual/formal for this event
 
+        # ── Hot-weather outerwear gate ─────────────────────────────────────────
+        # Exclude heavy insulating outerwear at warm/hot events.
+        # Applied AFTER the formality gate so only formality-eligible pieces are
+        # considered. Outerwear is optional in combo assembly — an empty bucket
+        # simply means outfits will be assembled without a layer.
+        if _is_hot and category == "outerwear":
+            _desc      = item.get("descriptors") or {}
+            _outer_type = (
+                _desc.get("outer_type") or _desc.get("outerwear_type") or
+                item.get("item_type") or ""
+            ).lower()
+            if any(h in _outer_type for h in _HOT_OUTER_EXCLUDE):
+                continue  # heavy insulating layer at a hot event — skip
+
         if category in buckets:
             buckets[category].append(item)
+
+    # ── Rainy-weather shoe gate (post-loop, with safety valve) ────────────────
+    # Flat open footwear and suede/nubuck shoes are impractical in rain.
+    # The gate is only applied when at least one weather-appropriate shoe survives;
+    # if the entire wardrobe is open-toe/suede the gate is lifted so combo
+    # assembly can still run (scoring already penalises these choices heavily).
+    if _is_rainy and buckets["shoes"]:
+        def _rain_shoe_fails(shoe: Dict) -> bool:
+            _desc      = shoe.get("descriptors") or {}
+            _shoe_type = (
+                _desc.get("shoe_type") or _desc.get("heel_type") or
+                shoe.get("item_type") or ""
+            ).lower()
+            _fabric    = (_desc.get("fabric_type") or _desc.get("fabric") or "").lower()
+            _heel_h    = (_desc.get("heel_height") or "").lower()
+
+            # Flat open-toe footwear: sandal/slide/flip only when NOT heeled
+            # (a heeled strappy sandal with ankle strap is borderline acceptable)
+            _is_open_flat = (
+                any(t in _shoe_type for t in ("flip", "slide"))
+                or (any(t in _shoe_type for t in ("sandal",)) and _heel_h in {"", "flat", "low"})
+            )
+            # Delicate / porous fabrics that are damaged by water
+            _is_rain_fabric = any(f in _fabric for f in ("suede", "nubuck", "velvet", "satin"))
+
+            return _is_open_flat or _is_rain_fabric
+
+        _rain_ok = [s for s in buckets["shoes"] if not _rain_shoe_fails(s)]
+        if _rain_ok:
+            buckets["shoes"] = _rain_ok
+        # else: safety valve — keep all shoes so outfits can still be assembled
 
     return buckets
 
@@ -2745,10 +3121,16 @@ def attach_accessories(
     user_body_type: Optional[str] = None,
     max_accessories: int = 2,
     forced_accessories: Optional[List[Dict]] = None,
+    exclude_ids: Optional[set] = None,
 ) -> List[Dict]:
     """
     Rule-based finishing-piece selection.
     Max 2 accessories/jewelry pieces, no two of the same subtype (e.g. two bags).
+
+    Args:
+        exclude_ids: Set of accessory IDs already used in previously-generated
+                     outfits.  Excluded candidates are moved to a fallback pool
+                     so they can still be selected when no fresh option exists.
     """
     forced_accessories = forced_accessories or []
     if not accessories and not forced_accessories:
@@ -2759,7 +3141,8 @@ def attach_accessories(
     if is_minimal_direction:
         max_accessories = min(max_accessories, 1)
 
-    forced_ids = {str(acc.get("id")) for acc in forced_accessories if acc.get("id")}
+    forced_ids  = {str(acc.get("id")) for acc in forced_accessories if acc.get("id")}
+    exclude_ids = exclude_ids or set()
 
     def _is_statement_finishing_piece(item: Dict) -> bool:
         desc = item.get("descriptors") or {}
@@ -2787,16 +3170,46 @@ def attach_accessories(
         selected.append(acc)
         used_subtypes[subtype] = used_subtypes.get(subtype, 0) + 1
 
-    scored = [
-        (
-            score_outfit(core_outfit + [acc], occasion, user_body_type=user_body_type)
-            - (0.18 if is_minimal_direction and _is_statement_finishing_piece(acc) else 0.0),
-            acc,
-        )
-        for acc in accessories
-        if str(acc.get("id")) not in forced_ids
-    ]
-    scored.sort(key=lambda x: x[0], reverse=True)
+    # ── Event-aware accessory scoring ─────────────────────────────────────────
+    # Blend V1 outfit score (color harmony + formality + embedding) with a
+    # 30% bonus from event_appropriate so accessories align with event mood/time.
+    # A minimum event_appropriate floor of 0.38 acts as a soft veto — severely
+    # misaligned accessories (wrong formality or mood) are moved to fallback.
+    from services.event_appropriate import score_event_appropriate as _ea_score
+
+    def _score_accessory(acc: Dict) -> float:
+        v1 = score_outfit(core_outfit + [acc], occasion, user_body_type=user_body_type)
+        statement_penalty = 0.18 if is_minimal_direction and _is_statement_finishing_piece(acc) else 0.0
+        ea, _, _ = _ea_score([acc], occasion)
+        # ea applied as a 30% bonus; floor veto handled by caller splitting fresh/fallback
+        return round(v1 * 0.70 + ea * 0.30 - statement_penalty, 4)
+
+    # Partition candidates into fresh (not used in prior outfits) and fallback
+    fresh_candidates:    List[Dict] = []
+    fallback_candidates: List[Dict] = []
+    for acc in accessories:
+        acc_id = str(acc.get("id"))
+        if acc_id in forced_ids:
+            continue
+        ea, _, _ = _ea_score([acc], occasion)
+        # Hard event-alignment floor: accessories below 0.38 are only used as
+        # absolute last resort (no other option exists for that subtype)
+        if ea < 0.38:
+            fallback_candidates.append(acc)
+        elif acc_id in exclude_ids:
+            fallback_candidates.append(acc)   # prefer fresh accessories per outfit
+        else:
+            fresh_candidates.append(acc)
+
+    scored_fresh    = sorted(
+        [(_score_accessory(a), a) for a in fresh_candidates],
+        key=lambda x: x[0], reverse=True,
+    )
+    scored_fallback = sorted(
+        [(_score_accessory(a), a) for a in fallback_candidates],
+        key=lambda x: x[0], reverse=True,
+    )
+    scored = scored_fresh + scored_fallback
 
     for _, acc in scored:
         if len(selected) >= max_accessories:
@@ -3020,6 +3433,15 @@ def generate_outfit_suggestions(
                 user_style_centroid=user_style_centroid,
                 user_profile=user_profile,
             )
+            _debug_print_score(
+                "candidate_core",
+                c,
+                template=_tname,
+                is_seen=is_seen,
+                feedback_weight=fw,
+                score=score,
+                composite=breakdown.get("composite", score),
+            )
             entry = (score, c, breakdown)
             if is_seen:
                 seen_scored_combos.append(entry)
@@ -3030,9 +3452,35 @@ def generate_outfit_suggestions(
         fresh_scored_combos.sort(key=lambda x: x[0], reverse=True)
         seen_scored_combos.sort(key=lambda x: x[0], reverse=True)
         if fresh_scored_combos:
+            _best_score, _best_items, _best_breakdown = fresh_scored_combos[0]
+            _debug_print_score(
+                "template_best",
+                _best_items,
+                template=_tname,
+                freshness="fresh",
+                composite=_best_breakdown.get("composite", _best_score),
+                event_appropriate=_best_breakdown.get("event_appropriate", 0.0),
+                preference=_best_breakdown.get("preference", 0.0),
+                flattery=_best_breakdown.get("flattery", 0.0),
+                polish=_best_breakdown.get("polish", 0.0),
+                risk_penalty=_best_breakdown.get("risk_penalty", 0.0),
+            )
             fresh_best_per_template.append(fresh_scored_combos[0])
             fresh_overflow.extend(fresh_scored_combos[1:])
         elif seen_scored_combos:
+            _best_score, _best_items, _best_breakdown = seen_scored_combos[0]
+            _debug_print_score(
+                "template_best",
+                _best_items,
+                template=_tname,
+                freshness="seen",
+                composite=_best_breakdown.get("composite", _best_score),
+                event_appropriate=_best_breakdown.get("event_appropriate", 0.0),
+                preference=_best_breakdown.get("preference", 0.0),
+                flattery=_best_breakdown.get("flattery", 0.0),
+                polish=_best_breakdown.get("polish", 0.0),
+                risk_penalty=_best_breakdown.get("risk_penalty", 0.0),
+            )
             seen_best_per_template.append(seen_scored_combos[0])
             seen_overflow.extend(seen_scored_combos[1:])
 
@@ -3053,6 +3501,99 @@ def generate_outfit_suggestions(
                 break
             top_cores.append(entry)
 
+    # ── Structural deduplication ─────────────────────────────────────────────────
+    # Business rule: two outfits are the SAME look if they share identical
+    # garments + outerwear + shoes, regardless of accessory differences.
+    #
+    # "Structural" items = the pieces that define the silhouette and color story:
+    #   garments  → tops, bottoms, dresses, jumpsuits, set, swimwear
+    #   outerwear → outerwear
+    #   footwear  → shoes
+    #
+    # Accessories (jewelry, bags) are finishing touches — they are attached AFTER
+    # core selection and must NOT produce what feels like a duplicate suggestion.
+    #
+    # After dedup, if we're below top_n, fill from the scored overflow pool.
+    _STRUCTURAL_CATS = {
+        "tops", "bottoms", "dresses", "jumpsuits", "set", "swimwear",
+        "outerwear", "shoes",
+    }
+
+    def _structural_fp(items: List[Dict]) -> frozenset:
+        return frozenset(
+            str(i.get("id"))
+            for i in items
+            if _normalize_category_name(i.get("category")) in _STRUCTURAL_CATS
+        )
+
+    _seen_structural_fps: set = set()
+    _deduped_cores: List = []
+    for _entry in top_cores:
+        _fp = _structural_fp(_entry[1])
+        if _fp not in _seen_structural_fps:
+            _seen_structural_fps.add(_fp)
+            _deduped_cores.append(_entry)
+
+    # Refill from overflow when dedup removed duplicates
+    if len(_deduped_cores) < top_n:
+        _all_overflow_pool = sorted(
+            fresh_overflow + seen_overflow,
+            key=lambda e: e[0], reverse=True,
+        )
+        for _entry in _all_overflow_pool:
+            if len(_deduped_cores) >= top_n:
+                break
+            _fp = _structural_fp(_entry[1])
+            if _fp not in _seen_structural_fps:
+                _seen_structural_fps.add(_fp)
+                _deduped_cores.append(_entry)
+
+    top_cores = _deduped_cores
+
+    # ── Outerwear cross-look diversity ───────────────────────────────────────────
+    # When every selected outfit includes the SAME single outerwear piece,
+    # the moodboard looks uniform (same jacket 3× = same color story, same title).
+    # If the full pool contains lower-scoring alternatives without that outerwear,
+    # swap the lowest-ranked outfit with the best no-outerwear variant so at
+    # least one look shows the garments without the jacket.
+    #
+    # Guard: only apply when there is exactly 1 unique outerwear item across all
+    # top outfits (i.e. it IS a single-jacket wardrobe situation, not a mismatch).
+    # Never applied to swimwear looks.
+    if len(top_cores) >= 2:
+        _outer_ids_in_top = set()
+        for _, _tc_items, _ in top_cores:
+            for _tc_item in _tc_items:
+                if _normalize_category_name(_tc_item.get("category")) == "outerwear":
+                    _outer_ids_in_top.add(str(_tc_item.get("id")))
+
+        # Only apply the diversity swap when EVERY outfit has outerwear AND they all
+        # share the exact same single jacket.  If any outfit already has no outerwear
+        # the set size is still 1 but the "problem" is already solved — skip to avoid
+        # replacing a structurally-unique no-jacket look with another that may be
+        # identical to an existing top outfit.
+        _all_have_outer = all(
+            any(_normalize_category_name(i.get("category")) == "outerwear" for i in _tc_items)
+            for _, _tc_items, _ in top_cores
+        )
+        if len(_outer_ids_in_top) == 1 and _all_have_outer:
+            _repeated_outer_id = next(iter(_outer_ids_in_top))
+            # Find best scored combo that does NOT include the repeated outerwear
+            _alt_pool = sorted(
+                fresh_best_per_template + fresh_overflow,
+                key=lambda e: e[0], reverse=True,
+            )
+            _no_outer_alt = next(
+                (entry for entry in _alt_pool
+                 if not any(str(i.get("id")) == _repeated_outer_id
+                            for i in entry[1])),
+                None,
+            )
+            if _no_outer_alt is not None:
+                # Replace the lowest-scoring top outfit with the no-outerwear alternative
+                # (keeps the best 2 looks intact)
+                top_cores[-1] = _no_outer_alt
+
     # ── Beach/pool swimwear prioritisation ────────────────────────────────────────
     # At beach occasions the appropriateness cap (1.0) makes swimwear tie with
     # other casual outfits, so pure score-ranking alone does not guarantee
@@ -3067,7 +3608,7 @@ def generate_outfit_suggestions(
     _has_beach_occ = bool(_BEACH_OCC_TOKENS & set(occasion.get("event_tokens") or []))
     if _has_beach_occ and swimwear_list:
         def _combo_has_swimwear(combo_items: List[Dict]) -> bool:
-            return any((i.get("category") or "").lower() == "swimwear" for i in combo_items)
+            return any(_is_swimwear_piece(i) for i in combo_items)
 
         _full_pool = fresh_best_per_template + fresh_overflow
         _sw_pool   = sorted(
@@ -3096,10 +3637,32 @@ def generate_outfit_suggestions(
         if _deduped_sw:
             top_cores = (_deduped_sw + _deduped_non_sw)[:top_n]
 
+    # ── Final structural dedup safety net ────────────────────────────────────
+    # The outerwear-diversity and swimwear-prioritisation blocks can introduce
+    # structural duplicates after the first dedup pass.  Run a second pass here
+    # so no two structurally identical core outfits ever reach the user, regardless
+    # of what the special-case blocks did.
+    _final_seen_fps: set = set()
+    _final_deduped: List = []
+    for _entry in top_cores:
+        _fp = _structural_fp(_entry[1])
+        if _fp not in _final_seen_fps:
+            _final_seen_fps.add(_fp)
+            _final_deduped.append(_entry)
+    top_cores = _final_deduped
+
     # ── Detect exhaustion: true only when no fresh combos remain ──────────
     all_seen = not fresh_available
 
     # ── Assemble final suggestions ────────────────────────────────────────
+    # Track which accessory IDs have already been used so each outfit gets
+    # fresh finishing pieces where possible (cross-outfit diversity).
+    # Also track generated look_titles so each outfit in this response gets
+    # a unique name — prevents "Ivory Layering × 3" when multiple outfits
+    # share the same dominant colour and outerwear structure.
+    _used_accessory_ids: set = set()
+    _used_look_titles:   Set[str] = set()
+
     suggestions = []
     for outfit_score, core_items, score_breakdown in top_cores:
         selected_accessories = attach_accessories(
@@ -3108,10 +3671,29 @@ def generate_outfit_suggestions(
             occasion,
             user_body_type=user_body_type,
             forced_accessories=forced_accessories,
+            exclude_ids=_used_accessory_ids,
         )
+        # Register selected accessory IDs so subsequent outfits avoid repeats
+        for _acc in selected_accessories:
+            _used_accessory_ids.add(str(_acc.get("id")))
 
         all_items = core_items + selected_accessories
-        card      = _build_outfit_card(all_items, occasion, score_breakdown)
+        card      = _build_outfit_card(all_items, occasion, score_breakdown,
+                                       used_titles=_used_look_titles)
+        _used_look_titles.add(card.get("look_title", ""))
+        _debug_print_score(
+            "selected_outfit",
+            all_items,
+            composite=score_breakdown.get("composite", outfit_score),
+            event_appropriate=score_breakdown.get("event_appropriate", 0.0),
+            preference=score_breakdown.get("preference", 0.0),
+            flattery=score_breakdown.get("flattery", 0.0),
+            trend=score_breakdown.get("trend", 0.0),
+            polish=score_breakdown.get("polish", 0.0),
+            risk_penalty=score_breakdown.get("risk_penalty", 0.0),
+            accessory_count=len(selected_accessories),
+            final_item_count=len(all_items),
+        )
 
         is_seen = frozenset(str(i["id"]) for i in core_items) in seen_sets
         suggestion = {

@@ -90,36 +90,22 @@ function PreferenceRail({
       </p>
 
       {rows.length > 0 ? (
-        <div style={{ display: "grid", gap: "10px", marginTop: "14px" }}>
-          {rows.slice(0, 4).map((row) => (
-            <div
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "14px" }}>
+          {rows.slice(0, 8).map((row) => (
+            <span
               key={row.style_id}
               style={{
-                padding: "12px 14px",
-                borderRadius: "18px",
-                background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(255,255,255,0.06)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: "12px",
+                fontSize: "10px",
+                padding: "2px 8px",
+                borderRadius: "20px",
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                color: "var(--muted)",
+                textTransform: "capitalize",
               }}
             >
-              <div>
-                <p style={{ margin: 0, color: "#FFF7ED", fontSize: "14px", fontWeight: 600 }}>{row.label}</p>
-                <p style={{ margin: "4px 0 0", color: "rgba(255,247,237,0.68)", fontSize: "12px" }}>
-                  {titleCase(row.dimension)} · {titleCase(row.status)}
-                </p>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <p style={{ margin: 0, color: "var(--gold)", fontSize: "13px", fontWeight: 700 }}>
-                  {Math.round((row.score + 1) * 50)}%
-                </p>
-                <p style={{ margin: "4px 0 0", color: "rgba(255,247,237,0.68)", fontSize: "12px" }}>
-                  {row.exposure_count} sees
-                </p>
-              </div>
-            </div>
+              {row.label}
+            </span>
           ))}
         </div>
       ) : (

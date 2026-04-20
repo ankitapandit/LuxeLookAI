@@ -105,7 +105,7 @@ def discover_interaction(
             detail="You have reached your daily quota, please come back tomorrow for more inspiring ideas.",
         )
 
-    interaction = record_discover_interaction(user_id, payload.model_dump())
+    interaction = record_discover_interaction(user_id, payload.model_dump(), timezone_name=timezone_name)
     total_interactions = count_discover_interactions(user_id)
     daily_interactions = count_discover_interactions_for_day(user_id, timezone_name)
     summary = None

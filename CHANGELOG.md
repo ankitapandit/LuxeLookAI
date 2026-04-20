@@ -30,8 +30,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | 2.3.0   | 2026-04-09 | Discover taste-learning, Style Item workflow, jumpsuits taxonomy, and current data-model documentation                      |
 | 2.4.0   | 2026-04-12 | Beach-aware scoring, structured event briefs, Discover preference reliability, and wardrobe taxonomy cleanup                |
 | 2.4.1   | 2026-04-14 | Style-direction moodboards, event-token completeness, guide page, scenario testing, and UX reliability polish              |
+| 2.4.2   | 2026-04-20 | Recommendation hardening, Discover repetition control, page-visit logging, and labeling/naming consistency                 |
 
 ---
+
+## [2.4.2] - 2026-04-20
+
+### Added
+- **First-party page-visit logging** — added a lightweight `user_page_visits` model and `/activity` route flow so route-level page entry/exit can be recorded without introducing clickstream-style tracking.
+- **Discover family-memory state** — added `discover_user_state` and `discover_family_memory` support so Discover can remember recently shown style families, enforce cooldowns, and avoid hammering the user with the same visual type across active Discover days.
+- **Scenario route alias** — added `/event-scenarios` as a short alias to the isolated `/test/event-scenarios` harness.
+
+### Changed
+- **Discover likes/dislikes rails** — removed percentages and `sees` counts from the preference rails and switched them to descriptor-style pills that match the wardrobe vocabulary display.
+- **Discover family grouping** — family keys are now broader and more stable, using stronger style signals and short recent-history spacing to keep visually similar cards from reappearing back-to-back.
+- **Wardrobe display naming** — wardrobe, Style Item, and moodboard labels now use a shared category-aware naming helper (`color + up to two descriptors + noun`) instead of generic `Category - Color` labels.
+- **Category-aware noun cleanup** — `jumpsuits` now end in `Jumpsuit`, swimwear prefers `swimwear_style` nouns like `Bikini` / `One Piece` and falls back to `Swimsuit`, and bottoms now singularize to `Bottom` while shoes remain plural.
+- **Office-formality label split** — wardrobe item formality now distinguishes `Business Casual` from `Business Formal` instead of collapsing both into one mid-tier office bucket.
+- **Formality label presentation** — active wardrobe/tagging UI now uses consistent title-cased dress-code labels (`Smart Casual`, `Business Casual`, `Business Formal`, `Black Tie`) while backend mappings still accept older casing safely.
+- **Auth landing default** — the unauthenticated landing page now defaults to `Get started` / sign-up, while cached authenticated users still restore directly into the app.
+
+### Fixed
+- **Page refresh noise in visit logging** — same-page refreshes now continue the active visit row instead of opening duplicate page-visit entries; only page changes close one row and start the next.
+- **Discover repetition drift** — family-key tuning and recent-family spacing now reduce repeated same-type Discover cards that previously slipped through slightly different tag combinations.
+- **Item naming ambiguity** — multiple wardrobe surfaces now render more specific item names, reducing confusion between visually similar items such as dresses, jumpsuits, and swimwear pieces.
+
+### Docs
+- **Documentation refreshed for current platform behavior** — changelog, README, and architecture docs now include page-visit logging, Discover family-memory/cooldown behavior, the newer recommendation hardening, and current naming/formality conventions.
 
 ## [2.4.1] - 2026-04-14
 
@@ -48,6 +73,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Beyond Your Wardrobe placement in the tester** — the scenario test page now renders style-direction content below the wardrobe suggestions and uses the same visual moodboard treatment as the main Event page.
 - **Guide page layout** — the wardrobe reference section now uses flatter horizontal boards and scrollable descriptor rails, while the descriptor illustrations use consistent fixed-size tiles.
 - **Guide iconography** — neckline, fit, and length illustrations were iterated toward a clearer human-figure metaphor, with `length` now using a standing figure plus side-arrow only.
+- **Evening/daytime gating in event appropriateness** — `backend/services/event_appropriate.py` now uses a narrower `_SUMMERY_COLORS` set, a narrower `_SUMMERY_TOKENS` set, a two-factor summery-color signal in `_is_evening_item()`, and a core-garment cap in `_score_dim_time_of_day()` so statement evening items stop being over-flagged as daytime while clearly daytime-coded core garments still veto evening candidacy.
+- **Recommendation engine weather + dedup hardening** — `backend/services/recommender.py` now uses unified three-signal swimwear detection, candidate-pool weather gates for hot/rainy conditions, an `_all_have_outer` guard before no-jacket diversity swaps, a second structural dedup pass after post-processing, and stronger title deduplication with expanded core-garment color extraction and alternate second-word generation.
 
 ### Fixed
 - **Shoe recommendation heel detection** — `_shoe_signals()` now checks the full concatenated shoe profile instead of only `shoe_type`, catching labels like `strappy heels` when the heel cue lives in `item_type`.
@@ -57,6 +84,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **`None of these looks` rating path** — the outfit rating constraint now allows `0` as a valid rating so the skip / reject flow no longer trips the `outfit_suggestions_user_rating_check`.
 - **Form reset behavior** — the shared structured brief editor’s reset action now clears generated results too, returning Event and Style Item flows to their initial state instead of only wiping the inputs.
 - **Guide page rail overflow** — wardrobe reference rows now scroll inside bounded containers instead of stretching the page width.
+- **Evening rooftop / statement-color misclassification** — lime/neon or airy-token logic no longer incorrectly rescues or disqualifies evening looks through broad summer-color heuristics or outerwear averaging.
+- **Swimwear appearing in non-swim contexts** — swimwear detection now survives inconsistent stored categories by looking at normalized category values, swimwear-only descriptor keys, and explicit swimwear item-type keywords.
+- **Duplicate look titles and structural twins** — accessory colors no longer dominate look titles, duplicate titles are retried against a broader palette/word bank, and post-processing can no longer quietly reintroduce structurally identical outfits.
 
 ### Docs
 - **Guide + scenario docs surfaced** — changelog and README now document the new `/guide` page, the `/test/event-scenarios` harness, and the style-direction image enrichment pipeline.

@@ -11,8 +11,9 @@ type AtlasItem = {
 
 const DRESS_CODE_STEPS = [
   { label: "Casual", cue: "easy, practical, everyday" },
-  { label: "Business Casual", cue: "work-ready, polished comfort" },
   { label: "Smart Casual", cue: "elevated but relaxed" },
+  { label: "Business Casual", cue: "work-ready, polished comfort" },
+  { label: "Business Formal", cue: "structured, office-professional, sharp" },
   { label: "Cocktail", cue: "dressy, social, after-dark" },
   { label: "Black Tie", cue: "formal, refined, highest polish" },
 ];
@@ -559,15 +560,37 @@ export default function GuidePage() {
                   </div>
                   <div style={{ display: "grid", gap: "10px", gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
                     {[
-                      { label: "Oval", shape: "ellipse(18px 24px at 50% 50%)" },
-                      { label: "Round", shape: "circle(20px at 50% 50%)" },
-                      { label: "Square", shape: "inset(10px round 8px)" },
-                      { label: "Heart", shape: "polygon(50% 100%, 12% 38%, 26% 6%, 74% 6%, 88% 38%)" },
-                      { label: "Diamond", shape: "polygon(50% 0, 85% 35%, 50% 100%, 15% 35%)" },
-                      { label: "Oblong", shape: "ellipse(16px 26px at 50% 50%)" },
+                      {
+                        label: "Oval",
+                        svg: <path d="M24 11c10 0 16 8 16 21c0 14-7 24-16 24s-16-10-16-24c0-13 6-21 16-21z" />,
+                      },
+                      {
+                        label: "Round",
+                        svg: <path d="M24 13c9 0 15 7 15 18s-6 19-15 19S9 42 9 31s6-18 15-18z" />,
+                      },
+                      {
+                        label: "Square",
+                        svg: <path d="M16 14c2-2 5-3 8-3s6 1 8 3c3 3 4 8 4 15c0 6-1 11-3 16c-2 6-6 10-12 10s-10-4-12-10c-2-5-3-10-3-16c0-7 1-12 4-15c2-2 5-3 8-3z" />,
+                      },
+                      {
+                        label: "Heart",
+                        svg: <path d="M24 10c10 0 17 7 17 15c0 5-2 10-5 15c-3 5-7 11-12 17c-5-6-9-12-12-17c-3-5-5-10-5-15c0-8 7-15 17-15z" />,
+                      },
+                      {
+                        label: "Diamond",
+                        svg: <path d="M24 11c6 0 11 4 14 10c2 4 3 8 3 12s-1 8-3 12c-3 7-8 12-14 12s-11-5-14-12c-2-4-3-8-3-12s1-8 3-12c3-6 8-10 14-10z" />,
+                      },
+                      {
+                        label: "Oblong",
+                        svg: <path d="M24 8c8 0 14 7 14 21c0 16-6 28-14 28S10 45 10 29c0-14 6-21 14-21z" />,
+                      },
                     ].map((face) => (
                       <div key={face.label} style={{ display: "grid", gap: "8px", justifyItems: "center", padding: "10px", borderRadius: "14px", background: "rgba(255,255,255,0.03)" }}>
-                        <div style={{ width: "48px", height: "58px", background: "rgba(232,196,138,0.88)", clipPath: face.shape }} />
+                        <svg viewBox="0 0 48 64" style={{ width: "48px", height: "58px" }} aria-hidden="true">
+                          <g fill="rgba(232,196,138,0.88)">
+                            {face.svg}
+                          </g>
+                        </svg>
                         <span className="type-micro" style={{ color: "var(--muted)" }}>{face.label}</span>
                       </div>
                     ))}

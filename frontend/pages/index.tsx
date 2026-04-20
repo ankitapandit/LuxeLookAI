@@ -8,11 +8,12 @@ import { useRouter } from "next/router";
 import { useAuth } from "@/hooks/useAuth";
 import { Sparkles } from "lucide-react";
 import Head from "next/head";
+import logo from "../assets/logo.png";
 
 export default function Home() {
   const router              = useRouter();
   const { login, signup, isAuthenticated, loading: authLoading } = useAuth();
-  const [mode, setMode]     = useState<"login" | "signup">("login");
+  const [mode, setMode]     = useState<"login" | "signup">("signup");
   const [email, setEmail]   = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading]   = useState(false);
@@ -70,7 +71,8 @@ export default function Home() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "40px" }}>
-            <Sparkles size={28} color="var(--gold)" />
+            {/*<Sparkles size={28} color="var(--gold)" />*/}
+            <img src={logo.src} alt="LuxeLook AI" className="h-20 w-20" />
             <span
               style={{
                 fontFamily: "Playfair Display, serif",

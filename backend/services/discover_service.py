@@ -19,12 +19,21 @@ from services.discover_candidates import (
     seed_discover_candidates,
 )
 from services.style_learning import (
+    build_discover_family_signature,
     build_profile_style_seed,
+    can_reinforce_discover_family,
     count_discover_interactions,
     count_discover_interactions_for_day,
     DAILY_DISCOVER_LIMIT,
+    DISCOVER_STRICT_REPEAT_GAP,
+    get_recent_discover_family_keys,
     load_ignored_urls,
+    load_discover_family_memory_map,
     load_or_refresh_style_preferences,
+    mark_discover_family_served,
+    record_recent_discover_families,
+    should_suppress_discover_family,
+    touch_discover_user_state,
 )
 from utils.auth import get_current_user_id  # noqa: F401  # imported for router docs
 
@@ -98,6 +107,10 @@ def build_discover_feed(user_id: str, limit: int = 6, timezone_name: Optional[st
     seed_context = get_discover_seed_context(user_id)
     style_seed = seed_context["style_seed"]
     query = seed_context["seed_query"]
+    user_state = touch_discover_user_state(user_id, timezone_name)
+    active_day_number = int(user_state.get("active_day_number") or 1)
+    day_key = str(user_state.get("last_active_day_key") or "")
+    family_memory = load_discover_family_memory_map(user_id)
     try:
         ignore_urls = set(load_ignored_urls(user_id))
     except RemoteProtocolError:
@@ -115,9 +128,51 @@ def build_discover_feed(user_id: str, limit: int = 6, timezone_name: Optional[st
         from utils.db import reset_supabase_client
         reset_supabase_client()
         ready_rows = load_ready_discover_candidates(user_id, exclude_urls=ignore_urls)
-    for row in ready_rows[:limit]:
+    recent_family_keys = get_recent_discover_family_keys(user_state)
+    strict_recent_family_keys = set(recent_family_keys[:DISCOVER_STRICT_REPEAT_GAP])
+    selected_family_keys: set[str] = set()
+    served_families: List[tuple[str, str]] = []
+    candidate_pool: List[tuple[int, dict, dict, str, str]] = []
+    fallback_pool: List[tuple[int, dict, dict, str, str]] = []
+
+    for row in ready_rows:
         card = build_card_from_candidate(row)
+        family_key, family_label, _ = build_discover_family_signature(card.get("style_ids") or [], card.get("style_tags") or [])
+        memory = family_memory.get(family_key) if family_key else None
+        if family_key:
+            if family_key in selected_family_keys:
+                continue
+            if should_suppress_discover_family(memory, active_day_number):
+                continue
+            reinforcement = can_reinforce_discover_family(memory, active_day_number)
+            if family_key in strict_recent_family_keys and not reinforcement:
+                fallback_pool.append((3, row, card, family_key, family_label))
+                continue
+
+            if reinforcement:
+                rank = 0
+            elif family_key in recent_family_keys:
+                rank = 2
+            else:
+                rank = 1
+            candidate_pool.append((rank, row, card, family_key, family_label))
+            continue
+
+        candidate_pool.append((1, row, card, family_key, family_label))
+
+    ordered_candidates = sorted(candidate_pool, key=lambda entry: entry[0]) + fallback_pool
+    for _, _, card, family_key, family_label in ordered_candidates:
         cards.append(card)
+        if family_key:
+            selected_family_keys.add(family_key)
+            served_families.append((family_key, family_label))
+        if len(cards) >= limit:
+            break
+
+    for family_key, family_label in served_families:
+        mark_discover_family_served(user_id, family_key, family_label, active_day_number, day_key)
+    if served_families:
+        user_state = record_recent_discover_families(user_state, [family_key for family_key, _ in served_families])
 
     if len(cards) < limit:
         from services.discover_jobs import enqueue_seed_candidates_job

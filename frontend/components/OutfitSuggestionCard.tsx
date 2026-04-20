@@ -24,7 +24,6 @@ function getOutfitTitle(suggestion: OutfitSuggestion, wardrobeMap: Record<string
 
 export default function OutfitSuggestionCard({
   suggestion,
-  rank,
   wardrobeMap,
   onRate,
   compact = false,
@@ -33,7 +32,6 @@ export default function OutfitSuggestionCard({
   moodboardVariant = "editorial",
 }: {
   suggestion: OutfitSuggestion;
-  rank: number;
   wardrobeMap: Record<string, ClothingItem>;
   onRate: (rating: number) => void;
   compact?: boolean;
@@ -72,8 +70,6 @@ export default function OutfitSuggestionCard({
             items={items}
             card={suggestion.card}
             title={title}
-            eyebrow={`Look #${rank}`}
-            scoreLabel={`${Math.round(suggestion.score * 100)}% match`}
             compact={compact}
             imageMode={imageMode}
             variant={moodboardVariant}

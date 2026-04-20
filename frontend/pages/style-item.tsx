@@ -25,6 +25,7 @@ import {
   rateOutfit,
   StyleDirectionData,
 } from "@/services/api";
+import { getDisplayColorName, getItemDisplayName, getItemDisplaySummary } from "@/utils/itemDisplay";
 import { ChevronDown, Search, Sparkles, RefreshCw, ShirtIcon, ArrowRight } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -62,35 +63,12 @@ function getCarouselImageSrc(item: ClothingItem): string {
   return item.thumbnail_url || item.image_url || item.cutout_url || "";
 }
 
-function getSubtypeLabel(item: ClothingItem): string | null {
-  const descriptors = item.descriptors || {};
-
-  if (item.category === "accessories") {
-    const accessoryType = descriptors.accessory_type?.trim();
-    if (accessoryType) return titleCase(accessoryType);
-  }
-
-  if (item.category === "jewelry") {
-    const jewelryType = descriptors.jewelry_type?.trim();
-    if (jewelryType) return titleCase(jewelryType);
-  }
-
-  const subtype = item.accessory_subtype?.trim();
-  return subtype ? titleCase(subtype) : null;
-}
-
 function getItemTitle(item: ClothingItem): string {
-  const subtypeLabel = getSubtypeLabel(item);
-  if (subtypeLabel) return subtypeLabel;
-  if (item.item_type && !["core_garment", "footwear", "outerwear", "accessory"].includes(item.item_type)) {
-    return titleCase(item.item_type);
-  }
-  return titleCase(item.category);
+  return getItemDisplayName(item);
 }
 
 function getItemSummary(item: ClothingItem): string {
-  const parts = [item.category, item.color, item.season].filter(Boolean);
-  return parts.map((part) => titleCase(String(part))).join(" · ");
+  return getItemDisplaySummary(item);
 }
 
 
@@ -481,7 +459,7 @@ export default function StyleItemPage() {
                     </span>
                     {selectedItem.color ? (
                       <span className="type-chip" style={{ background: "rgba(17, 15, 12, 0.58)", color: "#FFF7ED", border: "1px solid rgba(212,169,106,0.18)" }}>
-                        {titleCase(selectedItem.color)}
+                        {getDisplayColorName(selectedItem.color)}
                       </span>
                     ) : null}
                     {selectedItem.season ? (
@@ -562,7 +540,7 @@ export default function StyleItemPage() {
             />
           ) : suggestions.length > 0 ? (
             <div className="outfit-carousel" style={{ marginTop: "6px" }}>
-              {suggestions.map((suggestion, index) => (
+              {suggestions.map((suggestion) => (
                 <div
                   key={suggestion.id}
                   className="outfit-card-wrap"
@@ -570,7 +548,6 @@ export default function StyleItemPage() {
                 >
                   <OutfitSuggestionCard
                     suggestion={suggestion}
-                    rank={index + 1}
                     wardrobeMap={wardrobeMap}
                     onRate={(rating) => handleRate(suggestion.id, rating)}
                     compact

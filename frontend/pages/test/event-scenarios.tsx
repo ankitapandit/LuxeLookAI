@@ -296,11 +296,10 @@ export default function EventScenarioTestPage() {
 
                 {suggestions.length > 0 ? (
                   <div style={{ display: "grid", gap: "16px", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
-                    {suggestions.map((suggestion, index) => (
+                    {suggestions.map((suggestion) => (
                       <OutfitSuggestionCard
                         key={suggestion.id}
                         suggestion={suggestion}
-                        rank={index + 1}
                         wardrobeMap={wardrobeMap}
                         onRate={(rating) => handleRate(suggestion.id, rating)}
                       />

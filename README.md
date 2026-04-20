@@ -7,7 +7,7 @@ Built with **Next.js · FastAPI · Supabase · CLIP · Pexels · OpenAI**.
 Current user-facing sections are: **Wardrobe · Discover · Event · Archive · Profile · Guide**.
 Supporting flows include **Style Item** (`/style-item`), the dedicated AI profiling photo path inside Profile, and the isolated **Event Scenario Tester** at `/test/event-scenarios`.
 Legacy frontend URLs `/events` and `/outfits` permanently redirect to `/event` and `/archive`.
-Sessions now restore on refresh, wardrobe uploads show live media-processing status, Discover learns from swipes without wiping learned rails, structured event briefs are stored as JSON + human summaries, `Beyond your wardrobe` renders as a visual moodboard, and refreshed outfit batches preserve saved ratings while avoiding exact duplicate looks.
+Sessions now restore on refresh, the unauthenticated landing page defaults to sign-up, wardrobe uploads show live media-processing status, Discover learns from swipes without wiping learned rails, Discover family memory reduces same-type repetition, structured event briefs are stored as JSON + human summaries, `Beyond your wardrobe` renders as a visual moodboard, route-level page visits are logged first-party, and refreshed outfit batches preserve saved ratings while avoiding exact duplicate looks.
 
 For the current system reference, see [`docs/system-architecture.md`](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/docs/system-architecture.md).
 
@@ -17,28 +17,41 @@ For the current system reference, see [`docs/system-architecture.md`](/Users/ank
 
 ```
 luxelook-ai/
+├── docs/                       # Living product/system docs + shareable exports
+│   ├── luxelook-activity.md    # Current flow/source-of-truth activity map
+│   ├── luxelook-activity.html  # Diagram-first export source
+│   ├── luxelook-activity.pdf   # Shareable readable version
+│   ├── luxelook-activity.docx  # Editable Word version
+│   ├── system-architecture.md  # System boundaries + database model
+│   └── data-model.md           # Product-facing data reference
+│
 ├── backend/                    # FastAPI Python API
 │   ├── main.py                 # App entry point + CORS
 │   ├── config.py               # Environment variable loading
+│   ├── assets/                 # Static recommendation knowledge and calendars
+│   │   └── fashion_rules/      # JSON rule assets for flattery/polish/trend logic
 │   ├── schema.sql              # Base schema — run first in Supabase SQL Editor
 │   ├── supabase_migrations.sql # All post-schema migrations — run second
 │   ├── routers/                # API route handlers
 │   │   ├── auth.py             # POST /auth/signup, /auth/login
+│   │   ├── activity.py         # POST /activity/page-visit/start, /activity/page-visit/end
 │   │   ├── clothing.py         # Wardrobe CRUD, pagination, trash restore, thumbnail backfill
 │   │   ├── discover.py         # Discover feed, swipes, jobs, status
-│   │   ├── event.py            # POST /event/create-event, GET /event/list
+│   │   ├── event.py            # Event creation/list routes
 │   │   ├── recommendations.py  # POST /recommend/generate-outfits
 │   │   ├── feedback.py         # POST /feedback/rate-outfit
 │   │   └── profile.py          # GET/PUT /profile, POST /profile/photo, /profile/ai-photo
 │   ├── services/               # Business logic layer
 │   │   ├── recommender.py      # Core outfit scoring engine
+│   │   ├── event_appropriate.py # Event-dimension scoring gates (time, venue, weather)
 │   │   ├── clothing_service.py # Upload, tag, embed, duplicate detection
 │   │   ├── discover_service.py # Discover feed assembly + seeded context
 │   │   ├── discover_search.py  # Pexels/mock provider normalization
 │   │   ├── discover_jobs.py    # Durable Discover job queue helpers
 │   │   ├── style_learning.py   # Swipe logging + learned style aggregation
 │   │   ├── event_service.py    # Event creation and retrieval
-│   │   └── style_images.py     # Visual image enrichment for style directions
+│   │   ├── style_images.py     # Visual image enrichment for style directions
+│   │   └── page_visit_service.py # Route-level page-visit persistence and reconciliation
 │   ├── ml/                     # AI components
 │   │   ├── embeddings.py       # CLIP embedding generation (mock + real)
 │   │   ├── tagger.py           # CLIP zero-shot clothing attribute detection
@@ -46,6 +59,11 @@ luxelook-ai/
 │   │                           # face shape detection, clothing descriptors
 │   ├── models/
 │   │   └── schemas.py          # Pydantic request/response models
+│   ├── scripts/                # One-off data/build helpers
+│   │   └── build_trend_calendar.py # Trend calendar generation
+│   ├── sql/                    # Supabase SQL source files
+│   │   ├── schema.sql
+│   │   └── supabase_migrations.sql
 │   ├── utils/
 │       ├── db.py               # Supabase client (service role)
 │       ├── auth.py             # JWT create + verify
@@ -63,7 +81,9 @@ luxelook-ai/
     │   ├── archive.tsx          # View outfit history + rate suggestions
     │   ├── guide.tsx            # User-facing fashion terminology + profile guide
     │   ├── style-item.tsx       # Style around one chosen wardrobe item
-    │   └── profile.tsx          # User profile, body type, face shape, photo
+    │   ├── profile.tsx          # User profile, body type, face shape, photo
+    │   └── test/
+    │       └── event-scenarios.tsx # Isolated event scenario harness
     ├── components/
     │   ├── layout/Navbar.tsx    # Top navigation
     │   ├── OutfitCard.tsx       # Shared outfit metric card
@@ -78,9 +98,91 @@ luxelook-ai/
     │   └── useAuth.tsx          # Shared auth/session provider
     ├── services/
     │   └── api.ts               # All API calls (Axios + fetch)
+    ├── utils/
+    │   └── itemDisplay.ts       # Shared wardrobe item naming / display helpers
+    ├── assets/                  # Static frontend media / guide assets
     └── styles/
         └── globals.css          # LuxeLook design tokens + utility classes
 ```
+
+### Backend ownership and metadata
+
+- `backend/routers/`
+  - request/response edge only
+  - validates JWT-scoped user access
+  - translates HTTP payloads into service-layer calls
+- `backend/services/`
+  - owns recommendation logic, event hydration, Discover learning, upload workflows, style image enrichment, event-appropriateness gating, and route-level page-visit persistence
+  - produces key derived metadata such as:
+    - `score_breakdown` for outfit suggestions
+    - `event_tokens`, `setting`, `temperature_context`, `formality_level`
+    - learned Discover preferences in `user_style_preferences`
+    - Discover family cooldown / recency state in `discover_user_state` and `discover_family_memory`
+    - style-direction `image_url` values
+    - route-level visit rows in `user_page_visits`
+- `backend/ml/`
+  - owns AI-derived metadata:
+    - clothing descriptors
+    - face shape / body type / complexion suggestions
+    - outfit explanations
+    - embeddings for visual similarity and centroid scoring
+- `backend/assets/fashion_rules/`
+  - static rule vocabulary used by the scorer
+  - includes body type, body proportion, neckline, color, skin tone, shoes, outerwear, jewelry, accessories, and trend assets
+- `backend/sql/`
+  - canonical schema + migration source
+  - defines persistent metadata shape for wardrobe, events, Discover, profile, and suggestion records
+
+### Frontend ownership and metadata
+
+- `frontend/pages/`
+  - route surfaces and route-level orchestration
+  - owns page-local UI state like selected event brief values, result visibility, and page-level reset behavior
+- `frontend/components/`
+  - shared rendering units for suggestions, moodboards, guide visuals, nav, cropper, and face-shape tooling
+- `frontend/services/api.ts`
+  - central typed contract for backend payloads
+  - mirrors metadata returned by the backend, including:
+    - `score_breakdown`
+    - `raw_text_json`
+    - `card`
+    - style-direction `pieces`
+    - `image_url`
+- `frontend/utils/itemDisplay.ts`
+  - owns category-aware wardrobe item naming such as `Blue Sweetheart Mini Dress`
+  - keeps wardrobe cards, style-item pickers, and moodboard hover labels consistent
+- `frontend/test/` and `frontend/pages/test/`
+  - isolated scenario harnesses
+  - not part of the main end-user route flow
+
+### Key runtime metadata produced by the app
+
+- `clothing_items`
+  - category, color, pattern, season, formality, descriptor payloads, processing status, embeddings
+- `clothing_tag_feedback`
+  - correction snapshots showing how users changed AI-generated tags
+- `events`
+  - human-readable summary plus structured `raw_text_json`
+  - enriched fields such as `event_tokens`, `setting`, and `formality_level`
+- `outfit_suggestions`
+  - `score`
+  - `score_breakdown`
+  - `card`
+  - `user_rating`
+- `discover_candidates`
+  - cached provider image metadata, analysis status, and style tags
+- `discover_style_interactions`
+  - raw swipe log used to derive preferences
+- `discover_user_state`
+  - Discover-only active-day state and recent-family history
+- `discover_family_memory`
+  - per-family cooldown state and same-day follow-up memory
+- `user_style_preferences`
+  - learned preference rows that power Likes / Dislikes rails and taste seeding
+- `user_page_visits`
+  - first-party route-level visit log with one active row per page transition model
+- profile records
+  - user-entered and AI-suggested body/profile attributes used for personalization
 
 ---
 
