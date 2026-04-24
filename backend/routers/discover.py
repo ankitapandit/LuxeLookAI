@@ -112,9 +112,7 @@ def discover_interaction(
     updated_preferences = []
     commit_triggered = False
 
-    if payload.commit_preferences or (
-        payload.interaction_index is not None and payload.interaction_index > 0 and payload.interaction_index % 10 == 0
-    ):
+    if payload.commit_preferences or (total_interactions > 0 and total_interactions % 10 == 0):
         summary = refresh_user_style_preferences(user_id)
         updated_preferences = summary.get("updated_rows", []) or []
         commit_triggered = True

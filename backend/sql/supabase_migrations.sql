@@ -1377,6 +1377,42 @@ VALUES
   ('descriptor', 'accessories', 'strap_type', 'chain', '{}', 4)
 ON CONFLICT DO NOTHING;
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v2.6.x — Hair accessory subtype support under Accessories
+-- ─────────────────────────────────────────────────────────────────────────────
+
+UPDATE public.style_catalog
+SET description = 'Bags, belts, scarves, hats, sunglasses, and hair accessories as non-jewelry finishing pieces.',
+    aliases = '["accessories", "hair accessories", "hair accessory", "headband", "barrette", "claw clip"]'::jsonb,
+    updated_at = now()
+WHERE style_key = 'accessory';
+
+INSERT INTO public.style_taxonomy (domain, category, attribute, value, meta, sort_order)
+VALUES
+  ('descriptor', 'accessories', 'accessory_type', 'headband', '{}', 10),
+  ('descriptor', 'accessories', 'accessory_type', 'hair clip', '{}', 11),
+  ('descriptor', 'accessories', 'accessory_type', 'claw clip', '{}', 12),
+  ('descriptor', 'accessories', 'accessory_type', 'barrette', '{}', 13),
+  ('descriptor', 'accessories', 'accessory_type', 'scrunchie', '{}', 14),
+  ('descriptor', 'accessories', 'accessory_type', 'ribbon', '{}', 15),
+  ('descriptor', 'accessories', 'accessory_type', 'hair scarf', '{}', 16),
+  ('descriptor', 'accessories', 'material', 'satin', '{}', 6),
+  ('descriptor', 'accessories', 'material', 'silk', '{}', 7),
+  ('descriptor', 'accessories', 'material', 'velvet', '{}', 8),
+  ('descriptor', 'accessories', 'material', 'plastic', '{}', 9),
+  ('descriptor', 'accessories', 'material', 'pearl', '{}', 10),
+  ('descriptor', 'accessories', 'style', 'classic', '{}', 6),
+  ('descriptor', 'accessories', 'style', 'playful', '{}', 7),
+  ('descriptor', 'accessories', 'style', 'statement', '{}', 8)
+ON CONFLICT DO NOTHING;
+
+UPDATE public.style_taxonomy
+SET meta = '{"clip_prompt": "a photo of a non-jewelry accessory such as a handbag, belt, scarf, hat, sunglasses, headband, hair clip, claw clip, scrunchie, ribbon, barrette, or hair scarf"}'
+WHERE domain = 'clip_label'
+  AND category = ''
+  AND attribute = 'category'
+  AND value = 'accessories';
+
 -- Color registry: name, RGB, CLIP prompt — COLOR_RGB + COLOR_LABELS
 INSERT INTO public.style_taxonomy (domain, category, attribute, value, meta, sort_order)
 VALUES
@@ -2578,3 +2614,81 @@ VALUES
   ('descriptor','outerwear','neckline','scalloped neck','{}',23),
   ('descriptor','outerwear','neckline','illusion neck','{}',24)
 ON CONFLICT DO NOTHING;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v2.6 — Batch Upload: new tables + clothing_items columns
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Add verification tracking columns to existing clothing_items table
+alter table public.clothing_items
+  add column if not exists verification_status text
+    default 'verified'
+    check (verification_status in ('pending', 'verified', 'rejected'));
+
+alter table public.clothing_items
+  add column if not exists ingestion_source text
+    default 'manual'
+    check (ingestion_source in ('manual', 'batch_upload'));
+
+-- One row per multi-photo upload session
+create table if not exists public.upload_batch_sessions (
+  id                          uuid primary key default gen_random_uuid(),
+  user_id                     uuid not null references public.users(id) on delete cascade,
+  status                      text not null default 'queued'
+    check (status in ('queued','uploading','processing','awaiting_verification','completed','completed_with_errors')),
+  total_count                 int not null default 0,
+  uploaded_count              int not null default 0,
+  processed_count             int not null default 0,
+  awaiting_verification_count int not null default 0,
+  verified_count              int not null default 0,
+  failed_count                int not null default 0,
+  created_at                  timestamptz not null default now(),
+  updated_at                  timestamptz not null default now(),
+  completed_at                timestamptz
+);
+
+create index if not exists idx_batch_sessions_user
+  on public.upload_batch_sessions(user_id, created_at desc);
+
+-- One row per image in a batch
+create table if not exists public.upload_batch_items (
+  id                uuid primary key default gen_random_uuid(),
+  session_id        uuid not null references public.upload_batch_sessions(id) on delete cascade,
+  user_id           uuid not null references public.users(id) on delete cascade,
+  file_name         text,
+  image_url         text,
+  thumbnail_url     text,
+  cutout_url        text,
+  status            text not null default 'queued'
+    check (status in ('queued','uploaded','tagging','tagged','awaiting_verification','verified','rejected','failed')),
+  error_message     text,
+  clothing_item_id  uuid references public.clothing_items(id) on delete set null,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  verified_at       timestamptz
+);
+
+create index if not exists idx_batch_items_session
+  on public.upload_batch_items(session_id);
+create index if not exists idx_batch_items_user
+  on public.upload_batch_items(user_id, created_at desc);
+
+-- Enable RLS
+alter table public.upload_batch_sessions enable row level security;
+alter table public.upload_batch_items    enable row level security;
+
+-- RLS policies
+create policy "Users can view own batch sessions"
+  on public.upload_batch_sessions for select using (auth.uid() = user_id);
+create policy "Users can insert own batch sessions"
+  on public.upload_batch_sessions for insert with check (auth.uid() = user_id);
+create policy "Users can update own batch sessions"
+  on public.upload_batch_sessions for update using (auth.uid() = user_id);
+
+create policy "Users can view own batch items"
+  on public.upload_batch_items for select using (auth.uid() = user_id);
+create policy "Users can insert own batch items"
+  on public.upload_batch_items for insert with check (auth.uid() = user_id);
+create policy "Users can update own batch items"
+  on public.upload_batch_items for update using (auth.uid() = user_id);

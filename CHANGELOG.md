@@ -31,8 +31,87 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | 2.4.0   | 2026-04-12 | Beach-aware scoring, structured event briefs, Discover preference reliability, and wardrobe taxonomy cleanup                |
 | 2.4.1   | 2026-04-14 | Style-direction moodboards, event-token completeness, guide page, scenario testing, and UX reliability polish              |
 | 2.4.2   | 2026-04-20 | Recommendation hardening, Discover repetition control, page-visit logging, and labeling/naming consistency                 |
+| 2.5.0   | 2026-04-24 | Context-aware season scoring, richer outfit moodboards, manual-photo cutout tuning, Discover reliability fixes, and Batch Upload-first wardrobe flow |
 
 ---
+
+## [2.5.0] - 2026-04-24
+
+### Backend
+
+#### Season × Context-Aware Scoring (`services/event_appropriate.py`)
+- Added `_SUMMER_VIVID_COLORS` — broad tropical/neon palette used as a softener (not a veto) when an outfit is evaluated at a summer evening event; vivid versatile items drop from `0.72` → `0.45` so jewel/dark tones rank higher at night.
+- Added `_WINTER_JARRING_COLORS` — narrow fluorescent/neon set that receives a soft tonal penalty (`-0.12`) in cold/cool weather contexts; festive holiday events are exempt (`red`, `gold`, `green`, `white` remain unpenalized at Christmas/NYE).
+- `_score_dim_time_of_day()` now receives the full `occasion` dict so it can read `temperature_context` for season-aware color and coverage decisions.
+- Spring/fall evening coverage cap: sleeveless core items at transitional-season evening events are capped at `0.80` regardless of their classification score.
+- Extended `_score_dim_weather()` with six new contextual intersections:
+  - **Outdoor evening** — any evening held outdoors rewards outerwear (`+0.10`) independent of season.
+  - **Rainy tonal nudge** — white/ivory/cream core items take a small practical penalty (`-0.08`) in wet conditions.
+  - **Festive/holiday winter** — `is_festive` suppresses the neon/jarring-color penalty for holiday-coded events.
+  - **Cool summer night** — chilly summer evenings reward light outerwear and longer sleeves instead of penalizing them.
+  - **Mild evening coverage** — spring/fall evenings nudge sleeveless items down (`-0.10`) and outerwear up (`+0.14`) for comfort.
+  - **Mild-only events** now return a real score instead of early-returning `NEUTRAL`.
+
+#### Within-Season Warmth Gradient (`services/season_rules.py`)
+- Added `WARMTH_WEIGHTS` attribute table: `airy / light / medium / warm / thermal` scored across all four seasons so the recommender can tell "summer, but a little warmer" from generic summer dressing.
+- Added `coverage_season` to `_score_item_attributes()`: sleeve, warmth, and insulation can now score against a different reference season than fabric/pattern/fit, enabling split-axis recommendations.
+- Added `_WARMER_TOKENS` / `_COOLER_TOKENS` detection in `score_season_rules()`:
+  - Summer + warmer → `coverage_season = "spring"`
+  - Winter + cooler → `coverage_season = "fall"`
+  - Spring + warmer → `coverage_season = "fall"` and second-season blend disabled
+
+#### Discover Reliability + Filtering
+- Discover feeds now de-duplicate exact repeated source imagery more aggressively across backend selection and frontend session top-ups, preventing the same image from appearing twice with different tag payloads.
+- Preference refresh triggering now keys off the backend’s real total interaction count rather than relying on the frontend’s local swipe counter.
+- Stored Discover preference rails auto-refresh when newer interactions exist than the latest learned snapshot, reducing “stuck” likes/dislikes.
+- Family signatures were tightened to a two-token shape and runtime normalization now favors broader overlap so visually similar Discover cards collide more reliably in cooldown memory.
+- Wardrobe dress-code filtering now recognizes `Cocktail` and `Black Tie` buckets correctly in the backend instead of silently falling through to the unfiltered wardrobe list.
+
+#### Manual-Photo Cutout Tuning (`services/clothing_service.py`)
+- Switched the shared `rembg` session from `u2net` to `isnet-general-use` to favor garment structure retention on manual hanger photos after side-by-side testing on strappy dresses and soft-shadow uploads.
+- Kept the existing alpha-matting refinement path and tuning knobs intact so model behavior can still be adjusted without changing the rest of the upload pipeline.
+
+### Frontend
+
+#### Dynamic Moodboard Backgrounds (`utils/outfitBackground.ts`) — new file
+- Added a 10-preset palette library: `warm-ivory`, `blush-nude`, `soft-beige`, `champagne`, `cool-mist`, `sage-wash`, `dusty-lavender`, `taupe-editorial`, `charcoal-glow`, `espresso-silk`.
+- Each preset defines `base`, `accent`, `shellTint`, `gradientType`, `textureToken`, `isDark`, and derived `titleColor / subheadColor / borderColor`.
+- Priority-based selection reads color families, patterns, and formality from item data without requiring new API fields.
+- Five gradient types (`soft-diagonal`, `warm-radial`, `cool-vertical`, `radial-glow`, `spotlight-radial`) and five texture overlays (`soft-paper`, `linen`, `matte-smooth`, `satin-glow`, `velvet`) render as CSS `backgroundImage` patterns with no image assets required.
+- Integrated into `OutfitMoodboard.tsx` for both `editorial` and `stitch` variants.
+
+#### Proportional Item Scaling (`components/OutfitMoodboard.tsx`)
+- Replaced hardcoded zone percentages with `NATURAL_SIZES` per category: each entry has `heightFrac` and `aspect` reflecting real-world garment proportions.
+- Added a new `stackColumn()` engine so items within a placement column preserve their relative heights — dresses remain dramatically taller than shoes and accessories.
+- `getStagePlacements()` now derives left-column width from the hero’s natural aspect ratio instead of a fixed zone.
+- `getStitchPlacements()` accepts optional `safeTop` / `safeRight` offsets for title-bar and swatch clearance.
+
+#### Cutout Transparent-Padding Compensation (`utils/useImageContentBounds.ts`) — new file
+- Added a canvas-based pixel scanner (96 × 96 analysis pass) that measures actual non-transparent content bounds for cutout PNGs and caches the result per URL.
+- Added a fallback hierarchy of canvas measurement → category estimate → zero inset, with blob/data URLs skipping measurement entirely.
+- Added `getInnerWrapperStyle(bounds)` to expand and offset an inner wrapper so the garment content — not the transparent halo — fills the allocated moodboard zone.
+- Wired the bounds compensation into `StageItem` for both `editorial` and `stitch` variants when `imageMode === "cutout"`.
+- Kept the tooltip as a sibling to the clip container so `overflow: hidden` never clips hover labels.
+
+#### Moodboard Presentation + Typography (`styles/globals.css`, `components/OutfitMoodboard.tsx`)
+- Added the **Stalemate** script font to the global font import and switched outfit card titles from `Playfair Display` to the new single-line moodboard title treatment.
+- Moved the title inside the moodboard stage itself: top-left placement, padded, underlined, and protected by safe-zone-aware placement rules so pieces do not overlap the title or swatches.
+- Simplified the header treatment to title + color swatches only.
+- Added a translucent swatch backing panel so color swatches stay readable without fully obscuring small accessory imagery beneath them.
+- Hover labels now stay upright even when the item image is tilted, and they clamp/wrap more gracefully near the left and right edges of the board.
+
+#### Wardrobe + Upload Flow
+- Removed the single-item upload surface from the Wardrobe page so Batch Upload becomes the sole add-item entry point while Wardrobe stays focused on browsing, filtering, editing, archiving, and media-status management.
+- Added fashion-editorial cross-links from Wardrobe into Batch Upload and updated empty states to point new additions through that flow.
+- Wardrobe count copy now supports `filtered or total / total` display so the header reflects the current slice against the total verified active closet size.
+
+#### Brand Catalog Assets
+- Added curated frontend/backend brand catalogs as JSON assets with normalized lowercase `coreCategories`, array-based `gender` values, and alias support for accent/legacy spellings.
+- Expanded the brand list beyond the initial fashion shortlist to cover a broader range of contemporary, luxury, activewear, footwear, and accessory brands.
+
+### Docs
+- Added `2.5.0` release documentation covering context-aware season scoring, dynamic moodboards, cutout padding compensation, moodboard title/swatch layout, Batch Upload-first wardrobe entry, and the current cutout-model choice.
+- README now reflects Batch Upload as the entry path for new wardrobe items, documents the richer outfit moodboard system, and explains the new seasonal/context-aware scoring model in product terms.
 
 ## [2.4.2] - 2026-04-20
 

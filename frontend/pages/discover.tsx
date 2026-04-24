@@ -46,6 +46,10 @@ function getCardImage(card: DiscoverCard): string {
   return card.display_image_url || card.thumbnail_url || card.image_url;
 }
 
+function getDiscoverSeenKey(card: DiscoverCard): string {
+  return card.image_url || card.display_image_url || card.thumbnail_url || card.normalized_url || card.source_url;
+}
+
 function getClientDayKey(): string {
   const timezone = typeof window !== "undefined"
     ? Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
@@ -481,8 +485,9 @@ export default function DiscoverPage() {
         setDailyLimit(status.daily_limit || response.daily_limit || 10);
 
         const incoming = response.cards.filter((card) => {
-          if (seenUrls.current.has(card.normalized_url)) return false;
-          seenUrls.current.add(card.normalized_url);
+          const seenKey = getDiscoverSeenKey(card);
+          if (seenUrls.current.has(seenKey)) return false;
+          seenUrls.current.add(seenKey);
           return true;
         });
 
@@ -557,8 +562,9 @@ export default function DiscoverPage() {
           setDailyLimit(status.daily_limit || response.daily_limit || 10);
 
           const incoming = response.cards.filter((card) => {
-            if (seenUrls.current.has(card.normalized_url)) return false;
-            seenUrls.current.add(card.normalized_url);
+            const seenKey = getDiscoverSeenKey(card);
+            if (seenUrls.current.has(seenKey)) return false;
+            seenUrls.current.add(seenKey);
             return true;
           });
 
@@ -648,8 +654,9 @@ export default function DiscoverPage() {
       syncDailyInteractions(status.daily_interactions ?? response.daily_interactions ?? 0);
       setDailyLimit(status.daily_limit || response.daily_limit || 10);
       const incoming = response.cards.filter((card) => {
-        if (seenUrls.current.has(card.normalized_url)) return false;
-        seenUrls.current.add(card.normalized_url);
+        const seenKey = getDiscoverSeenKey(card);
+        if (seenUrls.current.has(seenKey)) return false;
+        seenUrls.current.add(seenKey);
         return true;
       });
       if (incoming.length > 0) {

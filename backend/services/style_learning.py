@@ -119,6 +119,11 @@ def _canonical_url(url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
 
 
+def _normalize_discover_family_key(value: str) -> str:
+    parts = [part.strip().lower() for part in str(value or "").split("|") if part.strip()]
+    return "|".join(parts[:2])
+
+
 def _table_load(table: str, filters: Optional[Dict[str, Any]] = None) -> List[dict]:
     def run() -> List[dict]:
         settings = get_settings()
@@ -345,9 +350,19 @@ def load_discover_family_memory_map(user_id: str) -> Dict[str, dict]:
     rows = _table_load(TABLE_DISCOVER_FAMILY_MEMORY, {"user_id": user_id})
     memory: Dict[str, dict] = {}
     for row in rows:
-        family_key = str(row.get("family_key") or "").strip()
+        family_key = _normalize_discover_family_key(str(row.get("family_key") or ""))
         if family_key:
-            memory[family_key] = row
+            existing = memory.get(family_key)
+            existing_updated = _parse_iso_datetime(existing.get("updated_at")) if existing else None
+            row_updated = _parse_iso_datetime(row.get("updated_at"))
+            if existing is None or (row_updated and (existing_updated is None or row_updated >= existing_updated)):
+                normalized_row = dict(row)
+                normalized_row["family_key"] = family_key
+                normalized_row["family_label"] = (
+                    str(row.get("family_label") or "").strip()
+                    or family_key.replace("|", " ").replace("_", " ").title()
+                )
+                memory[family_key] = normalized_row
     return memory
 
 
@@ -376,14 +391,21 @@ def get_recent_discover_family_keys(user_state: Optional[dict]) -> List[str]:
     if not user_state:
         return []
     values = user_state.get("recent_family_keys") or []
-    return [str(value).strip() for value in values if str(value).strip()]
+    recent: List[str] = []
+    seen: set[str] = set()
+    for value in values:
+        cleaned = _normalize_discover_family_key(str(value or ""))
+        if cleaned and cleaned not in seen:
+            recent.append(cleaned)
+            seen.add(cleaned)
+    return recent
 
 
 def record_recent_discover_families(user_state: dict, served_family_keys: List[str]) -> dict:
     existing_recent = get_recent_discover_family_keys(user_state)
     new_recent = list(existing_recent)
     for family_key in served_family_keys:
-        cleaned = str(family_key).strip()
+        cleaned = _normalize_discover_family_key(str(family_key or ""))
         if not cleaned:
             continue
         if cleaned in new_recent:
@@ -432,6 +454,11 @@ def mark_discover_family_served(
     active_day_number: int,
     day_key: str,
 ) -> dict:
+    family_key = _normalize_discover_family_key(family_key)
+    family_label = (
+        str(family_label or "").strip()
+        or family_key.replace("|", " ").replace("_", " ").title()
+    )
     existing = load_discover_family_memory_map(user_id).get(family_key, {})
     memory = _reset_family_daily_counters(existing, day_key, active_day_number)
     shown_count_today = int(memory.get("shown_count_today") or 0) + 1
@@ -456,7 +483,7 @@ def mark_discover_family_served(
         "id": str(memory.get("id") or uuid.uuid5(uuid.NAMESPACE_URL, f"{user_id}:{family_key}")),
         "user_id": user_id,
         "family_key": family_key,
-        "family_label": family_label or memory.get("family_label") or family_key.replace("|", " ").title(),
+        "family_label": family_label or memory.get("family_label") or family_key.replace("|", " ").replace("_", " ").title(),
         "shown_count_today": shown_count_today,
         "last_shown_at": _now_iso(),
         "last_shown_day_key": day_key,
@@ -483,6 +510,11 @@ def mark_discover_family_interaction(
     active_day_number: int,
     day_key: str,
 ) -> dict:
+    family_key = _normalize_discover_family_key(family_key)
+    family_label = (
+        str(family_label or "").strip()
+        or family_key.replace("|", " ").replace("_", " ").title()
+    )
     existing = load_discover_family_memory_map(user_id).get(family_key, {})
     memory = _reset_family_daily_counters(existing, day_key, active_day_number)
     action_value = str(action or "").strip().lower()
@@ -491,7 +523,7 @@ def mark_discover_family_interaction(
         "id": str(memory.get("id") or uuid.uuid5(uuid.NAMESPACE_URL, f"{user_id}:{family_key}")),
         "user_id": user_id,
         "family_key": family_key,
-        "family_label": family_label or memory.get("family_label") or family_key.replace("|", " ").title(),
+        "family_label": family_label or memory.get("family_label") or family_key.replace("|", " ").replace("_", " ").title(),
         "shown_count_today": int(memory.get("shown_count_today") or 0),
         "last_shown_at": memory.get("last_shown_at"),
         "last_shown_day_key": memory.get("last_shown_day_key") or day_key,
@@ -526,13 +558,42 @@ def load_style_preferences(user_id: str) -> List[dict]:
     return _table_load(TABLE_PREFERENCES, {"user_id": user_id})
 
 
+def _parse_iso_datetime(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _has_newer_interactions_than_preferences(user_id: str, rows: List[dict]) -> bool:
+    if not rows:
+        return False
+    latest_pref_update = max(
+        (_parse_iso_datetime(row.get("updated_at")) for row in rows),
+        default=None,
+    )
+    if latest_pref_update is None:
+        return True
+
+    interactions = _table_load(TABLE_INTERACTIONS, {"user_id": user_id})
+    latest_interaction = max(
+        (_parse_iso_datetime(row.get("created_at")) for row in interactions),
+        default=None,
+    )
+    if latest_interaction is None:
+        return False
+    return latest_interaction > latest_pref_update
+
+
 def load_or_refresh_style_preferences(user_id: str) -> List[dict]:
     rows = load_style_preferences(user_id)
-    if rows:
-        return rows
-
     total_interactions = count_discover_interactions(user_id)
     if total_interactions < 10:
+        return rows
+
+    if rows and not _has_newer_interactions_than_preferences(user_id, rows):
         return rows
 
     summary = refresh_user_style_preferences(user_id)
@@ -644,6 +705,9 @@ def record_discover_interaction(
     if not style_ids and style_tags:
         style_ids, _ = get_style_ids_for_tags(style_tags)
     family_key, family_label, _ = build_discover_family_signature(style_ids, style_tags)
+    family_key = _normalize_discover_family_key(family_key)
+    if family_key and not str(family_label or "").strip():
+        family_label = family_key.replace("|", " ").replace("_", " ").title()
     user_state = touch_discover_user_state(user_id, timezone_name)
     active_day_number = int(user_state.get("active_day_number") or 1)
     day_key = str(user_state.get("last_active_day_key") or _client_day_key(timezone_name))

@@ -106,6 +106,35 @@ _SUMMERY_COLORS: Set[str] = {
     "teal green", "tropical green",
 }
 
+# Broader vivid-summer palette.  Used as a SOFTENER only (versatile score
+# 0.72 → 0.45) when we know the event is both summer AND evening.  These
+# colours can still work at evening in the right silhouette/fabric, they
+# just shouldn't get full "versatile" credit at a summer night event.
+# Fabric checks in _is_evening_item() still take priority — a silk coral
+# dress is classified evening-coded before we ever reach this set.
+_SUMMER_VIVID_COLORS: Set[str] = {
+    "coral", "hot coral", "bright coral",
+    "tropical orange", "bright orange",
+    "turquoise", "aqua", "sky blue", "tropical blue",
+    "sunshine yellow", "canary yellow", "lemon yellow",
+    "bright pink", "bubblegum pink",
+    # neon/lime family (already daytime-coded elsewhere; included so the
+    # softener fires consistently even if _is_evening_item returns None)
+    "lime", "lime green", "chartreuse",
+    "neon green", "neon yellow", "neon pink", "neon orange", "bright yellow",
+}
+
+# Colours that are visually jarring in winter/fall even during daytime —
+# a soft penalty is applied via the weather dimension.  Deliberately narrow:
+# only the most saturated/fluorescent tones; earth-tone brights like rust,
+# mustard, and burgundy are left unpenalised.
+_WINTER_JARRING_COLORS: Set[str] = {
+    "neon yellow", "neon green", "neon pink", "neon orange",
+    "lime", "lime green", "chartreuse",
+    "electric blue", "bright yellow", "canary yellow",
+    "sunshine yellow", "lemon yellow", "hot pink", "fuchsia", "fluorescent",
+}
+
 # Style tags / descriptor tokens that EXPLICITLY signal daytime / beach character.
 # Deliberately narrow: "lightweight", "vacation", "resort" are intentionally
 # excluded because they appear in the descriptors of many non-summery items
@@ -349,7 +378,7 @@ def _is_evening_item(item: Dict) -> Optional[bool]:
     return None  # versatile — neutral score
 
 
-def _score_dim_time_of_day(items: List[Dict], event_tokens: Set[str]) -> float:
+def _score_dim_time_of_day(items: List[Dict], event_tokens: Set[str], occasion: Dict) -> float:
     """
     Score outfit fitness for the event's time of day.
 
@@ -368,12 +397,25 @@ def _score_dim_time_of_day(items: List[Dict], event_tokens: Set[str]) -> float:
     Without the cap the jacket and heels (both versatile → 0.72) pull the
     average above TIME_VETO even though the main piece is daytime-coded.
     The cap ensures the veto fires regardless of how good the outerwear is.
+
+    Summer-evening vivid-colour softener:
+    ──────────────────────────────────────
+    When the event is both evening AND summer-temperature (warm/hot), versatile
+    items in vivid tropical/bright colours are downgraded from 0.72 → 0.45.
+    They are not hard-vetoed (richer tones in the right silhouette still work),
+    but jewel/dark tones score meaningfully higher, pushing the recommender
+    toward moodier, more evening-appropriate palettes for summer nights.
     """
     is_evening = bool({"evening", "nighttime"} & event_tokens)
     is_daytime = "daytime" in event_tokens
 
     if not is_evening and not is_daytime:
         return NEUTRAL
+
+    # Season context — used by colour softeners and coverage nudges.
+    temp_ctx = (occasion.get("temperature_context") or "").lower()
+    is_summer_ctx       = temp_ctx in ("warm", "hot")
+    is_transitional_ctx = temp_ctx in ("mild", "cool")   # spring / fall
 
     # Outerwear / shoes / accessories are "finishers", not main garments
     _FINISHER_CATS: Set[str] = {
@@ -392,11 +434,33 @@ def _score_dim_time_of_day(items: List[Dict], event_tokens: Set[str]) -> float:
             if ev_coded is True:
                 scores.append(0.95)   # perfect evening piece
             elif ev_coded is None:
-                scores.append(0.72)   # versatile — acceptable
+                # Summer-evening vivid-colour softener:
+                # A plain coral sundress (no summery tags → versatile) should
+                # not score as high as a jewel-toned midi at a summer night event.
+                base = 0.72
+                if is_summer_ctx and is_core:
+                    color = _item_color(item)
+                    if color in _SUMMER_VIVID_COLORS or any(
+                        tok in color for tok in ("neon", "bright", "vivid", "tropical")
+                    ):
+                        base = 0.45   # down from versatile — not a veto, just a nudge
+                scores.append(base)
             else:
                 scores.append(0.20)   # daytime-coded at evening event
                 if is_core:
                     core_has_daytime_coded = True
+
+            # Spring / fall evening — sleeveless core items get a soft
+            # coverage downgrade on top of their classification score.
+            # A sleeveless satin top at an evening event scores 0.95 (correct
+            # classification) but on a mild spring evening it's slightly
+            # underdressed for the temperature — nudge it toward 0.80.
+            # Does not apply to shoes/outerwear/accessories.
+            if is_transitional_ctx and is_core and scores:
+                sleeve = _item_sleeve(item)
+                if sleeve in {"sleeveless", "cap", "strapless", "off-shoulder"}:
+                    scores[-1] = min(scores[-1], 0.80)
+
         else:  # daytime
             if ev_coded is False:
                 scores.append(0.95)   # perfect daytime piece
@@ -425,7 +489,25 @@ def _score_dim_weather(items: List[Dict], occasion: Dict) -> float:
     Reads from:
       - occasion["temperature_context"] — LLM-inferred "cold", "warm", etc.
       - occasion["raw_text_json"]["weather"] — explicit user selection ("Rainy", "Cold", …)
-      - event_tokens (notes parsing may have injected weather-adjacent tokens)
+      - occasion["event_tokens"] — semantic tags for outdoor, evening, festive, etc.
+
+    Handles the following contextual intersections beyond basic hot/cold/rain:
+
+      Spring/fall evening:  mild or cool evenings favour light coverage; sleeveless
+                            items are gently deprioritised and outerwear gets a bonus.
+
+      Outdoor evening:      any evening held outdoors (rooftop, garden, terrace, etc.)
+                            rewards outerwear and coverage regardless of season.
+
+      Rainy-day colour:     wet conditions favour dark/muted tones; very light/white
+                            items get a soft practical penalty (visible rain marks).
+
+      Festive/holiday winter: red, gold, green, and white are seasonally appropriate
+                            in holiday contexts — winter jarring-colour penalty is
+                            suppressed for these hues.
+
+      Cool summer night:    San-Francisco-style cool summer evenings warrant a light
+                            layer even though the base season is summer.
     """
     temp_ctx = (occasion.get("temperature_context") or "").lower()
     raw_weather = ""
@@ -434,14 +516,42 @@ def _score_dim_weather(items: List[Dict], occasion: Dict) -> float:
         raw_weather = str(rtj.get("weather") or "").lower()
     weather_text = f"{temp_ctx} {raw_weather}".strip()
 
-    if not weather_text or weather_text == "unknown":
-        return NEUTRAL
+    event_tokens: Set[str] = {
+        str(t).lower().strip()
+        for t in (occasion.get("event_tokens") or [])
+        if str(t).strip()
+    }
 
     is_rainy = any(w in weather_text for w in ("rain", "rainy", "drizzle", "wet", "storm"))
     is_cold  = any(w in weather_text for w in ("cold", "cool", "chilly", "freezing"))
     is_hot   = any(w in weather_text for w in ("hot", "warm", "humid", "heat"))
+    is_mild  = temp_ctx in ("mild", "indoor", "outdoor") and not is_cold and not is_hot
 
-    if not is_rainy and not is_cold and not is_hot:
+    # ── Contextual flags derived from token intersections ──────────────────────
+    is_evening_event = bool({"evening", "nighttime"} & event_tokens)
+
+    # Outdoor settings where temperature actually matters even in the evening
+    is_outdoor = bool({
+        "outdoor", "outside", "rooftop", "garden", "terrace", "alfresco",
+        "park", "beach", "outdoor concert", "festival", "open air",
+    } & event_tokens)
+
+    # Festive/holiday context where seasonal colours (red/gold/green/white) are appropriate
+    is_festive = bool({
+        "festive", "holiday", "christmas", "new year", "new year's eve",
+        "thanksgiving", "hanukkah", "diwali", "celebration",
+    } & event_tokens)
+
+    # "Cool summer" — explicitly signalled chilly summer evening (e.g. SF, coastal)
+    is_cool_summer = is_hot and bool({
+        "slightly cool", "cool evening", "cooler tonight", "bring a layer",
+        "cool summer", "cool coastal", "breezy evening",
+    } & event_tokens)
+
+    # Mild + evening context (spring/fall evening needing light coverage)
+    is_mild_evening = is_evening_event and (is_mild or temp_ctx == "cool")
+
+    if not is_rainy and not is_cold and not is_hot and not is_mild:
         return NEUTRAL
 
     scores: List[float] = []
@@ -450,40 +560,82 @@ def _score_dim_weather(items: List[Dict], occasion: Dict) -> float:
         category  = _item_category(item)
         sleeve    = _item_sleeve(item)
         season    = (item.get("season") or "all").lower()
+        color     = _item_color(item)
         desc      = item.get("descriptors") or {}
         shoe_type = (desc.get("shoe_type") or "").lower()
+        is_core   = category not in {
+            "outerwear", "shoes", "footwear", "accessories", "accessory", "jewelry", "bag"
+        }
 
         s = 0.50
 
+        # ── Rainy conditions ──────────────────────────────────────────────────
         if is_rainy:
-            # Delicate fabrics won't survive rain
             if fabric in _DELICATE_FABRICS:                                       s -= 0.25
-            # Open-toe shoes in rain are a practical problem
             if category == "shoes" and any(
                 k in shoe_type for k in ("sandal", "slide", "flip", "open")
             ):
                 s -= 0.30
-            # Outerwear is a positive signal (coverage)
             if category == "outerwear":                                           s += 0.20
-            # Summer-only items (likely lightweight, uncovered)
             if season == "summer":                                                s -= 0.10
+            # Practical tonal nudge: very pale/white items show water marks and
+            # feel visually flat in grey rainy light — prefer muted/darker tones.
+            if is_core and color in {"white", "ivory", "cream", "off-white", "ecru"}:
+                s -= 0.08
 
+        # ── Cold / cool conditions ────────────────────────────────────────────
         if is_cold:
             if fabric in _HEAVY_FABRICS:                                          s += 0.25
             if category == "outerwear":                                           s += 0.20
             if sleeve in {"sleeveless", "cap", "strapless", "off-shoulder"}:     s -= 0.22
             if fabric in _BREATHABLE_FABRICS and fabric not in {"silk", "satin"}: s -= 0.10
             if season == "summer":                                                s -= 0.15
+            # Winter/cold tonal penalty — jarring fluorescent/neon colours feel
+            # out of season in cold weather even during daytime.
+            # Exception: festive/holiday colours (red, gold, green, white) are
+            # seasonally appropriate and are intentionally excluded from this list.
+            if is_core and not is_festive:
+                if color in _WINTER_JARRING_COLORS or any(
+                    tok in color for tok in ("neon", "fluorescent", "lime", "chartreuse")
+                ):
+                    s -= 0.12   # tonal mismatch nudge
 
+        # ── Hot / warm conditions ─────────────────────────────────────────────
         if is_hot:
             if fabric in _BREATHABLE_FABRICS:                                     s += 0.20
             if fabric in _HEAVY_FABRICS:                                          s -= 0.22
             if sleeve in {"sleeveless", "short", "cap"}:                          s += 0.10
             if category == "outerwear" and fabric in _HEAVY_FABRICS:             s -= 0.25
+            # Cool-summer override: when it's technically summer but the evening
+            # is chilly (e.g. coastal), reward light layers rather than penalising them.
+            if is_cool_summer:
+                if category == "outerwear" and fabric not in _HEAVY_FABRICS:     s += 0.18
+                if sleeve in {"long", "3/4"}:                                     s += 0.08
+
+        # ── Spring / fall mild evening — light-coverage nudge ─────────────────
+        # A sleeveless look on a mild spring/fall evening is slightly underdressed
+        # for temperature comfort.  Outerwear and longer sleeves get a bonus.
+        # Does not apply to indoor events (temperature controlled).
+        if is_mild_evening and not is_outdoor or (is_mild_evening and is_outdoor):
+            # Apply regardless of indoor/outdoor — spring/fall evenings are cool
+            if sleeve in {"sleeveless", "cap"} and is_core:                       s -= 0.10
+            if category == "outerwear":                                           s += 0.14
+            if sleeve in {"long", "3/4"} and is_core:                            s += 0.06
+
+        # ── Outdoor evening — outerwear bonus (all seasons) ───────────────────
+        # Any evening outdoors benefits from a layer, even in summer.
+        # Stacks with the mild-evening nudge above for spring/fall outdoor nights.
+        if is_outdoor and is_evening_event and not is_mild_evening:
+            # Already handled in mild_evening block; skip double-counting.
+            if category == "outerwear":                                           s += 0.10
 
         scores.append(_clamp(s))
 
-    return round(sum(scores) / len(scores), 4) if scores else NEUTRAL
+    if not scores:
+        return NEUTRAL
+
+    # Mild-only events that don't trigger rainy/cold/hot still return a score.
+    return round(sum(scores) / len(scores), 4)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -576,7 +728,7 @@ def score_event_appropriate(
     dim_scores: Dict[str, float] = {
         "dress_code":  _score_dim_dress_code(items, occasion),
         "mood":        _score_dim_mood(items, event_tokens),
-        "time_of_day": _score_dim_time_of_day(items, event_tokens),
+        "time_of_day": _score_dim_time_of_day(items, event_tokens, occasion),
         "weather":     _score_dim_weather(items, occasion),
         "purpose":     _score_dim_purpose(items, event_tokens),
     }

@@ -7,13 +7,15 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/hooks/useAuth";
-import { Sparkles, ShirtIcon, CalendarDays, LogOut, User, Menu, X, WandSparkles, BookOpen } from "lucide-react";
+import { listBatchUploadSessions } from "@/services/api";
+import { Sparkles, ShirtIcon, CalendarDays, LogOut, User, Menu, X, WandSparkles, BookOpen, Layers } from "lucide-react";
 import logo from "../../assets/logo.png";
 
 export default function Navbar() {
   const router = useRouter();
   const { isAuthenticated, loading, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [batchNeedsReview, setBatchNeedsReview] = useState(false);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -24,6 +26,35 @@ export default function Navbar() {
     document.body.classList.toggle("menu-open", mobileOpen);
     return () => document.body.classList.remove("menu-open");
   }, [mobileOpen]);
+
+  useEffect(() => {
+    if (loading || !isAuthenticated) {
+      setBatchNeedsReview(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function refreshBatchIndicator() {
+      try {
+        const sessions = await listBatchUploadSessions(12);
+        if (cancelled) return;
+        setBatchNeedsReview(sessions.some((session) => session.awaiting_verification_count > 0));
+      } catch {
+        if (!cancelled) setBatchNeedsReview(false);
+      }
+    }
+
+    void refreshBatchIndicator();
+    const intervalId = window.setInterval(() => {
+      void refreshBatchIndicator();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [isAuthenticated, loading, router.asPath]);
 
   function handleLogout() {
     logout();
@@ -71,6 +102,13 @@ export default function Navbar() {
         <>
           <div className="nav-desktop" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <NavLink href="/wardrobe" icon={<ShirtIcon size={16} />} label="Wardrobe" active={router.pathname === "/wardrobe"} />
+            <NavLink
+              href="/batch-upload"
+              icon={<Layers size={16} />}
+              label="Batch Upload"
+              active={router.pathname.startsWith("/batch")}
+              attention={batchNeedsReview}
+            />
             <NavLink href="/discover" icon={<Sparkles size={16} />} label="Discover" active={router.pathname === "/discover"} />
             <NavLink href="/style-item" icon={<WandSparkles size={16} />} label="Style Item" active={router.pathname === "/style-item"} />
             <NavLink href="/archive"  icon={<Sparkles size={16} />}   label="Archive"  active={router.pathname === "/archive"} />
@@ -111,6 +149,13 @@ export default function Navbar() {
           {mobileOpen && (
             <div className="nav-mobile-menu">
               <MobileNavLink href="/wardrobe" icon={<ShirtIcon size={16} />} label="Wardrobe" active={router.pathname === "/wardrobe"} />
+              <MobileNavLink
+                href="/batch-upload"
+                icon={<Layers size={16} />}
+                label="Batch Upload"
+                active={router.pathname.startsWith("/batch")}
+                attention={batchNeedsReview}
+              />
               <MobileNavLink href="/discover" icon={<Sparkles size={16} />} label="Discover" active={router.pathname === "/discover"} />
               <MobileNavLink href="/style-item" icon={<WandSparkles size={16} />} label="Style Item" active={router.pathname === "/style-item"} />
               <MobileNavLink href="/archive" icon={<Sparkles size={16} />} label="Archive" active={router.pathname === "/archive"} />
@@ -134,11 +179,13 @@ function NavLink({
   icon,
   label,
   active,
+  attention = false,
 }: {
   href: string;
   icon: React.ReactNode;
   label: string;
   active: boolean;
+  attention?: boolean;
 }) {
   return (
     <Link
@@ -155,9 +202,27 @@ function NavLink({
         color: active ? "var(--charcoal)" : "var(--muted)",
         background: active ? "var(--surface)" : "transparent",
         transition: "all 0.15s ease",
+        position: "relative",
       }}
       className="type-helper"
     >
+      {attention && (
+        <span
+          aria-hidden="true"
+          title="Batch upload items need review"
+          style={{
+            position: "absolute",
+            top: "8px",
+            right: "7px",
+            width: "6px",
+            height: "6px",
+            borderRadius: "999px",
+            background: "var(--gold)",
+            border: "1px solid rgba(120, 84, 18, 0.95)",
+            boxShadow: "0 0 0 2px rgba(120, 84, 18, 0.18), 0 0 8px rgba(212, 175, 55, 0.28)",
+          }}
+        />
+      )}
       {icon}
       {label}
     </Link>
@@ -169,14 +234,37 @@ function MobileNavLink({
   icon,
   label,
   active,
+  attention = false,
 }: {
   href: string;
   icon: React.ReactNode;
   label: string;
   active: boolean;
+  attention?: boolean;
 }) {
   return (
-    <Link href={href} className={`nav-mobile-link${active ? " active" : ""}`}>
+    <Link
+      href={href}
+      className={`nav-mobile-link${active ? " active" : ""}`}
+      style={{ position: "relative" }}
+    >
+      {attention && (
+        <span
+          aria-hidden="true"
+          title="Batch upload items need review"
+          style={{
+            position: "absolute",
+            top: "12px",
+            right: "12px",
+            width: "6px",
+            height: "6px",
+            borderRadius: "999px",
+            background: "var(--gold)",
+            border: "1px solid rgba(120, 84, 18, 0.95)",
+            boxShadow: "0 0 0 2px rgba(120, 84, 18, 0.18), 0 0 8px rgba(212, 175, 55, 0.28)",
+          }}
+        />
+      )}
       {icon}
       {label}
     </Link>

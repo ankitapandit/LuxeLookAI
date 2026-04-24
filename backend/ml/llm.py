@@ -1068,10 +1068,11 @@ CATEGORY_DESCRIPTORS = {
     # ── Accessories ───────────────────────────────────────────────────────────
     "accessories": {
         "accessory_type": ["handbag", "tote", "clutch", "backpack", "crossbody", "belt",
-                           "scarf", "hat", "sunglasses"],
+                           "scarf", "hat", "sunglasses", "headband", "hair clip", "claw clip",
+                           "scrunchie", "barrette", "ribbon", "hair scarf"],
         "size":           ["mini", "small", "medium", "large", "oversized"],
         "material":       ["leather", "fabric", "straw", "metal", "synthetic"],
-        "style":          ["structured", "slouchy", "minimalist", "embellished", "logo"],
+        "style":          ["structured", "slouchy", "minimalist", "embellished", "logo", "classic", "playful", "statement"],
         "closure":        ["zipper", "magnetic", "snap", "drawstring"],
         "strap_type":     ["top handle", "crossbody", "shoulder", "chain"],
     },
