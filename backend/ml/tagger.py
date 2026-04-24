@@ -37,7 +37,7 @@ CATEGORY_LABELS: List[Tuple[str, str]] = [
     ("shoes",       "a photo of shoes, boots, heels, sneakers, sandals, or footwear"),
     ("outerwear",   "a photo of a coat, jacket, blazer, cardigan, shrug, or coverup worn as an outer layer"),
     ("jewelry",     "a photo of jewelry such as a necklace, earrings, bracelet, ring, or watch"),
-    ("accessories", "a photo of a non-jewelry accessory such as a handbag, belt, scarf, hat, or sunglasses"),
+    ("accessories", "a photo of a non-jewelry accessory such as a handbag, belt, scarf, hat, sunglasses, headband, hair clip, claw clip, scrunchie, ribbon, barrette, or hair scarf"),
     ("set",         "a photo of a co-ord set or matching two-piece outfit with a coordinated top and bottom in the same fabric or print"),
     ("swimwear",    "a photo of swimwear such as a bikini, one-piece swimsuit, tankini, monokini, or swim dress"),
     ("loungewear",  "a photo of loungewear, pajamas, sweatpants, joggers, a hoodie, or comfortable home or sleepwear clothing"),
@@ -91,6 +91,13 @@ ACCESSORY_LABELS: List[Tuple[str, str]] = [
     ("scarf", "a scarf, wrap, or shawl worn around the neck or shoulders"),
     ("hat",   "a hat, cap, or headwear"),
     ("sunglasses", "sunglasses or tinted eyewear"),
+    ("headband", "a headband or hairband worn in the hair"),
+    ("hair clip", "a hair clip, snap clip, or decorative clip worn in the hair"),
+    ("claw clip", "a claw clip used to hold hair up"),
+    ("scrunchie", "a scrunchie or fabric hair tie"),
+    ("barrette", "a barrette or hair clasp"),
+    ("ribbon", "a ribbon or bow worn in the hair"),
+    ("hair scarf", "a scarf or wrap styled in the hair"),
     ("other", "another type of non-jewelry accessory or fashion item"),
 ]
 
@@ -123,7 +130,7 @@ FORMALITY_DESCRIPTIONS: List[Tuple[str, float, str]] = [
     ("Cocktail",         0.80,  "Dressy eveningwear, polished separates, heels or refined shoes"),
     ("Business Formal",  0.75,  "Blazer, tailored trousers, dress shirt"),
     ("Business Casual",  0.62,  "Office-ready separates, knitwear, polished flats or loafers"),
-    ("Smart Casual",     0.55,  "Chinos, blouse, casual dress — neat but relaxed"),
+    ("Smart Casual",     0.45,  "Chinos, blouse, casual dress — neat but relaxed"),
     ("Casual",           0.30,  "Everyday comfort — jeans, t-shirt"),
     ("Loungewear",       0.10,  "Gym wear, athleisure, hoodies"),
 ]
@@ -133,6 +140,8 @@ FORMALITY_DESCRIPTIONS: List[Tuple[str, float, str]] = [
 # Lazy-loaded CLIP pipeline
 # ─────────────────────────────────────────────────────────────────────────────
 _clip_pipeline = None
+_SET_VS_DRESS_MARGIN = 0.10
+_SET_VS_JUMPSUIT_MARGIN = 0.08
 
 
 def _get_clip_pipeline():
@@ -170,6 +179,60 @@ def _classify(image, label_pairs: list) -> Tuple[str, float]:
     return best_value, best_score
 
 
+def _classify_ranked(image, label_pairs: list) -> List[Tuple[str, float]]:
+    """
+    Return CLIP scores for all candidate labels, mapped back to canonical values
+    and sorted from highest to lowest.
+    """
+    classifier = _get_clip_pipeline()
+    prompts = [prompt for _, prompt in label_pairs]
+    values = [value for value, _ in label_pairs]
+
+    results = classifier(image, candidate_labels=prompts)
+    ranked: List[Tuple[str, float]] = []
+    for result in results:
+        prompt = result["label"]
+        score = float(result["score"])
+        ranked.append((values[prompts.index(prompt)], score))
+    return ranked
+
+
+def _resolve_category(ranked_categories: List[Tuple[str, float]]) -> Tuple[str, float]:
+    """
+    Guard against visually ambiguous one-piece garments being mislabeled as
+    matching sets. We only keep `set` when it clearly outranks dress/jumpsuit
+    alternatives.
+    """
+    if not ranked_categories:
+        return "tops", 0.0
+
+    top_category, top_score = ranked_categories[0]
+    if top_category != "set":
+        return top_category, top_score
+
+    score_by_category = {category: score for category, score in ranked_categories}
+    dress_score = float(score_by_category.get("dresses", 0.0))
+    jumpsuit_score = float(score_by_category.get("jumpsuits", 0.0))
+
+    if dress_score and (top_score - dress_score) <= _SET_VS_DRESS_MARGIN:
+        logger.info(
+            "Category guard adjusted CLIP result from set to dresses (set=%.3f, dresses=%.3f)",
+            top_score,
+            dress_score,
+        )
+        return "dresses", dress_score
+
+    if jumpsuit_score and (top_score - jumpsuit_score) <= _SET_VS_JUMPSUIT_MARGIN:
+        logger.info(
+            "Category guard adjusted CLIP result from set to jumpsuits (set=%.3f, jumpsuits=%.3f)",
+            top_score,
+            jumpsuit_score,
+        )
+        return "jumpsuits", jumpsuit_score
+
+    return top_category, top_score
+
+
 def _compute_formality_score(image) -> float:
     """
     Continuous formality score (0–1) as a probability-weighted average
@@ -196,7 +259,8 @@ def _real_tag(image_bytes: bytes) -> Dict[str, Any]:
 
     from services.taxonomy import get_clip_labels
     _clip = get_clip_labels()
-    category, cat_conf   = _classify(image, _clip.get("category", CATEGORY_LABELS))
+    ranked_categories = _classify_ranked(image, _clip.get("category", CATEGORY_LABELS))
+    category, cat_conf = _resolve_category(ranked_categories)
     color,    color_conf = _classify(image, _clip.get("color", COLOR_LABELS))
     season,   _          = _classify(image, _clip.get("season", SEASON_LABELS))
     formality_score      = _compute_formality_score(image)

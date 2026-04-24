@@ -220,6 +220,8 @@ export interface ClothingItem {
   is_archived?: boolean;
   archived_on?: string | null;
   deleted_at?: string | null;
+  verification_status?: "pending" | "verified" | "rejected";
+  ingestion_source?: string | null;
   created_at: string;
   descriptors?: Record<string, string>;
 }
@@ -272,10 +274,11 @@ export interface WardrobePageResponse {
   total_count: number;
 }
 
-export async function getWardrobeMediaStatus(itemIds: string[]): Promise<ClothingItem[]> {
+export async function getWardrobeMediaStatus(itemIds: string[], includeUnverified: boolean = false): Promise<ClothingItem[]> {
   if (!itemIds.length) return [];
   const params = new URLSearchParams();
   itemIds.forEach((id) => params.append("item_ids", id));
+  if (includeUnverified) params.append("include_unverified", "true");
   const { data } = await api.get<ClothingItem[]>(`/clothing/items/media-status?${params.toString()}`);
   return data;
 }
@@ -363,6 +366,11 @@ export async function deleteClothingItem(itemId: string): Promise<void> {
 /** Permanently delete an item from the archive/trash view. */
 export async function purgeArchivedClothingItem(itemId: string): Promise<void> {
   await api.delete(`/clothing/item/${itemId}/purge`);
+}
+
+/** Permanently delete any wardrobe item immediately. */
+export async function deleteClothingItemForever(itemId: string): Promise<void> {
+  await api.delete(`/clothing/item/${itemId}/permanent`);
 }
 
 /** Fetch soft-deleted items (trash view). */
@@ -810,5 +818,130 @@ export async function uploadAIProfilePhoto(file: Blob, filename: string = "ai-pr
   const { data } = await api.post<AIProfilePhotoUploadResponse>("/profile/ai-photo", form, {
     headers: { "Content-Type": "multipart/form-data" },
   });
+  return data;
+}
+
+// ── Batch Upload ──────────────────────────────────────────────────────────────
+
+export type BatchSessionStatus =
+  | "queued"
+  | "uploading"
+  | "processing"
+  | "awaiting_verification"
+  | "completed"
+  | "completed_with_errors";
+
+export type BatchItemStatus =
+  | "queued"
+  | "uploaded"
+  | "tagging"
+  | "tagged"
+  | "awaiting_verification"
+  | "verified"
+  | "rejected"
+  | "failed";
+
+export interface BatchSession {
+  id: string;
+  user_id: string;
+  status: BatchSessionStatus;
+  total_count: number;
+  uploaded_count: number;
+  processed_count: number;
+  awaiting_verification_count: number;
+  verified_count: number;
+  failed_count: number;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string | null;
+}
+
+export interface BatchItem {
+  id: string;
+  session_id: string;
+  user_id: string;
+  file_name?: string | null;
+  image_url?: string | null;
+  thumbnail_url?: string | null;
+  cutout_url?: string | null;
+  status: BatchItemStatus;
+  error_message?: string | null;
+  clothing_item_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  verified_at?: string | null;
+}
+
+export interface BatchSessionWithItems extends BatchSession {
+  items: BatchItem[];
+}
+
+function debugBatchUploadApi(event: string, details?: Record<string, unknown>) {
+  if (details) console.debug(`[BatchUpload][API] ${event}`, details);
+  else console.debug(`[BatchUpload][API] ${event}`);
+}
+
+/** Create a new batch upload session before uploading any images. */
+export async function createBatchUploadSession(totalCount: number): Promise<BatchSession> {
+  debugBatchUploadApi("create_session:start", { totalCount });
+  const { data } = await api.post<BatchSession>("/batch-upload/session", {
+    total_count: totalCount,
+  });
+  debugBatchUploadApi("create_session:success", { sessionId: data.id, status: data.status, totalCount: data.total_count });
+  return data;
+}
+
+/**
+ * Upload a single image into an existing batch session.
+ * Returns the queued batch item immediately; tagging runs in the background.
+ * Poll getBatchUploadSession() to track progress.
+ */
+export async function uploadBatchItem(sessionId: string, file: File): Promise<BatchItem> {
+  debugBatchUploadApi("upload_item:start", { sessionId, filename: file.name, size: file.size });
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post<BatchItem>(
+    `/batch-upload/session/${sessionId}/items`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+  debugBatchUploadApi("upload_item:success", { sessionId, itemId: data.id, status: data.status, filename: file.name });
+  return data;
+}
+
+/** Fetch session detail including all item rows. */
+export async function getBatchUploadSession(sessionId: string): Promise<BatchSessionWithItems> {
+  const { data } = await api.get<BatchSessionWithItems>(`/batch-upload/session/${sessionId}`);
+  debugBatchUploadApi("get_session:success", {
+    sessionId,
+    status: data.status,
+    itemCount: data.items.length,
+    awaiting: data.awaiting_verification_count,
+    verified: data.verified_count,
+    failed: data.failed_count,
+  });
+  return data;
+}
+
+/** List the user's recent batch sessions (newest first). */
+export async function listBatchUploadSessions(limit = 20): Promise<BatchSession[]> {
+  const { data } = await api.get<BatchSession[]>("/batch-upload/sessions", { params: { limit } });
+  debugBatchUploadApi("list_sessions:success", { limit, count: data.length });
+  return data;
+}
+
+/** Mark a batch item as verified. Updates the linked clothing item's trust status. */
+export async function verifyBatchUploadItem(itemId: string): Promise<{ item_id: string; status: string; clothing_item_id?: string | null }> {
+  debugBatchUploadApi("verify_item:start", { itemId });
+  const { data } = await api.post(`/batch-upload/items/${itemId}/verify`);
+  debugBatchUploadApi("verify_item:success", data as Record<string, unknown>);
+  return data;
+}
+
+/** Mark a batch item as rejected. */
+export async function rejectBatchUploadItem(itemId: string): Promise<{ item_id: string; status: string }> {
+  debugBatchUploadApi("reject_item:start", { itemId });
+  const { data } = await api.post(`/batch-upload/items/${itemId}/reject`);
+  debugBatchUploadApi("reject_item:success", data as Record<string, unknown>);
   return data;
 }

@@ -16,7 +16,7 @@ from typing import List, Optional
 
 from services.clothing_service import (
     upload_clothing_item, get_user_items, get_user_items_by_ids, get_user_items_page, get_deleted_items,
-    delete_item, delete_archived_item, restore_item, correct_item_tags, purge_old_deleted_items,
+    delete_item, delete_archived_item, purge_item_forever, restore_item, correct_item_tags, purge_old_deleted_items,
     backfill_missing_thumbnails, process_item_media, update_media_status,
 )
 from ml.tagger import tag_clothing_item, get_taggable_options
@@ -134,7 +134,7 @@ async def upload_item(
         "Cocktail": 0.80,
         "Business Formal": 0.75, "Business formal": 0.75,
         "Business Casual": 0.62, "Business casual": 0.62,
-        "Smart Casual": 0.55, "Smart casual": 0.55,
+        "Smart Casual": 0.45, "Smart casual": 0.45,
         "Casual": 0.30, "Loungewear": 0.10,
     }
     manual_tags: dict = {}
@@ -178,8 +178,8 @@ _FORMALITY_SCORE_MAP = {
     "Business formal":  0.75,
     "Business Casual":  0.62,
     "Business casual":  0.62,
-    "Smart Casual":     0.55,
-    "Smart casual":     0.55,
+    "Smart Casual":     0.45,
+    "Smart casual":     0.45,
     "Casual":           0.30,
     "Loungewear":       0.10,
 }
@@ -226,17 +226,18 @@ def correct_item(
 
 @router.get("/items", response_model=List[dict])
 def list_items(user_id: str = Depends(get_current_user_id)):
-    """Return all active clothing items in the authenticated user's wardrobe."""
+    """Return all active, verified clothing items in the authenticated user's wardrobe."""
     return get_user_items(user_id)
 
 
 @router.get("/items/media-status", response_model=List[dict])
 def list_media_status_items(
     item_ids: List[str] = Query(..., description="One or more wardrobe item IDs to track"),
+    include_unverified: bool = Query(False, description="Include pending batch-upload items that are still awaiting review"),
     user_id: str = Depends(get_current_user_id),
 ):
     """Return the latest media-processing status for specific wardrobe items."""
-    return get_user_items_by_ids(user_id, item_ids)
+    return get_user_items_by_ids(user_id, item_ids, include_unverified=include_unverified)
 
 
 @router.get("/items/page", response_model=dict)
@@ -248,7 +249,7 @@ def list_items_page(
     formality: Optional[str] = Query(None),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Return a paginated slice of active wardrobe items with optional filters."""
+    """Return a paginated slice of active, verified wardrobe items with optional filters."""
     return get_user_items_page(
         user_id=user_id,
         limit=limit,
@@ -310,6 +311,18 @@ def purge_archived_item_endpoint(item_id: str, user_id: str = Depends(get_curren
     deleted = delete_archived_item(item_id, user_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Item not in archive")
+    return None
+
+
+@router.delete("/item/{item_id}/permanent", status_code=204)
+def purge_item_forever_endpoint(item_id: str, user_id: str = Depends(get_current_user_id)):
+    """
+    Permanently delete an item and its stored media immediately, regardless of
+    whether the item is still active or already archived.
+    """
+    deleted = purge_item_forever(item_id, user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Item not found")
     return None
 
 

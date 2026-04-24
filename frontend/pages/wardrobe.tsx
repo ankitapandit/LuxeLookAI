@@ -14,18 +14,18 @@
  *   - Dropdown with pattern name + inline SVG swatch preview
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useDropzone } from "react-dropzone";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Head from "next/head";
 import Image from "next/image";
+import Link from "next/link";
 import Navbar from "@/components/layout/Navbar";
 import { getItemDisplayName } from "@/utils/itemDisplay";
 import {
-  tagPreview, uploadClothingItem, getTagOptions, correctItem,
-  deleteClothingItem, purgeArchivedClothingItem, getWardrobeItemsPage, getDeletedItems, restoreClothingItem,
-  getWardrobeMediaStatus, TagPreview, TagOptions, ClothingItem,
+  getTagOptions, correctItem,
+  deleteClothingItem, deleteClothingItemForever, purgeArchivedClothingItem, getWardrobeItemsPage, getDeletedItems, restoreClothingItem,
+  getWardrobeMediaStatus, TagOptions, ClothingItem,
 } from "@/services/api";
-import { AlertCircle, Upload, Archive, ShirtIcon, Loader, CheckCircle, Pencil, X, Pipette, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, ShirtIcon, Loader, CheckCircle, Pencil, X, RotateCcw, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 
 // Maps any stored color name back to the nearest SOLID_COLORS key so the
@@ -68,29 +68,29 @@ function normalizeToPresetKey(color: string): string | null {
   return null;
 }
 
-function getCurrentSeason(date: Date = new Date()): string {
-  const month = date.getMonth() + 1;
-  if (month >= 3 && month <= 5) return "spring";
-  if (month >= 6 && month <= 8) return "summer";
-  if (month >= 9 && month <= 11) return "fall";
-  return "winter";
-}
-
-function getSeasonLabel(value: string): string {
-  if (!value) return "";
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-function isCompatibleSeasonPair(a: string, b: string): boolean {
-  const seasonA = (a || "").toLowerCase().trim();
-  const seasonB = (b || "").toLowerCase().trim();
-  if (!seasonA || !seasonB) return false;
-  if (seasonA === "all" || seasonB === "all") return true;
-  if (seasonA === seasonB) return true;
-
-  const warm = new Set(["spring", "summer"]);
-  const cool = new Set(["fall", "winter"]);
-  return (warm.has(seasonA) && warm.has(seasonB)) || (cool.has(seasonA) && cool.has(seasonB));
+function applyWardrobeRemovalState(
+  itemId: string,
+  setItems: Dispatch<SetStateAction<ClothingItem[]>>,
+  setTrackedMediaIds: Dispatch<SetStateAction<string[]>>,
+  setMediaActivity: Dispatch<SetStateAction<Record<string, ClothingItem>>>,
+  setTotalCount: Dispatch<SetStateAction<number>>,
+  setWardrobeTotalCount: Dispatch<SetStateAction<number>>,
+) {
+  let removedCount = 0;
+  setItems((prev) => {
+    removedCount = prev.some((item) => item.id === itemId) ? 1 : 0;
+    return prev.filter((item) => item.id !== itemId);
+  });
+  setTrackedMediaIds((prev) => prev.filter((id) => id !== itemId));
+  setMediaActivity((prev) => {
+    const next = { ...prev };
+    delete next[itemId];
+    return next;
+  });
+  if (removedCount) {
+    setTotalCount((prev) => Math.max(0, prev - 1));
+    setWardrobeTotalCount((prev) => Math.max(0, prev - 1));
+  }
 }
 
 // ── Preset solid colors (pattern removed — handled separately) ────────────────
@@ -269,10 +269,10 @@ const CATEGORY_DESCRIPTORS: Record<string, Record<string, string[]>> = {
   // ── Accessories ─────────────────────────────────────────────────────────────
   accessories: {
     accessory_type: ["handbag","tote","clutch","backpack","crossbody","belt",
-                     "scarf","hat","sunglasses"],
+                     "scarf","hat","sunglasses","headband","hair clip","claw clip","barrette","scrunchie","ribbon","hair scarf"],
     size:           ["mini","small","medium","large","oversized"],
-    material:       ["leather","fabric","straw","metal","synthetic"],
-    style:          ["structured","slouchy","minimalist","embellished","logo"],
+    material:       ["leather","fabric","straw","metal","synthetic","satin","silk","velvet","plastic","pearl"],
+    style:          ["structured","slouchy","minimalist","embellished","logo","classic","playful","statement"],
     closure:        ["zipper","magnetic","snap","drawstring"],
     strap_type:     ["top handle","crossbody","shoulder","chain"],
   },
@@ -462,6 +462,7 @@ function getFormalityEditLabel(score: number | undefined): string {
 export default function WardrobePage() {
   const [items,        setItems]        = useState<ClothingItem[]>([]);
   const [totalCount,   setTotalCount]   = useState(0);
+  const [wardrobeTotalCount, setWardrobeTotalCount] = useState(0);
   const [deletedItems, setDeletedItems] = useState<ClothingItem[]>([]);
   const [showTrash,    setShowTrash]    = useState(false);
   const [loading,      setLoading]      = useState(true);
@@ -474,27 +475,16 @@ export default function WardrobePage() {
   const [tagOptions,   setTagOptions]   = useState<TagOptions>({ categories: [], colors: [], seasons: [], formality_levels: [] });
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
-  // Upload wizard state
-  const [pendingFile,    setPendingFile]    = useState<File | null>(null);
-  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
-  const [aiTags,         setAiTags]         = useState<TagPreview | null>(null);
-  const [correctedCat,   setCorrectedCat]   = useState<string>("");
-  const [correctedColor, setCorrectedColor] = useState<string>("");  // color key or custom hex
-  const [step,           setStep]           = useState<"idle"|"analysing"|"review"|"saving">("idle");
   const [filterCat,       setFilterCat]       = useState("all");
   const [filterSeason,    setFilterSeason]    = useState("all");
   const [filterFormality, setFilterFormality] = useState("all");
-  const [descriptors, setDescriptors] = useState<Record<string, string>>({});
-  const [duplicate, setDuplicate] = useState<TagPreview["duplicate"]>(null);
-  const [refreshingCategoryDetails, setRefreshingCategoryDetails] = useState(false);
   const [editingItem, setEditingItem] = useState<ClothingItem | null>(null);
   const [deletingItem, setDeletingItem] = useState<ClothingItem | null>(null);
+  const [foreverDeletingItem, setForeverDeletingItem] = useState<ClothingItem | null>(null);
   const [permanentlyDeletingItem, setPermanentlyDeletingItem] = useState<ClothingItem | null>(null);
-  const [archiveAfterSave, setArchiveAfterSave] = useState(false);
   const [trackedMediaIds, setTrackedMediaIds] = useState<string[]>([]);
   const [mediaActivity, setMediaActivity] = useState<Record<string, ClothingItem>>({});
   const [activityExpanded, setActivityExpanded] = useState(false);
-  const categoryRefreshRequestRef = useRef(0);
 
   const hasActiveFilters = filterCat !== "all" || filterSeason !== "all" || filterFormality !== "all";
 
@@ -531,6 +521,9 @@ export default function WardrobePage() {
       setItems(prev => reset ? result.items : [...prev, ...result.items]);
       setHasMore(result.has_more);
       setTotalCount(result.total_count);
+      if (reset && filterCat === "all" && filterSeason === "all" && filterFormality === "all") {
+        setWardrobeTotalCount(result.total_count);
+      }
       registerMediaItems(result.items);
     } catch {
       toast.error("Failed to load wardrobe");
@@ -568,25 +561,9 @@ export default function WardrobePage() {
     }
   }, [deletedLoaded, loadingTrash]);
 
-  const addUploadedItem = useCallback((item: ClothingItem) => {
-    setTotalCount((prev) => prev + 1);
-    const matchesFilters =
-      (filterCat === "all" || item.category === filterCat) &&
-      (filterSeason === "all" || item.season === filterSeason) &&
-      (filterFormality === "all" || formalityBucket(item.formality_score) === filterFormality);
-    if (matchesFilters) {
-      setItems((prev) => [item, ...prev]);
-    }
-    registerMediaItems([item]);
-  }, [filterCat, filterFormality, filterSeason, registerMediaItems]);
-
   useEffect(() => {
     void loadWardrobePage(true, 0);
   }, [loadWardrobePage]);
-
-  useEffect(() => {
-    if (step === "review") void ensureTagOptions();
-  }, [ensureTagOptions, step]);
 
   useEffect(() => {
     if (showTrash) void loadTrashItems();
@@ -670,108 +647,43 @@ export default function WardrobePage() {
     };
   }, [trackedMediaIds]);
 
-  const resetWizard = useCallback(() => {
-    if (pendingPreview) URL.revokeObjectURL(pendingPreview);
-    setPendingFile(null); setPendingPreview(null); setAiTags(null);
-    setCorrectedCat(""); setCorrectedColor(""); setStep("idle");
-    setDescriptors({});
-    setDuplicate(null);
-    setArchiveAfterSave(false);
-    setRefreshingCategoryDetails(false);
-  }, [pendingPreview]);
+  useEffect(() => {
+    function handleWardrobeSync(payload: unknown) {
+      if (!payload || typeof payload !== "object") return;
+      const itemId = (payload as { itemId?: unknown }).itemId;
+      const eventType = (payload as { type?: unknown }).type;
+      if (eventType !== "item_removed" || typeof itemId !== "string" || !itemId) return;
 
-  const onDrop = useCallback(async (accepted: File[]) => {
-    const file = accepted[0];
-    if (!file) return;
-    setPendingFile(file);
-    setPendingPreview(URL.createObjectURL(file));
-    setStep("analysing");
-    try {
-      const tags = await tagPreview(file);
-      void ensureTagOptions();
-      setAiTags(tags);
-      setCorrectedCat(tags.category);
-      setCorrectedColor(tags.color);
-      setDescriptors(sanitizeDescriptorsForCategory(tags.category, tags.descriptors || {}));
-      setDuplicate(tags.duplicate || null);
-      setStep("review");
-    } catch {
-      toast.error("AI tagging failed — please try again");
-      resetWizard();
-    }
-  }, [ensureTagOptions, resetWizard]);
-
-  const handlePreviewCategoryChange = useCallback(async (nextCategory: string) => {
-    setCorrectedCat(nextCategory);
-
-    if (!pendingFile || !aiTags) return;
-
-    if (nextCategory === aiTags.category) {
-      setRefreshingCategoryDetails(false);
-      setDescriptors(sanitizeDescriptorsForCategory(aiTags.category, aiTags.descriptors || {}));
-      return;
+      applyWardrobeRemovalState(
+        itemId,
+        setItems,
+        setTrackedMediaIds,
+        setMediaActivity,
+        setTotalCount,
+        setWardrobeTotalCount,
+      );
     }
 
-    const requestId = ++categoryRefreshRequestRef.current;
-    setRefreshingCategoryDetails(true);
-
-    try {
-      const refreshed = await tagPreview(pendingFile, nextCategory);
-      if (categoryRefreshRequestRef.current !== requestId) return;
-      setDescriptors(sanitizeDescriptorsForCategory(nextCategory, refreshed.descriptors || {}));
-    } catch {
-      if (categoryRefreshRequestRef.current !== requestId) return;
-      setDescriptors(sanitizeDescriptorsForCategory(nextCategory, {}));
-      toast.error("Could not refresh style details for that category");
-    } finally {
-      if (categoryRefreshRequestRef.current === requestId) {
-        setRefreshingCategoryDetails(false);
+    function handleStorage(event: StorageEvent) {
+      if (event.key !== "luxelook:wardrobe-sync" || !event.newValue) return;
+      try {
+        handleWardrobeSync(JSON.parse(event.newValue));
+      } catch {
+        // ignore malformed sync payloads
       }
     }
-  }, [aiTags, pendingFile]);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop, accept: { "image/*": [".jpg",".jpeg",".png",".webp"] },
-    multiple: false, disabled: step !== "idle",
-  });
+    function handleCustomEvent(event: Event) {
+      handleWardrobeSync((event as CustomEvent).detail);
+    }
 
-  async function handleConfirm() {
-    if (!pendingFile || !aiTags) return;
-    setStep("saving");
-    try {
-      const newItem = await uploadClothingItem(pendingFile, {
-        category: correctedCat   !== aiTags.category ? correctedCat   : undefined,
-        color:    correctedColor  !== aiTags.color   ? correctedColor  : undefined,
-        descriptors: Object.keys(descriptors).length > 0 ? descriptors : undefined,
-      });
-      const detectedSeason = (newItem.season || "").toLowerCase().trim();
-      const currentSeason = getCurrentSeason();
-      const seasonMismatch = !!detectedSeason && !isCompatibleSeasonPair(detectedSeason, currentSeason);
-
-      if (seasonMismatch && archiveAfterSave) {
-        try {
-          await deleteClothingItem(newItem.id);
-          const archivedOn = new Date().toISOString();
-          setDeletedItems((prev) => [{
-            ...newItem,
-            is_active: false,
-            is_archived: true,
-            archived_on: archivedOn,
-            deleted_at: archivedOn,
-          }, ...prev.filter((entry) => entry.id !== newItem.id)]);
-          toast.success("Saved and moved to Archived");
-        } catch {
-          addUploadedItem(newItem);
-          toast.error("Saved to wardrobe, but could not move it to Archived");
-        }
-      } else {
-        addUploadedItem(newItem);
-        toast.success("Item added to wardrobe!");
-      }
-    } catch {
-      toast.error("Upload failed — please try again");
-    } finally { resetWizard(); }
-  }
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("luxelook:wardrobe-sync", handleCustomEvent as EventListener);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("luxelook:wardrobe-sync", handleCustomEvent as EventListener);
+    };
+  }, []);
 
   async function handleCorrect(
     itemId: string,
@@ -815,6 +727,7 @@ export default function WardrobePage() {
         return next;
       });
       setTotalCount(prev => Math.max(0, prev - 1));
+      setWardrobeTotalCount(prev => Math.max(0, prev - 1));
       if (removed) {
         const archivedOn = new Date().toISOString();
         setDeletedItems(prev => [{
@@ -872,6 +785,24 @@ export default function WardrobePage() {
     }
   }
 
+  async function handlePermanentDeleteActive(itemId: string) {
+    try {
+      await deleteClothingItemForever(itemId);
+      setItems(prev => prev.filter(i => i.id !== itemId));
+      setTrackedMediaIds(prev => prev.filter(id => id !== itemId));
+      setMediaActivity(prev => {
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      });
+      setTotalCount(prev => Math.max(0, prev - 1));
+      setWardrobeTotalCount(prev => Math.max(0, prev - 1));
+      toast.success("Item permanently deleted");
+    } catch {
+      toast.error("Could not permanently delete item");
+    }
+  }
+
   const categoryFilters = CATEGORY_FILTER_OPTIONS;
 
   // Helper: map formality_score to the same bucket label used in the filter
@@ -908,6 +839,8 @@ export default function WardrobePage() {
     return next;
   }, [items]);
 
+  const wardrobeCountLabel = `${hasActiveFilters ? totalCount : wardrobeTotalCount} / ${wardrobeTotalCount}`;
+
   function openEditModal(item: ClothingItem) {
     setEditingItem(item);
     void ensureTagOptions();
@@ -917,10 +850,16 @@ export default function WardrobePage() {
     setDeletingItem(item);
   }
 
+  function openPermanentDeleteDialog(item: ClothingItem) {
+    setForeverDeletingItem(item);
+  }
+
   const activityItems = Object.values(mediaActivity).sort((a, b) =>
     (b.media_updated_at || b.created_at).localeCompare(a.media_updated_at || a.created_at)
   );
   const activeActivityCount = activityItems.filter((item) => item.media_status !== "failed").length;
+  const trayPrimaryText = "#F4EEE4";
+  const traySecondaryText = "rgba(244,238,228,0.78)";
 
   return (
     <>
@@ -932,7 +871,17 @@ export default function WardrobePage() {
           <div>
             <h1 className="type-page-title" style={{ fontSize: "36px", marginBottom: "8px" }}>My Wardrobe</h1>
             <p className="type-body" style={{ color: "var(--muted)", fontSize: "15px" }}>
-              {totalCount} item{totalCount === 1 ? "" : "s"} in your wardrobe · Clothing auto detect
+              Wardrobe item count: {wardrobeCountLabel}
+            </p>
+            <p className="type-helper" style={{ color: "var(--muted)", fontSize: "14px", marginTop: "8px" }}>
+              New in the rotation? Start in{" "}
+              <Link
+                href="/batch-upload"
+                style={{ color: "var(--gold)", textDecoration: "none", fontWeight: 600 }}
+              >
+                Batch Upload
+              </Link>
+              .
             </p>
           </div>
           <button
@@ -954,85 +903,6 @@ export default function WardrobePage() {
                   : "Archived"}
             </button>
         </div>
-
-        {step === "idle" && (
-          <div {...getRootProps()} className={`dropzone ${isDragActive ? "active" : ""}`} style={{ marginBottom: "32px" }}>
-            <input {...getInputProps()} />
-            <Upload size={28} color="var(--gold)" />
-            <p style={{ fontWeight: 500, color: "var(--charcoal)", marginTop: "8px" }}>
-                    {isDragActive ? "Drop your image here" : "Drag & drop a clothing photo"}
-                  </p>
-            <p className="type-helper" style={{ color: "var(--muted)", fontSize: "13px", marginTop: "4px" }}>
-              or click to browse · one at a time
-            </p>
-          </div>
-        )}
-
-        {step === "analysing" && pendingPreview && (
-          <div className="card fade-up" style={{ display: "flex", gap: "20px", padding: "24px", marginBottom: "32px", alignItems: "center" }}>
-            <ManagedImage
-              src={pendingPreview}
-              alt="Pending clothing preview"
-              width={90}
-              height={120}
-              sizes="90px"
-              style={{ objectFit: "cover", borderRadius: "8px" }}
-            />
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
-                <Loader size={18} color="var(--gold)" style={{ animation: "spin 1s linear infinite" }} />
-                <p style={{ fontWeight: 600 }}>AI is analysing your item…</p>
-              </div>
-            <p className="type-helper" style={{ color: "var(--muted)", fontSize: "14px" }}>Detecting category and colour</p>
-            </div>
-          </div>
-        )}
-
-        {step === "review" && aiTags && pendingPreview && (
-          <ReviewPanel
-            previewUrl={pendingPreview}
-            aiTags={aiTags}
-            tagOptions={tagOptions}
-            tagOptionsLoading={loadingTagOptions}
-            correctedCat={correctedCat}
-            correctedColor={correctedColor}
-            categoryDetailsRefreshing={refreshingCategoryDetails}
-            descriptors={descriptors}
-            duplicate={duplicate}
-            seasonWarning={
-              aiTags.season && !isCompatibleSeasonPair(aiTags.season, getCurrentSeason())
-                ? `This looks more like a ${getSeasonLabel(aiTags.season)} piece than a ${getSeasonLabel(getCurrentSeason())} wardrobe.`
-                : null
-            }
-            archiveAfterSave={archiveAfterSave}
-            onCatChange={handlePreviewCategoryChange}
-            onColorChange={setCorrectedColor}
-            onDescriptorChange={(key, val) =>
-              setDescriptors((prev: Record<string, string>) => ({ ...prev, [key]: val }))}
-            onReplaceExisting={async () => {
-              if (!duplicate) return;
-              await handleDelete(duplicate.id);
-              setDuplicate(null);
-              handleConfirm();
-            }}
-            onUnarchiveExisting={async () => {
-              if (!duplicate) return;
-              await handleRestore(duplicate.id);
-              resetWizard();
-            }}
-            onForceAdd={() => setDuplicate(null)}
-            onArchiveAfterSaveChange={setArchiveAfterSave}
-            onConfirm={handleConfirm}
-            onCancel={resetWizard}
-          />
-        )}
-
-        {step === "saving" && (
-          <div style={{ textAlign: "center", padding: "40px", color: "var(--muted)" }}>
-            <Loader size={28} color="var(--gold)" style={{ animation: "spin 1s linear infinite", display: "block", margin: "0 auto 12px" }} />
-            Saving to your wardrobe…
-          </div>
-        )}
 
         {showTrash ? (
           /* ── Archived view ─────────────────────────────────────────────── */
@@ -1199,7 +1069,7 @@ export default function WardrobePage() {
                   style={{ animation: "spin 1s linear infinite", display: "block", margin: "0 auto" }}
                 />
               </div>
-            ) : items.length === 0 && step === "idle" ? (
+            ) : items.length === 0 ? (
               hasActiveFilters
                 ? <FilteredEmptyState onClear={clearFilters} />
                 : <EmptyState />
@@ -1209,7 +1079,8 @@ export default function WardrobePage() {
                   {displayedItems.map((item, index) => (
                     <ItemCard key={item.id} item={item} priority={index < 4}
                       onEdit={() => openEditModal(item)}
-                      onRequestDelete={() => openDeleteDialog(item)}
+                      onRequestArchive={() => openDeleteDialog(item)}
+                      onRequestDelete={() => openPermanentDeleteDialog(item)}
                     />
                   ))}
                 </div>
@@ -1253,6 +1124,16 @@ export default function WardrobePage() {
           }}
         />
       )}
+      {foreverDeletingItem && (
+        <ActivePermanentDeleteDialog
+          item={foreverDeletingItem}
+          onClose={() => setForeverDeletingItem(null)}
+          onConfirm={() => {
+            void handlePermanentDeleteActive(foreverDeletingItem.id);
+            setForeverDeletingItem(null);
+          }}
+        />
+      )}
       {permanentlyDeletingItem && (
         <PermanentDeleteDialog
           item={permanentlyDeletingItem}
@@ -1288,21 +1169,21 @@ export default function WardrobePage() {
               padding: "14px 16px",
               border: "none",
               background: "transparent",
-              color: "var(--cream)",
+              color: trayPrimaryText,
               cursor: "pointer",
             }}
           >
             <div style={{ textAlign: "left" }}>
-              <p style={{ fontSize: "13px", fontWeight: 600, marginBottom: "3px" }}>
+              <p style={{ fontSize: "13px", fontWeight: 600, marginBottom: "3px", color: trayPrimaryText }}>
                 Wardrobe activity
               </p>
-              <p style={{ fontSize: "12px", color: "rgba(244,238,228,0.72)" }}>
+              <p style={{ fontSize: "12px", color: traySecondaryText }}>
                 {activeActivityCount > 0
                   ? `${activeActivityCount} upload${activeActivityCount === 1 ? "" : "s"} still processing`
                   : "Uploads need attention"}
               </p>
             </div>
-            <span style={{ fontSize: "12px", color: "rgba(244,238,228,0.72)", flexShrink: 0 }}>
+            <span style={{ fontSize: "12px", color: traySecondaryText, flexShrink: 0 }}>
               {activityExpanded ? "Minimize" : "Show"}
             </span>
           </button>
@@ -1342,10 +1223,10 @@ export default function WardrobePage() {
                       />
                     </div>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <p style={{ fontSize: "12px", fontWeight: 600, color: "var(--cream)", textTransform: "capitalize", marginBottom: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <p style={{ fontSize: "12px", fontWeight: 600, color: trayPrimaryText, textTransform: "capitalize", marginBottom: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {getItemDisplayName(item) || "Processing"}
                       </p>
-                      <p style={{ fontSize: "12px", color: isFailed ? "#FCA5A5" : "rgba(244,238,228,0.72)", lineHeight: 1.4 }}>
+                      <p style={{ fontSize: "12px", color: isFailed ? "#FCA5A5" : traySecondaryText, lineHeight: 1.4 }}>
                         {getMediaStatusLabel(item)}
                       </p>
                     </div>
@@ -1427,427 +1308,6 @@ function ManagedImage({
     />
   );
 }
-
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// ReviewPanel
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function ReviewPanel({
-  previewUrl, aiTags, tagOptions, tagOptionsLoading,
-  correctedCat, correctedColor,
-  categoryDetailsRefreshing,
-  descriptors, duplicate,
-  seasonWarning, archiveAfterSave,
-  onCatChange, onColorChange,
-  onDescriptorChange, onReplaceExisting, onUnarchiveExisting, onForceAdd,
-  onArchiveAfterSaveChange,
-  onConfirm, onCancel,
-}: {
-  previewUrl: string;
-  aiTags: TagPreview;
-  tagOptions: TagOptions;
-  tagOptionsLoading: boolean;
-  correctedCat: string;
-  correctedColor: string;
-  categoryDetailsRefreshing: boolean;
-  onCatChange: (v: string) => void;
-  onColorChange: (v: string) => void;
-  descriptors: Record<string, string>;
-  onDescriptorChange: (key: string, val: string) => void;
-  duplicate?: TagPreview["duplicate"];
-  seasonWarning?: string | null;
-  archiveAfterSave: boolean;
-  onArchiveAfterSaveChange: (value: boolean) => void;
-  onReplaceExisting: () => void;
-  onUnarchiveExisting: () => void;
-  onForceAdd: () => void;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const catChanged = correctedCat !== aiTags.category;
-  const colorChanged = correctedColor !== aiTags.color;
-  const aiUnavailable = !!aiTags.needs_review;
-  const categoryOptions = tagOptions.categories.length > 0
-    ? tagOptions.categories
-    : [correctedCat].filter(Boolean);
-
-  return (
-    <div className="card fade-up" style={{ marginBottom: "32px", overflow: "hidden" }}>
-      {/* Header */}
-      <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <p className="type-body" style={{ fontWeight: 600, fontSize: "15px", color: "var(--charcoal)" }}>Review AI tags</p>
-          <p className="type-helper" style={{ color: "var(--muted)", fontSize: "13px" }}>Correct category or colour if needed, then confirm</p>
-        </div>
-        <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}>
-          <X size={18} />
-        </button>
-      </div>
-
-      <div style={{ display: "flex", flexWrap: "wrap" }}>
-        {/* Clickable image for eyedropper */}
-        <ImageEyedropper
-          previewUrl={previewUrl}
-          onColorPicked={onColorChange}
-        />
-
-        {/* Fields */}
-        <div style={{ flex: 1, padding: "20px", minWidth: "300px" }}>
-
-          {aiUnavailable && (
-            <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", background: "rgba(212,169,106,0.10)", border: "1px solid rgba(212,169,106,0.28)", borderRadius: "8px", padding: "10px 12px", marginBottom: "16px" }}>
-              <AlertCircle size={15} color="#B8860B" style={{ flexShrink: 0, marginTop: "1px" }} />
-              <p style={{ fontSize: "13px", color: "var(--gold)", lineHeight: 1.4 }}>
-                AI couldn&apos;t analyse this image — defaults pre-filled. Please review before saving.
-              </p>
-            </div>
-          )}
-
-          {/* Duplicate warning */}
-          {duplicate && (
-            <div style={{
-              background: "rgba(212,169,106,0.10)", border: "1px solid rgba(212,169,106,0.28)",
-              borderRadius: "8px", padding: "14px", marginBottom: "16px",
-            }}>
-                <p className="type-helper" style={{ fontSize: "13px", fontWeight: 600, color: "var(--gold-light)", marginBottom: "12px" }}>
-                  {duplicate.is_archived
-                    ? `This item already exists in Archived (${Math.round(duplicate.score * 100)}% similar)`
-                    : `This item already exists in your wardrobe (${Math.round(duplicate.score * 100)}% similar)`}
-                </p>
-
-              {/* Side-by-side comparison */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "12px" }}>
-                <div style={{ textAlign: "center" }}>
-                  <p style={{ fontSize: "11px", color: "var(--muted)", marginBottom: "6px",
-                    textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>
-                    New
-                  </p>
-                  <div style={{ width: "100%", aspectRatio: "3/4", position: "relative" }}>
-                    <ManagedImage
-                      src={previewUrl}
-                      alt="new item"
-                      fill
-                      sizes="(max-width: 768px) 40vw, 240px"
-                      style={{ objectFit: "cover", borderRadius: "6px", border: "2px solid #D97706" }}
-                    />
-                  </div>
-                  <p style={{ fontSize: "12px", color: "var(--ink)", marginTop: "4px",
-                    textTransform: "capitalize" }}>
-                    {correctedCat} · {correctedColor}
-                  </p>
-                </div>
-                <div style={{ textAlign: "center" }}>
-                  <p style={{ fontSize: "11px", color: "var(--muted)", marginBottom: "6px",
-                    textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>
-                    {duplicate.is_archived ? "Archived" : "Existing"}
-                  </p>
-                  <div style={{ width: "100%", aspectRatio: "3/4", position: "relative" }}>
-                    <ManagedImage
-                      src={duplicate.image_url}
-                      alt="existing item"
-                      fallbackSrc={`https://placehold.co/300x400/F5F0E8/8A8580?text=${encodeURIComponent(duplicate.category)}`}
-                      fill
-                      sizes="(max-width: 768px) 40vw, 240px"
-                      style={{ objectFit: "cover", borderRadius: "6px", border: "1px solid var(--border)" }}
-                    />
-                  </div>
-                  <p style={{ fontSize: "12px", color: "var(--ink)", marginTop: "4px",
-                    textTransform: "capitalize" }}>
-                    {duplicate.category} · {duplicate.color}
-                  </p>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div style={{ display: "flex", gap: "8px" }}>
-                <button
-                  onClick={duplicate.is_archived ? onUnarchiveExisting : onReplaceExisting}
-                  style={{ flex: 1, fontSize: "12px", fontWeight: 600, padding: "7px 12px",
-                    borderRadius: "6px", border: "none", background: "var(--gold)",
-                    color: "white", cursor: "pointer" }}>
-                  {duplicate.is_archived ? "Unarchive existing" : "Replace existing"}
-                </button>
-                <button onClick={onForceAdd}
-                  style={{ flex: 1, fontSize: "12px", padding: "7px 12px",
-                    borderRadius: "6px", border: "1px solid var(--border)",
-                    background: "var(--surface)", color: "var(--muted)", cursor: "pointer" }}>
-                  Force add
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Category */}
-          <div style={{ marginBottom: "20px" }}>
-            <label htmlFor="review-category" style={labelStyle}>Category {catChanged && <ChangedBadge />}</label>
-            <select id="review-category" name="category" value={correctedCat} onChange={e => onCatChange(e.target.value)}
-              disabled={categoryDetailsRefreshing || (tagOptionsLoading && tagOptions.categories.length === 0)}
-              className="input" style={{ padding: "8px 12px", fontSize: "14px", textTransform: "capitalize" }}>
-              {categoryOptions.map(c => (
-                <option key={c} value={c} style={{ textTransform: "capitalize" }}>{c}</option>
-              ))}
-            </select>
-            {categoryDetailsRefreshing && (
-              <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
-                Refreshing style details for <em style={{ textTransform: "capitalize" }}>{correctedCat}</em>…
-              </p>
-            )}
-            {tagOptionsLoading && tagOptions.categories.length === 0 && (
-              <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>Loading category options…</p>
-            )}
-            {catChanged && <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>AI said: <em style={{ textTransform: "capitalize" }}>{aiTags.category}</em></p>}
-          </div>
-
-          {/* Color */}
-          <div style={{ marginBottom: "20px" }}>
-            <label style={labelStyle}>Colour {colorChanged && <ChangedBadge />}</label>
-            <ColorPicker
-              selected={correctedColor}
-              onSelect={onColorChange}
-            />
-            {colorChanged && <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "6px" }}>AI said: <em style={{ textTransform: "capitalize" }}>{aiTags.color}</em></p>}
-          </div>
-
-          {/* Style details — collapsible */}
-          {(() => {
-            const allDescriptors = getDescriptorOptionsForCategory(correctedCat, descriptors);
-            if (!Object.keys(allDescriptors).length) return null;
-
-            return (
-              <StyleDetailsSection
-                allDescriptors={allDescriptors}
-                descriptors={descriptors}
-                onDescriptorChange={onDescriptorChange}
-              />
-              );
-          })()}
-
-          {seasonWarning && (
-            <div style={{
-              marginBottom: "16px",
-              padding: "12px 14px",
-              borderRadius: "8px",
-              background: "rgba(212,169,106,0.10)",
-              border: "1px solid rgba(212,169,106,0.28)",
-            }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
-                <AlertCircle size={15} color="#B8860B" style={{ flexShrink: 0, marginTop: "1px" }} />
-                <div style={{ minWidth: 0 }}>
-                  <p style={{ fontSize: "13px", color: "var(--gold)", lineHeight: 1.5, margin: 0 }}>
-                    {seasonWarning}
-                  </p>
-                  <label style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    marginTop: "8px",
-                    fontSize: "12px",
-                    color: "var(--charcoal)",
-                    cursor: "pointer",
-                  }}>
-                    <input
-                      id="archive-after-save"
-                      name="archive_after_save"
-                      type="checkbox"
-                      checked={archiveAfterSave}
-                      onChange={(e) => onArchiveAfterSaveChange(e.target.checked)}
-                      style={{ accentColor: "var(--gold)" }}
-                    />
-                    Archive this item after saving
-                  </label>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div style={{ display: "flex", gap: "10px" }}>
-            <button className="btn-primary" onClick={onConfirm} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <CheckCircle size={15} /> Confirm &amp; Save
-            </button>
-            <button className="btn-secondary" onClick={onCancel} style={{ fontSize: "13px" }}>Cancel</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// ImageEyedropper — click anywhere on the preview image to sample its color
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function ImageEyedropper({ previewUrl, onColorPicked }: {
-  previewUrl: string;
-  onColorPicked: (hex: string) => void;
-}) {
-  const canvasRef  = useRef<HTMLCanvasElement>(null);
-  const [ready,    setReady]    = useState(false);
-  const [eyedrop,  setEyedrop]  = useState(false);
-  const [pickedHex, setPickedHex] = useState<string | null>(null);
-
-  // Draw the image onto the hidden canvas once loaded
-  function handleImgLoad(e: React.SyntheticEvent<HTMLImageElement>) {
-    const img    = e.currentTarget;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.width  = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    const ctx = canvas.getContext("2d");
-    if (ctx) { ctx.drawImage(img, 0, 0); setReady(true); }
-  }
-
-  function handleImageClick(e: React.MouseEvent<HTMLDivElement>) {
-    if (!eyedrop || !ready || !canvasRef.current) return;
-    const rect   = e.currentTarget.getBoundingClientRect();
-    const scaleX = canvasRef.current.width  / rect.width;
-    const scaleY = canvasRef.current.height / rect.height;
-    const x = Math.floor((e.clientX - rect.left) * scaleX);
-    const y = Math.floor((e.clientY - rect.top)  * scaleY);
-    const ctx = canvasRef.current.getContext("2d");
-    if (!ctx) return;
-    const data = ctx.getImageData(x, y, 1, 1).data;
-    const r = data[0];
-    const g = data[1];
-    const b = data[2];
-    const hex = `#${r.toString(16).padStart(2,"0")}${g.toString(16).padStart(2,"0")}${b.toString(16).padStart(2,"0")}`;
-    setPickedHex(hex);
-    onColorPicked(hex);
-    setEyedrop(false);
-    toast.success("Colour sampled!");
-  }
-
-  return (
-    <div style={{ width: "160px", flexShrink: 0, position: "relative" }}>
-      <div
-        onClick={handleImageClick}
-        style={{ cursor: eyedrop ? "crosshair" : "default", position: "relative" }}
-      >
-        <ManagedImage
-          src={previewUrl}
-          alt="Preview"
-          width={160}
-          height={220}
-          sizes="160px"
-          crossOrigin="anonymous"
-          onLoad={handleImgLoad}
-          style={{ objectFit: "cover", display: "block" }}
-        />
-        {eyedrop && (
-          <div style={{
-            position: "absolute", inset: 0,
-            background: "rgba(212,169,106,0.18)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <div style={{ background: "rgba(0,0,0,0.6)", borderRadius: "8px", padding: "6px 10px", color: "white", fontSize: "12px", textAlign: "center" }}>
-              <Pipette size={16} style={{ display: "block", margin: "0 auto 4px" }} />
-              Click to sample
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Hidden canvas for pixel sampling */}
-      <canvas ref={canvasRef} style={{ display: "none" }} />
-
-      {/* Eyedropper toggle button */}
-      <button
-        onClick={() => setEyedrop(v => !v)}
-        title="Pick colour from image"
-        style={{
-          position: "absolute", bottom: "8px", right: "8px",
-          background: eyedrop ? "var(--gold)" : "rgba(24,23,20,0.85)",
-          border: "none", borderRadius: "6px", padding: "6px",
-          cursor: "pointer", display: "flex", alignItems: "center",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
-        }}
-      >
-        <Pipette size={16} color={eyedrop ? "white" : "var(--charcoal)"} />
-      </button>
-
-      {/* Show sampled hex swatch */}
-      {pickedHex && (
-        <div style={{ padding: "6px 8px", background: "var(--surface)", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", gap: "6px" }}>
-          <span style={{ width: "14px", height: "14px", borderRadius: "3px", background: pickedHex, border: "1px solid var(--border)", flexShrink: 0 }} />
-          <span style={{ fontSize: "11px", color: "var(--muted)", fontFamily: "monospace" }}>{pickedHex}</span>
-        </div>
-      )}
-
-      <p style={{ fontSize: "11px", color: "var(--muted)", textAlign: "center", padding: "4px 0 0", lineHeight: 1.3 }}>
-        Click <Pipette size={10} style={{ display: "inline", verticalAlign: "middle" }} /> to sample a pixel
-      </p>
-    </div>
-  );
-}
-
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// ColorPicker — preset swatches + custom hex input
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function ColorPicker({ selected, onSelect }: { selected: string; onSelect: (key: string) => void }) {
-  const [customHex, setCustomHex] = useState("");
-
-  // Determine if selected is a preset key or a custom hex
-  const isPreset  = SOLID_COLORS.some(c => c.key === selected);
-  const isCustom  = selected.startsWith("#") && !isPreset;
-  const isPattern = selected === "pattern";
-
-  const displayLabel = isPreset
-    ? SOLID_COLORS.find(c => c.key === selected)?.label
-    : isPattern ? "Pattern"
-    : isCustom  ? selected
-    : selected;
-
-  return (
-    <div>
-      {/* Preset swatches */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
-        {SOLID_COLORS.map(c => (
-          <button key={c.key} title={c.label} onClick={() => onSelect(c.key)} style={{
-            width: "28px", height: "28px", borderRadius: "50%",
-            background: c.hex,
-            border: selected === c.key ? "3px solid var(--charcoal)" : "2px solid transparent",
-            outline: selected === c.key ? "2px solid var(--cream)" : "none",
-            cursor: "pointer", transition: "transform 0.1s ease",
-            transform: selected === c.key ? "scale(1.15)" : "scale(1)",
-          }} />
-        ))}
-      </div>
-
-      {/* Custom hex input */}
-      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <input
-          name="custom_colour_picker"
-          aria-label="Pick a custom colour"
-          type="color"
-          value={isCustom ? selected : "#ffffff"}
-          onChange={e => { setCustomHex(e.target.value); onSelect(e.target.value); }}
-          title="Pick a custom colour"
-          style={{ width: "32px", height: "32px", border: "1px solid var(--border)", borderRadius: "6px", cursor: "pointer", padding: "2px" }}
-        />
-        <input
-          name="custom_colour_hex"
-          aria-label="Custom colour hex"
-          type="text"
-          value={isCustom ? selected : customHex}
-          placeholder="#hex or type colour"
-          onChange={e => { const v = e.target.value; setCustomHex(v); if (/^#[0-9a-f]{6}$/i.test(v)) onSelect(v); }}
-          style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "13px", fontFamily: "monospace" }}
-        />
-      </div>
-
-      {/* Selected label */}
-      <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px", textTransform: isCustom ? "none" : "capitalize" }}>
-        Selected: <strong style={{ color: "var(--ink)" }}>{displayLabel}</strong>
-        {isCustom && <span style={{ display: "inline-block", width: "12px", height: "12px", borderRadius: "3px", background: selected, border: "1px solid var(--border)", marginLeft: "6px", verticalAlign: "middle" }} />}
-      </p>
-    </div>
-  );
-}
-
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2006,11 +1466,12 @@ function StyleDetailsSection({ allDescriptors, descriptors, onDescriptorChange }
 // ItemCard — popup edit modal + archive confirmation
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function ItemCard({ item, priority = false, onEdit, onRequestDelete }: {
+function ItemCard({ item, priority = false, onEdit, onRequestDelete, onRequestArchive }: {
   item: ClothingItem;
   priority?: boolean;
   onEdit: () => void;
   onRequestDelete: () => void;
+  onRequestArchive: () => void;
 }) {
   const formalityLabel =
     item.formality_score !== undefined
@@ -2061,7 +1522,8 @@ function ItemCard({ item, priority = false, onEdit, onRequestDelete }: {
         )}
         <div className="card-actions" style={{ position: "absolute", top: "8px", right: "8px", display: "flex", flexDirection: "column", gap: "4px", opacity: 0, transition: "opacity 0.2s ease" }}>
           <ActionBtn onClick={onEdit} icon={<Pencil size={13} />} label="Edit item" />
-          <ActionBtn onClick={onRequestDelete} icon={<Archive size={13} color="#D4A96A" />} label="Archive item" />
+          <ActionBtn onClick={onRequestArchive} icon={<Archive size={13} color="#D4A96A" />} label="Archive item" />
+          <ActionBtn onClick={onRequestDelete} icon={<Trash2 size={13} color="#D4A96A" />} label="Delete forever" />
         </div>
       </div>
 
@@ -2401,6 +1863,51 @@ function PermanentDeleteDialog({
   );
 }
 
+function ActivePermanentDeleteDialog({
+  item,
+  onClose,
+  onConfirm,
+}: {
+  item: ClothingItem;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000 }}
+      />
+      <div style={{
+        position: "fixed", top: "50%", left: "50%",
+        transform: "translate(-50%, -50%)",
+        zIndex: 1001, background: "var(--surface)", borderRadius: "12px",
+        width: "min(380px, 92vw)", padding: "22px",
+        boxShadow: "0 24px 64px rgba(0,0,0,0.25)",
+      }}>
+        <p style={{ fontWeight: 600, fontSize: "16px", color: "var(--charcoal)", marginBottom: "8px" }}>
+          Delete this item forever?
+        </p>
+        <p style={{ color: "var(--muted)", fontSize: "13px", marginBottom: "18px", textTransform: "capitalize" }}>
+          {getItemDisplayName(item)}
+        </p>
+        <p style={{ color: "var(--muted)", fontSize: "13px", lineHeight: 1.5, marginBottom: "18px" }}>
+          This will remove the item and associated media immediately. It will not be moved to archive and cannot be restored.
+        </p>
+        <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+          <button onClick={onClose} className="btn-secondary">Cancel</button>
+          <button
+            onClick={onConfirm}
+            style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: "#B91C1C", color: "#FFF7ED", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+          >
+            Delete forever
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Tiny helpers ──────────────────────────────────────────────────────────────
 
 function ActionBtn({ onClick, icon, label }: { onClick: () => void; icon: React.ReactNode; label: string }) {
@@ -2416,22 +1923,21 @@ function ActionBtn({ onClick, icon, label }: { onClick: () => void; icon: React.
   );
 }
 
-function ChangedBadge() {
-  return <span style={{ marginLeft: "6px", fontSize: "10px", color: "var(--gold)", fontWeight: 600, letterSpacing: "0.05em" }}>EDITED</span>;
-}
-
-const labelStyle: React.CSSProperties = {
-  display: "block", fontSize: "11px", fontWeight: 600,
-  color: "var(--muted)", textTransform: "uppercase",
-  letterSpacing: "0.07em", marginBottom: "6px",
-};
-
 function EmptyState() {
   return (
     <div style={{ textAlign: "center", padding: "80px 24px", color: "var(--muted)" }}>
       <ShirtIcon size={48} color="var(--border)" style={{ margin: "0 auto 16px", display: "block" }} />
       <h3 className="type-section-title" style={{ fontFamily: "Playfair Display, serif", color: "var(--charcoal)", marginBottom: "8px" }}>Your wardrobe is empty</h3>
-      <p className="type-body" style={{ fontSize: "15px" }}>Upload your first clothing item to get started</p>
+      <p className="type-body" style={{ fontSize: "15px" }}>
+        Your next add starts in{" "}
+        <Link
+          href="/batch-upload"
+          style={{ color: "var(--gold)", textDecoration: "none", fontWeight: 600 }}
+        >
+          Batch Upload
+        </Link>
+        .
+      </p>
     </div>
   );
 }

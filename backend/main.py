@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
-from routers import activity, auth, clothing, discover, event, recommendations, feedback, profile
+from routers import activity, auth, batch_upload, clothing, discover, event, recommendations, feedback, profile
 from workers.discover_worker import run_loop
 
 
@@ -55,7 +55,8 @@ app.include_router(discover.router,        prefix="/discover",    tags=["Discove
 app.include_router(event.router,           prefix="/event",       tags=["Event"])
 app.include_router(recommendations.router, prefix="/recommend",   tags=["Recommendations"])
 app.include_router(feedback.router,        prefix="/feedback",    tags=["Feedback"])
-app.include_router(profile.router, prefix="/profile", tags=["profile"])
+app.include_router(profile.router,       prefix="/profile",       tags=["profile"])
+app.include_router(batch_upload.router,  prefix="/batch-upload",  tags=["BatchUpload"])
 
 _discover_worker_thread: threading.Thread | None = None
 _discover_worker_stop: threading.Event | None = None

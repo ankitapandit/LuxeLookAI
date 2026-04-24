@@ -401,3 +401,72 @@ class FeedbackResponse(BaseModel):
     outfit_id: UUID
     rating: int
     message: str
+
+
+# ── Batch Upload ──────────────────────────────────────────────────────────────
+
+BatchSessionStatus = Literal[
+    "queued", "uploading", "processing",
+    "awaiting_verification", "completed", "completed_with_errors",
+]
+
+BatchItemStatus = Literal[
+    "queued", "uploaded", "tagging", "tagged",
+    "awaiting_verification", "verified", "rejected", "failed",
+]
+
+
+class CreateBatchSessionRequest(BaseModel):
+    total_count: int = Field(..., ge=1, le=5)
+
+
+class BatchSession(BaseModel):
+    id: UUID
+    user_id: UUID
+    status: str
+    total_count: int
+    uploaded_count: int
+    processed_count: int
+    awaiting_verification_count: int
+    verified_count: int
+    failed_count: int
+    created_at: datetime
+    updated_at: datetime
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class BatchItem(BaseModel):
+    id: UUID
+    session_id: UUID
+    user_id: UUID
+    file_name: Optional[str] = None
+    image_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    cutout_url: Optional[str] = None
+    status: str
+    error_message: Optional[str] = None
+    clothing_item_id: Optional[UUID] = None
+    created_at: datetime
+    updated_at: datetime
+    verified_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class BatchSessionWithItems(BatchSession):
+    items: List[BatchItem] = []
+
+
+class VerifyBatchItemResponse(BaseModel):
+    item_id: UUID
+    status: str
+    clothing_item_id: Optional[UUID] = None
+
+
+class RejectBatchItemResponse(BaseModel):
+    item_id: UUID
+    status: str

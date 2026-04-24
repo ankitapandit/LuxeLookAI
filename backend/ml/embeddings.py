@@ -28,11 +28,15 @@ _clip_processor = None
 def _load_clip():
     """Lazily load the CLIP model so startup is fast during development."""
     global _clip_model, _clip_processor
-    if _clip_model is None:
+    if _clip_model is None or _clip_processor is None:
         try:
             from transformers import CLIPModel, CLIPProcessor
-            _clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-            _clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+            model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+            processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+            # Assign only after both pieces load successfully so we never leave
+            # the module in a half-initialized state.
+            _clip_model = model
+            _clip_processor = processor
         except Exception as e:
             logger.error(f"Failed to load CLIP model: {e}")
             raise
@@ -73,6 +77,14 @@ def _real_embedding(image_bytes: bytes) -> List[float]:
     return vec.tolist()
 
 
+def _fallback_embedding_seed(image_url: str, image_bytes: bytes | None) -> str:
+    if image_url:
+        return image_url
+    if image_bytes:
+        return f"bytes:{hashlib.md5(image_bytes).hexdigest()}"
+    return "embedding-fallback"
+
+
 def generate_embedding(image_url: str, image_bytes: bytes = None) -> List[float]:
     """
     Public interface for embedding generation.
@@ -91,7 +103,15 @@ def generate_embedding(image_url: str, image_bytes: bytes = None) -> List[float]
     else:
         if image_bytes is None:
             raise ValueError("image_bytes required when USE_MOCK_AI=false")
-        return _real_embedding(image_bytes)
+        try:
+            return _real_embedding(image_bytes)
+        except Exception as e:
+            logger.warning(
+                "CLIP embedding failed for %s — using deterministic fallback. Reason: %s",
+                image_url or "<bytes>",
+                e,
+            )
+            return _mock_embedding(_fallback_embedding_seed(image_url, image_bytes))
 
 
 def cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:

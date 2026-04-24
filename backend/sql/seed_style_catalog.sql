@@ -70,7 +70,7 @@ values
   ('jumpsuit', 'Jumpsuit', 'garment_type', 'One-piece jumpsuit or romper silhouette.', '["romper", "playsuit"]'::jsonb, 113, true),
   ('outerwear', 'Outerwear', 'garment_type', 'Coats, jackets, blazers, and layers.', '["layer"]'::jsonb, 114, true),
   ('shoes', 'Shoes', 'garment_type', 'Footwear and shoe styling.', '["footwear"]'::jsonb, 115, true),
-  ('accessory', 'Accessory', 'garment_type', 'Bags, belts, scarves, hats, and other non-jewelry finishing pieces.', '["accessories"]'::jsonb, 116, true),
+  ('accessory', 'Accessory', 'garment_type', 'Bags, belts, scarves, hats, sunglasses, and hair accessories as non-jewelry finishing pieces.', '["accessories", "hair accessories", "hair accessory", "headband", "barrette", "claw clip"]'::jsonb, 116, true),
   ('jewelry', 'Jewelry', 'garment_type', 'Necklaces, earrings, bracelets, rings, watches, and other jewelry pieces.', '["jewellery"]'::jsonb, 117, true),
   ('set', 'Set', 'garment_type', 'Matching two-piece outfit.', '["coord", "co-ord"]'::jsonb, 118, true),
   ('swimwear', 'Swimwear', 'garment_type', 'Swim and resort garments.', '["swim"]'::jsonb, 119, true),

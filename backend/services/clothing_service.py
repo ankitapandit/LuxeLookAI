@@ -33,8 +33,13 @@ ITEM_LIST_FIELDS = (
     "id, user_id, category, item_type, accessory_subtype, color, pattern, "
     "season, formality_score, image_url, thumbnail_url, cutout_url, "
     "media_status, media_stage, media_error, media_updated_at, "
-    "is_active, is_archived, archived_on, deleted_at, descriptors, created_at"
+    "is_active, is_archived, archived_on, deleted_at, "
+    "verification_status, ingestion_source, descriptors, created_at"
 )
+
+
+def _item_is_visible_in_wardrobe(item: Dict[str, Any]) -> bool:
+    return bool(item.get("is_active", True)) and item.get("verification_status") == "verified"
 
 
 def _stringify_feedback_value(value: Any) -> Optional[str]:
@@ -118,7 +123,7 @@ def _make_thumbnail_bytes(image_bytes: bytes, max_size: int = 360) -> bytes:
 @lru_cache(maxsize=1)
 def _get_rembg_session():
     from rembg import new_session
-    return new_session("u2net")
+    return new_session("isnet-general-use")
 
 
 def _color_distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> int:
@@ -326,9 +331,167 @@ def _hard_delete_item_real(item_id: str, user_id: str) -> bool:
     return True
 
 
+def _purge_item_mock(item_id: str, user_id: str) -> bool:
+    from utils.mock_db_store import select_one, delete as hard_delete
+
+    row = select_one(TABLE, {"id": item_id, "user_id": user_id})
+    if not row:
+        return False
+    hard_delete(TABLE, item_id, extra_filters={"user_id": user_id})
+    return True
+
+
+def _purge_item_real(item_id: str, user_id: str) -> bool:
+    from utils.db import get_supabase
+
+    db = get_supabase()
+    row = (
+        db.table(TABLE)
+        .select("id, image_url, thumbnail_url, cutout_url")
+        .eq("id", item_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+        .data
+    )
+    if not row:
+        return False
+
+    paths = _extract_storage_paths(
+        row.get("image_url", ""),
+        row.get("thumbnail_url", ""),
+        row.get("cutout_url", ""),
+    )
+    if paths:
+        try:
+            db.storage.from_("clothing-images").remove(paths)
+        except Exception as e:
+            logger.warning("Permanent storage cleanup failed for %s: %s", item_id, e)
+
+    db.table(TABLE).delete().eq("id", item_id).eq("user_id", user_id).execute()
+    return True
+
+
 def _media_timestamp() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat()
+
+
+def _is_retryable_storage_error(exc: BaseException) -> bool:
+    try:
+        import httpcore
+        import httpx
+    except Exception:
+        httpcore = None
+        httpx = None
+
+    retryable_types = []
+    if httpx is not None:
+        retryable_types.extend([
+            getattr(httpx, "WriteError", None),
+            getattr(httpx, "ReadError", None),
+            getattr(httpx, "RemoteProtocolError", None),
+            getattr(httpx, "ConnectError", None),
+        ])
+    if httpcore is not None:
+        retryable_types.extend([
+            getattr(httpcore, "WriteError", None),
+            getattr(httpcore, "ReadError", None),
+            getattr(httpcore, "RemoteProtocolError", None),
+            getattr(httpcore, "ConnectError", None),
+        ])
+    retryable_tuple = tuple(error_type for error_type in retryable_types if error_type is not None)
+
+    if retryable_tuple and isinstance(exc, retryable_tuple):
+        return True
+
+    if isinstance(exc, UnboundLocalError) and "response" in str(exc):
+        # storage3 can throw this after an upstream transport failure while trying
+        # to parse a response object that was never created.
+        return True
+
+    message = str(exc).lower()
+    return (
+        "eof occurred in violation of protocol" in message
+        or "remoteprotocolerror" in message
+        or "writeerror" in message
+        or "readerror" in message
+    )
+
+
+def _get_fresh_storage_bucket():
+    from supabase import create_client
+
+    settings = get_settings()
+    client = create_client(settings.supabase_url, settings.supabase_service_key)
+    return client.storage.from_(STORAGE_BUCKET)
+
+
+def _upload_bytes_to_storage(
+    storage_path: str,
+    data: bytes,
+    file_options: Optional[Dict[str, Any]] = None,
+    *,
+    attempts: int = 3,
+) -> str:
+    from utils.db import reset_supabase_client
+
+    last_error: Optional[BaseException] = None
+    for attempt in range(1, attempts + 1):
+        try:
+            bucket = _get_fresh_storage_bucket()
+            if file_options:
+                bucket.upload(storage_path, data, file_options)
+            else:
+                bucket.upload(storage_path, data)
+            return bucket.get_public_url(storage_path).rstrip("?")
+        except Exception as exc:
+            retryable = _is_retryable_storage_error(exc)
+            if not retryable:
+                raise
+            if attempt >= attempts:
+                raise RuntimeError("Storage upload failed due to a temporary network connection issue. Please retry.") from exc
+            last_error = exc
+            reset_supabase_client()
+            logger.warning(
+                "Storage upload retry %s/%s for %s after error: %s",
+                attempt,
+                attempts,
+                storage_path,
+                exc,
+            )
+
+    raise RuntimeError("Storage upload failed due to a temporary network connection issue. Please retry.") from last_error
+
+
+def _download_bytes_from_storage(storage_path: str, *, attempts: int = 3) -> bytes:
+    from utils.db import reset_supabase_client
+
+    last_error: Optional[BaseException] = None
+    for attempt in range(1, attempts + 1):
+        try:
+            bucket = _get_fresh_storage_bucket()
+            data = bucket.download(storage_path)
+            if hasattr(data, "read"):
+                data = data.read()
+            return data
+        except Exception as exc:
+            retryable = _is_retryable_storage_error(exc)
+            if not retryable:
+                raise
+            if attempt >= attempts:
+                raise RuntimeError("Storage download failed due to a temporary network connection issue. Please retry.") from exc
+            last_error = exc
+            reset_supabase_client()
+            logger.warning(
+                "Storage download retry %s/%s for %s after error: %s",
+                attempt,
+                attempts,
+                storage_path,
+                exc,
+            )
+
+    raise RuntimeError("Storage download failed due to a temporary network connection issue. Please retry.") from last_error
 
 
 # ── Mock implementation ───────────────────────────────────────────────────────
@@ -385,16 +548,27 @@ def _upload_mock(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
 def _get_items_mock(user_id: str) -> List[Dict]:
     from utils.mock_db_store import select_all
     rows = select_all(TABLE, {"user_id": user_id})
-    active = [r for r in rows if r.get("is_active", True)]
+    active = [r for r in rows if _item_is_visible_in_wardrobe(r)]
     return sorted(active, key=lambda r: r.get("created_at", ""), reverse=True)
 
 
-def _get_items_by_ids_mock(user_id: str, item_ids: List[str]) -> List[Dict[str, Any]]:
+def _get_items_by_ids_mock(
+    user_id: str,
+    item_ids: List[str],
+    include_unverified: bool = False,
+) -> List[Dict[str, Any]]:
     from utils.mock_db_store import select_all
 
     wanted = set(item_ids)
     rows = select_all(TABLE, {"user_id": user_id})
-    matched = [r for r in rows if r.get("is_active", True) and r.get("id") in wanted]
+    matched = [
+        r for r in rows
+        if r.get("id") in wanted
+        and (
+            _item_is_visible_in_wardrobe(r)
+            or (include_unverified and bool(r.get("is_active", True)))
+        )
+    ]
     return sorted(matched, key=lambda r: r.get("media_updated_at") or r.get("created_at", ""), reverse=True)
 
 
@@ -415,6 +589,10 @@ def _apply_item_filters_mock(
         if formality:
             score = item.get("formality_score")
             if score is None:
+                return False
+            if normalized_formality == "black tie" and score < 0.85:
+                return False
+            if normalized_formality == "cocktail" and (score < 0.78 or score >= 0.85):
                 return False
             if normalized_formality == "formal" and score < 0.75:
                 return False
@@ -452,7 +630,7 @@ def _get_items_page_mock(
     return {
         "items": page[:limit],
         "has_more": len(page) > limit,
-        "total_count": len(active_items),
+        "total_count": len(filtered),
     }
 
 
@@ -548,8 +726,7 @@ def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
     item_id      = str(uuid.uuid4())
     storage_path = f"{user_id}/{item_id}/{filename}"
 
-    db.storage.from_(STORAGE_BUCKET).upload(storage_path, image_bytes)
-    image_url = db.storage.from_(STORAGE_BUCKET).get_public_url(storage_path).rstrip("?")
+    image_url = _upload_bytes_to_storage(storage_path, image_bytes)
 
     tags = tag_clothing_item(image_url, image_bytes)
     if manual_tags:
@@ -593,25 +770,36 @@ def _get_items_real(user_id: str) -> List[Dict]:
         .select(ITEM_LIST_FIELDS)
         .eq("user_id", user_id)
         .eq("is_active", True)
+        .eq("verification_status", "verified")
         .order("created_at", desc=True)
     ))
     return result.data or []
 
 
-def _get_items_by_ids_real(user_id: str, item_ids: List[str]) -> List[Dict[str, Any]]:
+def _get_items_by_ids_real(
+    user_id: str,
+    item_ids: List[str],
+    include_unverified: bool = False,
+) -> List[Dict[str, Any]]:
     from utils.db import get_supabase
 
     if not item_ids:
         return []
 
     _reconcile_stale_media_items_real(user_id)
-    result = _execute_supabase_request(lambda: (
-        get_supabase().table(TABLE)
-        .select(ITEM_LIST_FIELDS)
-        .eq("user_id", user_id)
-        .eq("is_active", True)
-        .in_("id", item_ids)
-    ))
+    def _build_query():
+        query = (
+            get_supabase().table(TABLE)
+            .select(ITEM_LIST_FIELDS)
+            .eq("user_id", user_id)
+            .eq("is_active", True)
+            .in_("id", item_ids)
+        )
+        if not include_unverified:
+            query = query.eq("verification_status", "verified")
+        return query
+
+    result = _execute_supabase_request(_build_query)
     items = result.data or []
     return sorted(items or [], key=lambda r: r.get("media_updated_at") or r.get("created_at", ""), reverse=True)
 
@@ -632,31 +820,47 @@ def _get_items_page_real(
         .select(ITEM_LIST_FIELDS)
         .eq("user_id", user_id)
         .eq("is_active", True)
+        .eq("verification_status", "verified")
     )
     total_count_query = (
         get_supabase().table(TABLE)
         .select("id")
         .eq("user_id", user_id)
         .eq("is_active", True)
+        .eq("verification_status", "verified")
     )
 
     if category:
         query = query.eq("category", category)
+        total_count_query = total_count_query.eq("category", category)
     if season:
         query = query.eq("season", season)
+        total_count_query = total_count_query.eq("season", season)
     normalized_formality = (formality or "").strip().lower()
-    if normalized_formality == "formal":
+    if normalized_formality == "black tie":
+        query = query.gte("formality_score", 0.85)
+        total_count_query = total_count_query.gte("formality_score", 0.85)
+    elif normalized_formality == "cocktail":
+        query = query.gte("formality_score", 0.78).lt("formality_score", 0.85)
+        total_count_query = total_count_query.gte("formality_score", 0.78).lt("formality_score", 0.85)
+    elif normalized_formality == "formal":
         query = query.gte("formality_score", 0.75)
+        total_count_query = total_count_query.gte("formality_score", 0.75)
     elif normalized_formality == "business formal":
         query = query.gte("formality_score", 0.68).lt("formality_score", 0.78)
+        total_count_query = total_count_query.gte("formality_score", 0.68).lt("formality_score", 0.78)
     elif normalized_formality == "business casual":
         query = query.gte("formality_score", 0.55).lt("formality_score", 0.68)
+        total_count_query = total_count_query.gte("formality_score", 0.55).lt("formality_score", 0.68)
     elif normalized_formality == "smart casual":
         query = query.gte("formality_score", 0.42).lt("formality_score", 0.55)
+        total_count_query = total_count_query.gte("formality_score", 0.42).lt("formality_score", 0.55)
     elif normalized_formality == "casual":
         query = query.gte("formality_score", 0.20).lt("formality_score", 0.42)
+        total_count_query = total_count_query.gte("formality_score", 0.20).lt("formality_score", 0.42)
     elif normalized_formality == "loungewear":
         query = query.lt("formality_score", 0.20)
+        total_count_query = total_count_query.lt("formality_score", 0.20)
 
     rows_result = _execute_supabase_request(lambda: (
         query.order("created_at", desc=True)
@@ -820,26 +1024,22 @@ def _backfill_missing_thumbnails_real(user_id: str, force: bool = False) -> int:
         thumb_path = f"{user_id}/{row['id']}/thumb.webp"
         cutout_path = f"{user_id}/{row['id']}/cutout.png"
         try:
-            original = db.storage.from_(STORAGE_BUCKET).download(original_path)
-            if hasattr(original, "read"):
-                original = original.read()
+            original = _download_bytes_from_storage(original_path)
             updates: Dict[str, str] = {}
             if force or not row.get("thumbnail_url"):
                 thumb_bytes = _make_thumbnail_bytes(original)
-                db.storage.from_(STORAGE_BUCKET).upload(
+                updates["thumbnail_url"] = _upload_bytes_to_storage(
                     thumb_path,
                     thumb_bytes,
                     {"content-type": "image/webp", "upsert": "true"},
                 )
-                updates["thumbnail_url"] = db.storage.from_(STORAGE_BUCKET).get_public_url(thumb_path).rstrip("?")
             if force or not row.get("cutout_url"):
                 cutout_bytes = _make_cutout_bytes(original)
-                db.storage.from_(STORAGE_BUCKET).upload(
+                updates["cutout_url"] = _upload_bytes_to_storage(
                     cutout_path,
                     cutout_bytes,
                     {"content-type": "image/png", "upsert": "true"},
                 )
-                updates["cutout_url"] = db.storage.from_(STORAGE_BUCKET).get_public_url(cutout_path).rstrip("?")
             if updates:
                 db.table(TABLE).update(updates).eq("id", row["id"]).eq("user_id", user_id).execute()
                 updated += 1
@@ -992,25 +1192,21 @@ def _process_item_media_mock(item_id: str, user_id: str, image_bytes: bytes) -> 
 
 
 def _process_item_media_real(item_id: str, user_id: str, image_bytes: bytes) -> None:
-    from utils.db import get_supabase
-
-    db = get_supabase()
     thumb_path = f"{user_id}/{item_id}/thumb.webp"
     cutout_path = f"{user_id}/{item_id}/cutout.png"
 
     update_media_status(item_id, user_id, "processing", stage="thumbnail", error=None)
     thumbnail_bytes = _make_thumbnail_bytes(image_bytes)
 
-    db.storage.from_(STORAGE_BUCKET).upload(
+    thumbnail_url = _upload_bytes_to_storage(
         thumb_path,
         thumbnail_bytes,
         {"content-type": "image/webp", "upsert": "true"},
     )
-    thumbnail_url = db.storage.from_(STORAGE_BUCKET).get_public_url(thumb_path).rstrip("?")
     update_media_status(item_id, user_id, "processing", stage="cutout", error=None, extra_updates={"thumbnail_url": thumbnail_url})
 
     cutout_bytes = _make_cutout_bytes(image_bytes)
-    db.storage.from_(STORAGE_BUCKET).upload(
+    cutout_url = _upload_bytes_to_storage(
         cutout_path,
         cutout_bytes,
         {"content-type": "image/png", "upsert": "true"},
@@ -1024,7 +1220,7 @@ def _process_item_media_real(item_id: str, user_id: str, image_bytes: bytes) -> 
         error=None,
         extra_updates={
             "thumbnail_url": thumbnail_url,
-            "cutout_url": db.storage.from_(STORAGE_BUCKET).get_public_url(cutout_path).rstrip("?"),
+            "cutout_url": cutout_url,
         },
     )
 
@@ -1064,21 +1260,25 @@ def process_item_media(item_id: str, user_id: str, image_bytes: bytes) -> None:
 
 
 def get_user_items(user_id: str) -> List[Dict[str, Any]]:
-    """Fetch all active clothing items belonging to a user."""
+    """Fetch all active, verified clothing items belonging to a user."""
     settings = get_settings()
     if settings.use_mock_auth:
         return _get_items_mock(user_id)
     return _get_items_real(user_id)
 
 
-def get_user_items_by_ids(user_id: str, item_ids: List[str]) -> List[Dict[str, Any]]:
-    """Fetch specific active wardrobe items, including media-processing status fields."""
+def get_user_items_by_ids(
+    user_id: str,
+    item_ids: List[str],
+    include_unverified: bool = False,
+) -> List[Dict[str, Any]]:
+    """Fetch specific wardrobe items, optionally including pending batch-upload items."""
     if not item_ids:
         return []
     settings = get_settings()
     if settings.use_mock_auth:
-        return _get_items_by_ids_mock(user_id, item_ids)
-    return _get_items_by_ids_real(user_id, item_ids)
+        return _get_items_by_ids_mock(user_id, item_ids, include_unverified=include_unverified)
+    return _get_items_by_ids_real(user_id, item_ids, include_unverified=include_unverified)
 
 
 def get_user_items_page(
@@ -1089,7 +1289,7 @@ def get_user_items_page(
     season: Optional[str] = None,
     formality: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Fetch a paginated slice of active wardrobe items with optional server-side filters."""
+    """Fetch a paginated slice of active, verified wardrobe items with optional server-side filters."""
     settings = get_settings()
     if settings.use_mock_auth:
         return _get_items_page_mock(
@@ -1132,6 +1332,14 @@ def delete_archived_item(item_id: str, user_id: str) -> bool:
     if settings.use_mock_auth:
         return _hard_delete_item_mock(item_id, user_id)
     return _hard_delete_item_real(item_id, user_id)
+
+
+def purge_item_forever(item_id: str, user_id: str) -> bool:
+    """Permanently delete any item and its stored media, whether active or archived."""
+    settings = get_settings()
+    if settings.use_mock_auth:
+        return _purge_item_mock(item_id, user_id)
+    return _purge_item_real(item_id, user_id)
 
 
 def restore_item(item_id: str, user_id: str) -> RestoreResult:

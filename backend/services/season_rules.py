@@ -103,12 +103,24 @@ INSULATION_WEIGHTS: Dict[str, Tuple[int, int, int, int]] = {
     "down_filled":  (0, 0, 0, 6),
 }
 
+# Warmth descriptor scores (from CATEGORY_DESCRIPTORS: airy/light/medium/warm/thermal).
+# This lets the recommender differentiate between a "light" and a "medium" warmth
+# item within the same season — critical for the "slightly warmer" use-case.
+WARMTH_WEIGHTS: Dict[str, Tuple[int, int, int, int]] = {
+    "airy":    (5, 2, 0, 0),   # summer-only; unusable in fall/winter
+    "light":   (4, 3, 1, 0),
+    "medium":  (1, 3, 3, 1),   # spring/fall sweet-spot; passable in mild winter
+    "warm":    (0, 1, 3, 4),
+    "thermal": (0, 0, 1, 5),   # winter-only
+}
+
 # Per-attribute maximum weights (used for normalization)
 _FABRIC_MAX     = 5
 _SLEEVE_MAX     = 4
 _FIT_MAX        = 4
 _PATTERN_MAX    = 5
 _INSULATION_MAX = 6
+_WARMTH_MAX     = 5
 
 
 # ── 2.2 Hard reject rules ─────────────────────────────────────────────────────
@@ -196,16 +208,23 @@ def _score_item_attributes(
     descriptors: dict,
     season: str,
     second_season: Optional[str] = None,
+    coverage_season: Optional[str] = None,
 ) -> Tuple[float, bool]:
     """
     Score a single item's descriptors against one (or two averaged) target seasons.
     Returns (normalised_score [0..1], is_hard_reject).
+
+    coverage_season — if set, sleeve_length and warmth scoring uses this season
+    instead of `season`.  Used when the user wants "slightly warmer" within a
+    warm-weather context: fabric/pattern/fit stay summer-anchored while
+    sleeve/warmth shift toward spring to prefer more coverage.
     """
     fabric     = (descriptors.get("fabric_type") or descriptors.get("fabric") or "").lower().strip()
     sleeve     = (descriptors.get("sleeve_length") or "").lower().strip()
     fit        = (descriptors.get("fit") or "").lower().strip()
     pattern    = (descriptors.get("pattern") or "").lower().strip()
     insulation = (descriptors.get("insulation") or "").lower().strip()
+    warmth     = (descriptors.get("warmth") or "").lower().strip()
 
     # Hard reject check
     if _hard_reject(fabric, sleeve, insulation):
@@ -213,27 +232,30 @@ def _score_item_attributes(
     if _hard_reject_fit(fit, insulation):
         return 0.0, True
 
-    def _get(table: Dict, key: str, max_val: int) -> Optional[float]:
+    def _get(table: Dict, key: str, max_val: int, override_season: Optional[str] = None) -> Optional[float]:
         if not key:
             return None
-        raw = _season_weights(table, key, season)
+        s = override_season or season
+        raw = _season_weights(table, key, s)
         if raw is None:
             return None
-        if second_season:
+        # Use second_season blending only when not overriding
+        if second_season and not override_season:
             raw2 = _season_weights(table, key, second_season)
             if raw2 is not None:
                 raw = (raw + raw2) / 2.0
         return raw / max_val  # normalise to [0..1]
 
     scores: List[float] = []
-    for val, table, max_val in [
-        (fabric,     FABRIC_WEIGHTS,     _FABRIC_MAX),
-        (sleeve,     SLEEVE_WEIGHTS,     _SLEEVE_MAX),
-        (fit,        FIT_WEIGHTS,        _FIT_MAX),
-        (pattern,    PATTERN_WEIGHTS,    _PATTERN_MAX),
-        (insulation, INSULATION_WEIGHTS, _INSULATION_MAX),
+    for val, table, max_val, override in [
+        (fabric,     FABRIC_WEIGHTS,     _FABRIC_MAX,     None),
+        (sleeve,     SLEEVE_WEIGHTS,     _SLEEVE_MAX,     coverage_season),
+        (fit,        FIT_WEIGHTS,        _FIT_MAX,        None),
+        (pattern,    PATTERN_WEIGHTS,    _PATTERN_MAX,    None),
+        (insulation, INSULATION_WEIGHTS, _INSULATION_MAX, coverage_season),
+        (warmth,     WARMTH_WEIGHTS,     _WARMTH_MAX,     coverage_season),
     ]:
-        s = _get(table, val, max_val)
+        s = _get(table, val, max_val, override)
         if s is not None:
             scores.append(s)
 
@@ -270,6 +292,45 @@ def score_season_rules(outfit_items: List[Dict], occasion: Dict) -> float:
         primary_season = _TEMP_TO_SEASON.get(temp, "spring")
         second_season  = "fall" if temp in _AMBIGUOUS_TEMPS else None
 
+        # ── Warmer / cooler within-season modifiers ───────────────────────────
+        # When the user signals they want "slightly warmer" in a warm-weather
+        # context, shift sleeve/warmth/insulation scoring toward spring so that
+        # 3/4-sleeve items and medium-warmth pieces rank above sleeveless/airy
+        # options — without pulling fabric scoring all the way into spring
+        # (we still want summer-appropriate fabrics like linen and cotton).
+        #
+        # Conversely, "slightly cooler" in winter shifts coverage scoring toward
+        # fall so extremely heavy thermals don't dominate (a user looking for a
+        # lighter winter layer shouldn't get puffer-jacket-heavy results).
+        _WARMER_TOKENS = {
+            "warmer", "slightly warmer", "warmer than usual", "warmer than typical",
+            "more warmth", "a bit warmer", "bit warmer", "need warmth",
+            "warmer option", "warmer_than_typical", "layer up",
+        }
+        _COOLER_TOKENS = {
+            "lighter", "slightly cooler", "lighter weight", "not too heavy",
+            "breathable", "lighter layer", "cooler option",
+        }
+        event_tokens: set = {str(t).lower() for t in (occasion.get("event_tokens") or [])}
+
+        coverage_season: Optional[str] = None  # per-item sleeve/warmth season override
+
+        if primary_season == "summer" and bool(_WARMER_TOKENS & event_tokens):
+            # "Slightly warmer for summer" — prefer 3/4 sleeves, medium warmth,
+            # light layers.  Keep fabric on summer; shift coverage to spring.
+            coverage_season = "spring"
+
+        elif primary_season == "winter" and bool(_COOLER_TOKENS & event_tokens):
+            # "Lighter winter option" — prefer mid-weight over full thermal.
+            # Keep fabric on winter; shift coverage toward fall range.
+            coverage_season = "fall"
+
+        elif primary_season == "spring" and bool(_WARMER_TOKENS & event_tokens):
+            # Spring but wants something warmer → lean toward fall coverage
+            coverage_season = "fall"
+            second_season   = None   # drop spring-fall blend so fall dominates
+
+        # ── Per-item scoring ──────────────────────────────────────────────────
         item_scores: List[float] = []
         hard_rejected = False
 
@@ -277,7 +338,9 @@ def score_season_rules(outfit_items: List[Dict], occasion: Dict) -> float:
             desc = item.get("descriptors") or {}
             if not isinstance(desc, dict):
                 continue
-            item_score, is_reject = _score_item_attributes(desc, primary_season, second_season)
+            item_score, is_reject = _score_item_attributes(
+                desc, primary_season, second_season, coverage_season
+            )
             if is_reject:
                 hard_rejected = True
                 item_scores.append(0.0)

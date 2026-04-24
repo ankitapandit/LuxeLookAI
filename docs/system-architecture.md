@@ -26,8 +26,10 @@ LuxeLook AI is a modular monolith:
 - `Supabase Postgres` as the primary data store
 - `Supabase Storage` for images and media artifacts
 - `DB-backed background jobs` for Discover and media processing
+- `DB-backed batch upload intake` with verify/reject review before final wardrobe trust is established
 - `hybrid AI` where CLIP / Hugging Face powers local visual understanding and the backend retains a provider abstraction for external search sources
 - `visual style-direction enrichment` for non-wardrobe recommendations, using image search plus structured style-direction pieces
+- `dynamic moodboard rendering` with palette-driven backgrounds, proportional placements, and cutout-bound compensation on the frontend
 - `first-party page-visit logging` for route-level product telemetry
 - `family-memory Discover serving state` to reduce repeated same-type cards across active Discover days
 
@@ -44,6 +46,7 @@ flowchart TB
     FE -->|JWT + timezone header| API[FastAPI Backend]
 
     API --> AUTH[Auth Router]
+    API --> BATCH[Batch Upload Router / Service]
     API --> CLOTH[Clothing Router / Service]
     API --> DISC[Discover Router / Service]
     API --> EVENT[Event Router / Service]
@@ -63,6 +66,9 @@ flowchart TB
 
     CLOTH --> EMB[Embeddings / Tagging]
     CLOTH --> ST
+    BATCH --> BSESS[Upload Batch Sessions]
+    BATCH --> BITEMS[Upload Batch Items]
+    BATCH --> CLOTH
     EVENT --> DB
     REC --> DB
     REC --> STYLEIMG
@@ -86,14 +92,15 @@ flowchart TB
 4. A JWT is returned to the browser and stored locally.
 5. The backend reads the JWT on every request and resolves the active user.
 
-### 2. Wardrobe upload
+### 2. Wardrobe intake and management
 
-1. User uploads a clothing photo.
-2. Frontend posts the file to FastAPI.
-3. Backend runs preview/tagging logic and saves the item.
-4. The item is written to `clothing_items`.
-5. Background media tasks generate thumbnails and cutouts.
-6. The wardrobe page updates with live media status.
+1. User starts a batch upload session from the Batch Upload page.
+2. Frontend uploads one or many images into that session.
+3. Backend creates `upload_batch_sessions` and `upload_batch_items` rows and runs tagging for each item.
+4. When tagging succeeds, a `clothing_items` row is created with ingestion metadata and verification state.
+5. Background media tasks generate thumbnails and cutouts for the resulting clothing item.
+6. The Batch Review flow lets the user verify or reject items before they settle into the trusted wardrobe set.
+7. The Wardrobe page then focuses on browsing, filtering, editing, archiving, and monitoring media status instead of being the primary intake surface.
 
 ### 3. Event to outfit suggestions
 
@@ -115,7 +122,7 @@ flowchart TB
 6. The feed serves ready candidates to the UI.
 7. User swipes like / love / dislike.
 8. Swipe events are written to `discover_style_interactions`.
-9. Family-level serving memory updates in `discover_user_state` and `discover_family_memory`, controlling cooldowns, recent-family spacing, and allowed same-day follow-ups.
+9. Family-level serving memory updates in `discover_user_state` and `discover_family_memory`, using broader two-token family signatures to control cooldowns, recent-family spacing, and allowed same-day follow-ups.
 10. Preference rows in `user_style_preferences` are recomputed after enough evidence accumulates.
 11. Ignored URLs are updated only from actual interactions, not merely from being shown.
 
@@ -171,6 +178,8 @@ In this app:
 | `auth.users` | Supabase Auth only | Supabase Auth only | platform-managed | External identity source |
 | `users` | owner, backend | owner, backend | RLS + backend `service_role` | New users are inserted by the signup trigger / auth path |
 | `clothing_items` | owner, backend | owner, backend | RLS + backend `service_role` | Wardrobe CRUD for new users should work because `users` rows are auto-provisioned |
+| `upload_batch_sessions` | owner, backend | owner, backend | RLS + backend `service_role` | Session-level state for multi-item intake |
+| `upload_batch_items` | owner, backend | owner, backend | RLS + backend `service_role` | Per-image intake/review state; may create a clothing item |
 | `events` | owner, backend | owner, backend | RLS + backend `service_role` | Event creation depends on the `users` row existing |
 | `outfit_suggestions` | owner, backend | backend; owner can rate | RLS + backend `service_role` | Generated from the recommender |
 | `style_catalog` | authenticated users | backend/admin seeding | read-only | Shared canonical style vocabulary |
@@ -199,14 +208,15 @@ If you ever move more CRUD directly into the browser, then the RLS policies shou
 
 ### Domain overview
 
-LuxeLook AI has six main data domains:
+LuxeLook AI has seven main data domains:
 
 1. `Identity & profile`
 2. `Wardrobe`
-3. `Occasions & outfit suggestions`
-4. `Style vocabulary / taxonomy`
-5. `Discover taste learning`
-6. `Route-level product activity`
+3. `Batch intake & verification`
+4. `Occasions & outfit suggestions`
+5. `Style vocabulary / taxonomy`
+6. `Discover taste learning`
+7. `Route-level product activity`
 
 ### Conceptual ER diagram
 
@@ -214,9 +224,13 @@ LuxeLook AI has six main data domains:
 erDiagram
     AUTH_USERS ||--|| USERS : "provisions"
     USERS ||--o{ CLOTHING_ITEMS : "owns"
+    USERS ||--o{ UPLOAD_BATCH_SESSIONS : "starts"
+    USERS ||--o{ UPLOAD_BATCH_ITEMS : "reviews"
     USERS ||--o{ EVENTS : "creates"
     USERS ||--o{ OUTFIT_SUGGESTIONS : "receives"
     EVENTS ||--o{ OUTFIT_SUGGESTIONS : "produces"
+    UPLOAD_BATCH_SESSIONS ||--o{ UPLOAD_BATCH_ITEMS : "contains"
+    UPLOAD_BATCH_ITEMS }o--|| CLOTHING_ITEMS : "may create"
 
     USERS ||--o{ DISCOVER_CANDIDATES : "warms"
     USERS ||--o{ DISCOVER_STYLE_INTERACTIONS : "swipes"
@@ -261,10 +275,40 @@ erDiagram
       text thumbnail_url
       text cutout_url
       jsonb descriptors
+      text verification_status
+      text ingestion_source
       boolean is_active
       boolean is_archived
       timestamptz archived_on
       timestamptz deleted_at
+    }
+
+    UPLOAD_BATCH_SESSIONS {
+      uuid id PK
+      uuid user_id FK
+      text status
+      int total_count
+      int uploaded_count
+      int processed_count
+      int awaiting_verification_count
+      int verified_count
+      int failed_count
+      timestamptz created_at
+      timestamptz completed_at
+    }
+
+    UPLOAD_BATCH_ITEMS {
+      uuid id PK
+      uuid session_id FK
+      uuid user_id FK
+      text file_name
+      text image_url
+      text thumbnail_url
+      text cutout_url
+      text status
+      text error_message
+      uuid clothing_item_id FK
+      timestamptz verified_at
     }
 
     EVENTS {
@@ -429,10 +473,43 @@ Important fields:
 - garment category and subtype
 - color, pattern, season, formality
 - media and derivative imagery
+- `verification_status`
+- `ingestion_source`
 - archive state
 - descriptors / tags
 
-#### 4. `public.events`
+Notes:
+- manual and batch-uploaded items now share this table
+- batch-created items can remain pending until the review flow verifies or rejects them
+
+#### 4. `public.upload_batch_sessions`
+
+Purpose:
+- one multi-photo intake session for a user
+
+Important fields:
+- aggregate counts for uploaded, processed, awaiting-verification, verified, and failed items
+- session-level lifecycle status
+
+Why it exists:
+- keeps batch intake state explicit instead of burying it inside ad hoc frontend state
+- allows the review screen to poll one session and understand end-to-end progress
+
+#### 5. `public.upload_batch_items`
+
+Purpose:
+- one uploaded image inside a batch session
+
+Important fields:
+- per-image processing status
+- derivative media URLs
+- `clothing_item_id` when tagging succeeds
+- `verified_at`
+
+Why it exists:
+- decouples “an uploaded photo is being processed/reviewed” from “a verified wardrobe item is trusted and ready to style”
+
+#### 6. `public.events`
 
 Purpose:
 - user-described occasion or styling request
@@ -442,7 +519,7 @@ Important fields:
 - parsed occasion type
 - formality and context cues
 
-#### 5. `public.outfit_suggestions`
+#### 7. `public.outfit_suggestions`
 
 Purpose:
 - stored outfit generations for one event
@@ -454,7 +531,7 @@ Important fields:
 - `explanation`
 - `user_rating`
 
-#### 6. `public.style_catalog`
+#### 8. `public.style_catalog`
 
 Purpose:
 - canonical, human-friendly style vocabulary for Discover learning
@@ -465,7 +542,7 @@ Important fields:
 - `dimension`
 - `aliases`
 
-#### 7. `public.style_taxonomy`
+#### 9. `public.style_taxonomy`
 
 Purpose:
 - larger vocabulary table for garment tagging and scoring
@@ -477,7 +554,7 @@ Important fields:
 - `value`
 - `meta`
 
-#### 8. `public.discover_candidates`
+#### 10. `public.discover_candidates`
 
 Purpose:
 - cached image results warmed up for the Discover feed
@@ -486,7 +563,7 @@ Why it exists:
 - prevents live search from being the only source of cards
 - lets the worker analyze candidates ahead of time
 
-#### 9. `public.discover_style_interactions`
+#### 11. `public.discover_style_interactions`
 
 Purpose:
 - raw swipe history for Discover
@@ -495,7 +572,7 @@ Why it exists:
 - source of truth for taste learning
 - used to recompute derived preference rows
 
-#### 10. `public.discover_ignored_urls`
+#### 12. `public.discover_ignored_urls`
 
 Purpose:
 - per-user ignore list of URLs already acted on
@@ -503,7 +580,7 @@ Purpose:
 Important rule:
 - should be populated by actual interactions, not simply by showing a card
 
-#### 11. `public.user_style_preferences`
+#### 13. `public.user_style_preferences`
 
 Purpose:
 - derived taste profile for a user
@@ -514,7 +591,7 @@ Important fields:
 - `exposure_count`
 - `status`
 
-#### 12. `public.discover_jobs`
+#### 14. `public.discover_jobs`
 
 Purpose:
 - durable job queue for Discover warm-up and recomputation
@@ -522,7 +599,7 @@ Purpose:
 Why it exists:
 - gives the app async execution without introducing a heavier orchestration system
 
-#### 13. `public.discover_user_state`
+#### 15. `public.discover_user_state`
 
 Purpose:
 - per-user Discover active-day state and recent-family history
@@ -531,7 +608,7 @@ Why it exists:
 - lets Discover cooldowns run on actual Discover usage days instead of wall-clock days
 - preserves recent family spacing across feed refreshes
 
-#### 14. `public.discover_family_memory`
+#### 16. `public.discover_family_memory`
 
 Purpose:
 - per-user memory for a learned visual family
@@ -542,7 +619,7 @@ Important fields:
 - `cooldown_until_active_day`
 - `last_discover_active_at`
 
-#### 15. `public.user_page_visits`
+#### 17. `public.user_page_visits`
 
 Purpose:
 - route-level first-party page telemetry
@@ -557,6 +634,8 @@ Important rule:
 The app uses Row Level Security for user-owned tables:
 - `users`
 - `clothing_items`
+- `upload_batch_sessions`
+- `upload_batch_items`
 - `events`
 - `outfit_suggestions`
 - `discover_candidates`
@@ -596,11 +675,12 @@ New users can create wardrobe items and events without issue because:
 
 ### Wardrobe flow
 
-1. User uploads an image.
-2. Backend tags the image.
-3. Item is inserted into `clothing_items`.
-4. Media pipeline generates thumbnails and cutouts.
-5. Wardrobe page renders the processed result.
+1. User starts a batch session and uploads one or more images.
+2. Backend tags each image and writes `upload_batch_items` state as it progresses.
+3. Successful rows create `clothing_items` entries with `ingestion_source` and `verification_status`.
+4. The media pipeline generates thumbnails and cutouts using the shared cutout service, which currently uses `rembg` with the `isnet-general-use` session.
+5. Batch Review verifies or rejects items.
+6. Wardrobe renders the verified active result set and exposes ongoing media status, edit, archive, and restore flows.
 
 ### Event flow
 
@@ -618,7 +698,7 @@ New users can create wardrobe items and events without issue because:
 4. Ready rows land in `discover_candidates`.
 5. The feed renders swipeable cards.
 6. User interacts.
-7. Interactions update both the raw swipe log and the derived taste rows.
+7. Interactions update the raw swipe log, ignore lists, family-memory state, and derived taste rows.
 
 ### Archive flow
 
@@ -634,6 +714,8 @@ New users can create wardrobe items and events without issue because:
 - `auth.users`
 - `users`
 - `clothing_items`
+- `upload_batch_sessions`
+- `upload_batch_items`
 - `events`
 - `outfit_suggestions`
 - `discover_style_interactions`
@@ -644,6 +726,8 @@ New users can create wardrobe items and events without issue because:
 - `style_taxonomy`
 - `discover_candidates`
 - `discover_ignored_urls`
+- `discover_user_state`
+- `discover_family_memory`
 - `user_style_preferences`
 - `discover_jobs`
 

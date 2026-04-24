@@ -1359,7 +1359,8 @@ def _score_accessory_balance(outfit_items: List[Dict], occasion: Dict) -> float:
     accessories = [i for i in outfit_items
                    if _normalize_category_name(i.get("category")) == "accessories"
                    or (i.get("accessory_subtype") or "").lower()
-                   in {"bag", "hat", "sunglasses", "scarf", "belt", "watch"}]
+                   in {"bag", "hat", "sunglasses", "scarf", "belt", "watch", "headband", "hair clip",
+                       "claw clip", "barrette", "scrunchie", "ribbon", "hair scarf", "headwrap", "hair comb"}]
     if not accessories:
         return 0.65  # no accessories — neutral
 

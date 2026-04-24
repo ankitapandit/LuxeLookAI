@@ -304,9 +304,9 @@ function VisualTile({ item }: { item: AtlasItem }) {
         justifyItems: "center",
         gap: "10px",
         padding: "14px",
-        width: "156px",
-        minWidth: "156px",
-        minHeight: "182px",
+        width: "148px",
+        minWidth: "148px",
+        minHeight: "178px",
         borderRadius: "18px",
         border: "1px solid rgba(255,255,255,0.10)",
         background: "linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))",
@@ -335,7 +335,7 @@ function SectionHeader({
   body: string;
 }) {
   return (
-    <div style={{ display: "grid", gap: "10px", maxWidth: "760px" }}>
+    <div style={{ display: "grid", gap: "10px", maxWidth: "1000px" }}>
       <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", color: "var(--gold)" }}>
         {icon}
         <span className="type-kicker">{title}</span>
@@ -343,7 +343,7 @@ function SectionHeader({
       <h2 className="type-page-title" style={{ fontSize: "clamp(28px, 4vw, 42px)", color: "var(--charcoal)" }}>
         {title}
       </h2>
-      <p className="type-body" style={{ color: "var(--muted)", maxWidth: "720px" }}>
+      <p className="type-body" style={{ color: "var(--muted)", maxWidth: "1000px" }}>
         {body}
       </p>
     </div>
@@ -354,11 +354,14 @@ const RAIL_CARD_STYLE: React.CSSProperties = {
   display: "grid",
   gap: "10px",
   padding: "14px",
-  minWidth: "180px",
-  borderRadius: "16px",
+  minWidth: "150px",
+  borderRadius: "12px",
   border: "1px solid rgba(255,255,255,0.08)",
   background: "rgba(255,255,255,0.03)",
+  textAlign: "center",
 };
+
+const GUIDE_CONTENT_WIDTH = "1200px";
 
 function HorizontalRail({ children }: { children: ReactNode }) {
   return (
@@ -401,113 +404,150 @@ function AtlasRail({ title, items }: { title: string; items: AtlasItem[] }) {
   );
 }
 
+function ScrollableSectionBody({
+  children,
+  maxHeight,
+}: {
+  children: ReactNode;
+  maxHeight?: string;
+}) {
+  return (
+    <div
+      style={{
+        width: "100%",
+        maxWidth: GUIDE_CONTENT_WIDTH,
+        minWidth: 0,
+        overflow: "auto",
+        maxHeight,
+        paddingRight: "4px",
+        scrollbarWidth: "thin",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function GuidePage() {
   return (
     <>
       <Head><title>Guide — LuxeLook AI</title></Head>
       <Navbar />
 
-      <main className="page-main" style={{ maxWidth: "1240px", margin: "0 auto", padding: "40px 24px 72px" }}>
+      <main className="page-main" style={{ maxWidth: "1200px", margin: "0 auto", padding: "32px 24px 72px" }}>
         <div className="fade-up" style={{ display: "grid", gap: "40px" }}>
 
           <section
             style={{
+              width: "100%",
+              maxWidth: GUIDE_CONTENT_WIDTH,
+              margin: "0 auto",
               display: "grid",
               gap: "28px",
               padding: "28px",
               borderRadius: "30px",
               border: "1px solid rgba(255,255,255,0.10)",
               background: "rgba(255,255,255,0.03)",
+              justifyItems: "center",
             }}
           >
-            <SectionHeader
-              icon={<Shirt size={18} />}
-              title="Wardrobe & Fashion Terms"
-              body="These are the labels the wardrobe editor and recommendation engine use most often. Think of them as the building blocks of silhouette, polish, weather fit, and occasion fit."
-            />
+                <div style={{ display: "grid", gap: "28px" }}>
+                  <SectionHeader
+                    icon={<Shirt size={18} />}
+                    title="Wardrobe & Fashion Terms"
+                    body="These are the labels the wardrobe editor and recommendation engine use most often. Think of them as the building blocks of silhouette, polish, weather fit, and occasion fit."
+                  />
 
-            <div
-              style={{
-                display: "grid",
-                gap: "18px",
-                alignItems: "start",
-              }}
-            >
-              <div style={{ padding: "18px", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
-                    <Sparkles size={16} color="var(--gold)" />
-                    <h3 className="type-section-title" style={{ color: "var(--charcoal)" }}>Dress code ladder</h3>
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "18px",
+                      alignItems: "start",
+                    }}
+                  >
+                  <div style={{ padding: "10px", alignItems: "center", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", maxWidth: "1000px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
+                        <Sparkles size={16} color="var(--gold)" />
+                        <h3 className="type-section-title" style={{ color: "var(--charcoal)" }}>Dress code ladder</h3>
+                      </div>
+                      <ScrollableSectionBody>
+                        <HorizontalRail>
+                          {DRESS_CODE_STEPS.map((step, index) => (
+                            <div key={step.label} style={RAIL_CARD_STYLE}>
+                              <div
+                                style={{
+                                  height: "8px",
+                                  borderRadius: "999px",
+                                  background: index >= 2
+                                    ? "linear-gradient(90deg, rgba(212,169,106,0.22), rgba(232,196,138,0.30))"
+                                    : "rgba(255,255,255,0.08)",
+                                  border: "1px solid rgba(255,255,255,0.08)",
+                                }}
+                              />
+                              <div>
+                                <p className="type-helper" style={{ color: "var(--charcoal)", fontWeight: 600 }}>{step.label}</p>
+                                <p className="type-micro" style={{ color: "var(--muted)", marginTop: "4px" }}>{step.cue}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </HorizontalRail>
+                      </ScrollableSectionBody>
                   </div>
-                  <HorizontalRail>
-                    {DRESS_CODE_STEPS.map((step, index) => (
-                      <div key={step.label} style={RAIL_CARD_STYLE}>
-                        <div
-                          style={{
-                            height: "8px",
-                            borderRadius: "999px",
-                            background: index >= 2
-                              ? "linear-gradient(90deg, rgba(212,169,106,0.22), rgba(232,196,138,0.30))"
-                              : "rgba(255,255,255,0.08)",
-                            border: "1px solid rgba(255,255,255,0.08)",
-                          }}
-                        />
-                        <div>
-                          <p className="type-helper" style={{ color: "var(--charcoal)", fontWeight: 600 }}>{step.label}</p>
-                          <p className="type-micro" style={{ color: "var(--muted)", marginTop: "4px" }}>{step.cue}</p>
+
+                  <div style={{ padding: "10px", alignItems: "center", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", maxWidth: "1000px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
+                        <Layers3 size={16} color="var(--gold)" />
+                        <h3 className="type-section-title" style={{ color: "var(--charcoal)" }}>Season readings</h3>
+                      </div>
+                      <ScrollableSectionBody>
+                        <div style={{ display: "grid", gap: "12px" }}>
+                          <HorizontalRail>
+                            {SEASON_RULES.map((rule) => (
+                              <div key={rule.label} style={RAIL_CARD_STYLE}>
+                                <span
+                                  className="type-helper"
+                                  style={{
+                                    color: "var(--charcoal)",
+                                    fontWeight: 600,
+                                    textAlign: "center",
+                                    height: "22px",
+                                    borderRadius: "999px",
+                                    background: "linear-gradient(90deg, rgba(212,169,106,0.08), rgba(232,196,138,0.30))",
+                                    border: "1px solid rgba(255,255,255,0.08)",
+                                  }}
+                                >
+                                  {rule.label}
+                                </span>
+                                <p className="type-helper" style={{ color: "var(--muted)" }}>{rule.hint}</p>
+                              </div>
+                            ))}
+                          </HorizontalRail>
                         </div>
-                      </div>
-                    ))}
-                  </HorizontalRail>
-              </div>
-
-              <div style={{ padding: "18px", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
-                    <Layers3 size={16} color="var(--gold)" />
-                    <h3 className="type-section-title" style={{ color: "var(--charcoal)" }}>Season readings</h3>
+                      </ScrollableSectionBody>
                   </div>
-                  <HorizontalRail>
-                    {SEASON_RULES.map((rule) => (
-                      <div key={rule.label} style={RAIL_CARD_STYLE}>
-                        <span
-                          className="type-micro"
-                          style={{
-                            display: "inline-flex",
-                            justifyContent: "center",
-                            width: "fit-content",
-                            padding: "8px 10px",
-                            borderRadius: "999px",
-                            color: "#120F0A",
-                            background: rule.tone,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {rule.label}
-                        </span>
-                        <p className="type-helper" style={{ color: "var(--muted)" }}>{rule.hint}</p>
-                      </div>
-                    ))}
-                  </HorizontalRail>
-                  <p className="type-micro" style={{ color: "var(--muted)", marginTop: "12px" }}>
-                    The app looks at warmth, fabric, coverage, shoe practicality, and event weather together, not just the season tag alone.
-                  </p>
-              </div>
 
-              <div style={{ padding: "18px", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
-                  <Palette size={16} color="var(--gold)" />
-                  <h3 className="type-section-title" style={{ color: "var(--charcoal)" }}>Descriptor quick guide</h3>
+                  <div style={{ padding: "10px", alignItems: "center", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", maxWidth: "1000px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
+                      <Palette size={16} color="var(--gold)" />
+                      <h3 className="type-section-title" style={{ color: "var(--charcoal)" }}>Descriptor quick guide</h3>
+                    </div>
+                    <ScrollableSectionBody maxHeight="560px">
+                      <div style={{ display: "grid", gap: "12px" }}>
+                        <AtlasRail title="Necklines" items={NECKLINE_ATLAS} />
+                        <AtlasRail title="Fit" items={FIT_ATLAS} />
+                        <AtlasRail title="Length" items={LENGTH_ATLAS} />
+                      </div>
+                    </ScrollableSectionBody>
+                  </div>
+                  </div>
                 </div>
-                <div style={{ display: "grid", gap: "12px" }}>
-                  <AtlasRail title="Necklines" items={NECKLINE_ATLAS} />
-                  <AtlasRail title="Fit" items={FIT_ATLAS} />
-                  <AtlasRail title="Length" items={LENGTH_ATLAS} />
-                </div>
-              </div>
-            </div>
           </section>
 
           <section
             style={{
+              width: "100%",
+              maxWidth: GUIDE_CONTENT_WIDTH,
+              margin: "0 auto",
               display: "grid",
               gap: "28px",
               padding: "28px",
@@ -516,106 +556,118 @@ export default function GuidePage() {
               background: "rgba(255,255,255,0.03)",
             }}
           >
-            <SectionHeader
-              icon={<UserRound size={18} />}
-              title="How Your Profile Shapes Suggestions"
-              body="Profile details are there to improve proportion, color, framing, and practicality. They should help the app feel more personal, not more judgmental."
-            />
+            <div style={{ display: "grid", gap: "28px" }}>
+              <SectionHeader
+                icon={<UserRound size={18} />}
+                title="How Your Profile Shapes Suggestions"
+                body="Profile details are there to improve proportion, color, framing, and practicality. They should help the app feel more personal, not more judgmental."
+              />
 
-            <div style={{ display: "grid", gap: "18px", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
-              <div style={{ display: "grid", gap: "14px" }}>
-                <div style={{ padding: "18px", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
+              <div style={{ display: "grid", gap: "18px", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
+                <div style={{ display: "grid", gap: "14px" }}>
+                <div style={{ padding: "10px", alignItems: "center", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", maxWidth: "1000px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
                     <Ruler size={16} color="var(--gold)" />
                     <h3 className="type-section-title" style={{ color: "var(--charcoal)" }}>Measurements & proportion</h3>
                   </div>
-                  <div style={{ display: "grid", gap: "14px", gridTemplateColumns: "120px 1fr", alignItems: "center" }}>
-                    <svg viewBox="0 0 120 160" style={{ width: "120px", height: "160px" }} aria-hidden="true">
-                      <g fill="none" stroke="rgba(232,196,138,0.9)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="60" cy="20" r="12" />
-                        <path d="M60 32v24M34 60c6-10 18-14 26-14 8 0 20 4 26 14M44 76c6 6 10 10 16 10s10-4 16-10M38 98c10-6 22-8 44 0M46 110v28M74 110v28" />
-                        <path d="M22 60h76M28 76h64M20 98h80" strokeDasharray="4 4" />
-                      </g>
-                      <g fill="rgba(240,235,226,0.8)" fontSize="9" fontFamily="DM Sans, sans-serif">
-                        <text x="6" y="58">bust</text>
-                        <text x="6" y="80">waist</text>
-                        <text x="6" y="102">hips</text>
-                      </g>
-                    </svg>
-                    <div style={{ display: "grid", gap: "8px" }}>
-                      <p className="type-helper" style={{ color: "var(--muted)" }}>
-                        Body measurements and body type help the app choose better balance: where to define the waist, when to elongate, and when to add or reduce volume.
-                      </p>
-                      <p className="type-helper" style={{ color: "var(--muted)" }}>
-                        Height and proportions help with rise, hem length, sleeve scale, and how much volume tends to feel harmonious.
-                      </p>
+                  <ScrollableSectionBody>
+                    <div style={{ display: "grid", gap: "14px", gridTemplateColumns: "120px 1fr", alignItems: "center" }}>
+                      <svg viewBox="0 0 120 160" style={{ width: "120px", height: "160px" }} aria-hidden="true">
+                        <g fill="none" stroke="rgba(232,196,138,0.9)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="60" cy="20" r="12" />
+                          <path d="M60 32v24M34 60c6-10 18-14 26-14 8 0 20 4 26 14M44 76c6 6 10 10 16 10s10-4 16-10M38 98c10-6 22-8 44 0M46 110v28M74 110v28" />
+                          <path d="M22 60h76M28 76h64M20 98h80" strokeDasharray="4 4" />
+                        </g>
+                        <g fill="rgba(240,235,226,0.8)" fontSize="9" fontFamily="DM Sans, sans-serif">
+                          <text x="6" y="58">bust</text>
+                          <text x="6" y="80">waist</text>
+                          <text x="6" y="102">hips</text>
+                        </g>
+                      </svg>
+                      <div style={{ display: "grid", gap: "8px" }}>
+                        <p className="type-helper" style={{ color: "var(--muted)" }}>
+                          Body measurements and body type help the app choose better balance: where to define the waist, when to elongate, and when to add or reduce volume.
+                        </p>
+                        <p className="type-helper" style={{ color: "var(--muted)" }}>
+                          Height and proportions help with rise, hem length, sleeve scale, and how much volume tends to feel harmonious.
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  </ScrollableSectionBody>
                 </div>
 
-                <div style={{ padding: "18px", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
+                <div style={{ padding: "10px", alignItems: "center", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", maxWidth: "1000px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
                     <Sparkles size={16} color="var(--gold)" />
                     <h3 className="type-section-title" style={{ color: "var(--charcoal)" }}>Face shape, complexion, hair</h3>
                   </div>
-                  <div style={{ display: "grid", gap: "10px", gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
-                    {[
-                      {
-                        label: "Oval",
-                        svg: <path d="M24 11c10 0 16 8 16 21c0 14-7 24-16 24s-16-10-16-24c0-13 6-21 16-21z" />,
-                      },
-                      {
-                        label: "Round",
-                        svg: <path d="M24 13c9 0 15 7 15 18s-6 19-15 19S9 42 9 31s6-18 15-18z" />,
-                      },
-                      {
-                        label: "Square",
-                        svg: <path d="M16 14c2-2 5-3 8-3s6 1 8 3c3 3 4 8 4 15c0 6-1 11-3 16c-2 6-6 10-12 10s-10-4-12-10c-2-5-3-10-3-16c0-7 1-12 4-15c2-2 5-3 8-3z" />,
-                      },
-                      {
-                        label: "Heart",
-                        svg: <path d="M24 10c10 0 17 7 17 15c0 5-2 10-5 15c-3 5-7 11-12 17c-5-6-9-12-12-17c-3-5-5-10-5-15c0-8 7-15 17-15z" />,
-                      },
-                      {
-                        label: "Diamond",
-                        svg: <path d="M24 11c6 0 11 4 14 10c2 4 3 8 3 12s-1 8-3 12c-3 7-8 12-14 12s-11-5-14-12c-2-4-3-8-3-12s1-8 3-12c3-6 8-10 14-10z" />,
-                      },
-                      {
-                        label: "Oblong",
-                        svg: <path d="M24 8c8 0 14 7 14 21c0 16-6 28-14 28S10 45 10 29c0-14 6-21 14-21z" />,
-                      },
-                    ].map((face) => (
-                      <div key={face.label} style={{ display: "grid", gap: "8px", justifyItems: "center", padding: "10px", borderRadius: "14px", background: "rgba(255,255,255,0.03)" }}>
-                        <svg viewBox="0 0 48 64" style={{ width: "48px", height: "58px" }} aria-hidden="true">
-                          <g fill="rgba(232,196,138,0.88)">
-                            {face.svg}
-                          </g>
-                        </svg>
-                        <span className="type-micro" style={{ color: "var(--muted)" }}>{face.label}</span>
+                  <ScrollableSectionBody>
+                    <div style={{ display: "grid", gap: "12px" }}>
+                      <div style={{ display: "grid", gap: "10px", gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+                        {[
+                          {
+                            label: "Oval",
+                            svg: <path d="M24 11c10 0 16 8 16 21c0 14-7 24-16 24s-16-10-16-24c0-13 6-21 16-21z" />,
+                          },
+                          {
+                            label: "Round",
+                            svg: <path d="M24 13c9 0 15 7 15 18s-6 19-15 19S9 42 9 31s6-18 15-18z" />,
+                          },
+                          {
+                            label: "Square",
+                            svg: <path d="M16 14c2-2 5-3 8-3s6 1 8 3c3 3 4 8 4 15c0 6-1 11-3 16c-2 6-6 10-12 10s-10-4-12-10c-2-5-3-10-3-16c0-7 1-12 4-15c2-2 5-3 8-3z" />,
+                          },
+                          {
+                            label: "Heart",
+                            svg: <path d="M24 10c10 0 17 7 17 15c0 5-2 10-5 15c-3 5-7 11-12 17c-5-6-9-12-12-17c-3-5-5-10-5-15c0-8 7-15 17-15z" />,
+                          },
+                          {
+                            label: "Diamond",
+                            svg: <path d="M24 11c6 0 11 4 14 10c2 4 3 8 3 12s-1 8-3 12c-3 7-8 12-14 12s-11-5-14-12c-2-4-3-8-3-12s1-8 3-12c3-6 8-10 14-10z" />,
+                          },
+                          {
+                            label: "Oblong",
+                            svg: <path d="M24 8c8 0 14 7 14 21c0 16-6 28-14 28S10 45 10 29c0-14 6-21 14-21z" />,
+                          },
+                        ].map((face) => (
+                          <div key={face.label} style={{ display: "grid", gap: "8px", justifyItems: "center", padding: "10px", borderRadius: "14px", background: "rgba(255,255,255,0.03)" }}>
+                            <svg viewBox="0 0 48 64" style={{ width: "48px", height: "58px" }} aria-hidden="true">
+                              <g fill="rgba(232,196,138,0.88)">
+                                {face.svg}
+                              </g>
+                            </svg>
+                            <span className="type-micro" style={{ color: "var(--muted)" }}>{face.label}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                  <p className="type-helper" style={{ color: "var(--muted)", marginTop: "12px" }}>
-                    Face shape can influence earrings, eyewear, necklines, and hair framing. Complexion helps with color harmony. Hair length and texture help shape hair and makeup styling suggestions.
-                  </p>
+                      <p className="type-helper" style={{ color: "var(--muted)" }}>
+                        Face shape can influence earrings, eyewear, necklines, and hair framing. Complexion helps with color harmony. Hair length and texture help shape hair and makeup styling suggestions.
+                      </p>
+                    </div>
+                  </ScrollableSectionBody>
                 </div>
-              </div>
+                </div>
 
-              <div style={{ display: "grid", gap: "14px" }}>
-                {PROFILE_ROWS.map((row) => (
-                  <div key={row.title} style={{ padding: "18px", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
-                    <p className="type-helper" style={{ color: "var(--charcoal)", fontWeight: 700 }}>{row.title}</p>
-                    <p className="type-micro" style={{ color: "var(--muted)", marginTop: "4px", marginBottom: "12px" }}>{row.note}</p>
-                    <div style={{ display: "grid", gap: "8px" }}>
-                      {row.bullets.map((bullet) => (
-                        <div key={bullet} style={{ display: "grid", gridTemplateColumns: "12px 1fr", gap: "8px" }}>
-                          <span style={{ color: "var(--gold)" }}>•</span>
-                          <span className="type-helper" style={{ color: "var(--muted)" }}>{bullet}</span>
+                <div style={{ display: "grid", gap: "14px" }}>
+                  <ScrollableSectionBody maxHeight="620px">
+                    <div style={{ display: "grid", gap: "14px" }}>
+                      {PROFILE_ROWS.map((row) => (
+                        <div key={row.title} style={{ padding: "18px", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
+                          <p className="type-helper" style={{ color: "var(--charcoal)", fontWeight: 700 }}>{row.title}</p>
+                          <p className="type-micro" style={{ color: "var(--muted)", marginTop: "4px", marginBottom: "12px" }}>{row.note}</p>
+                          <div style={{ display: "grid", gap: "8px" }}>
+                            {row.bullets.map((bullet) => (
+                              <div key={bullet} style={{ display: "grid", gridTemplateColumns: "12px 1fr", gap: "8px" }}>
+                                <span style={{ color: "var(--gold)" }}>•</span>
+                                <span className="type-helper" style={{ color: "var(--muted)" }}>{bullet}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       ))}
                     </div>
-                  </div>
-                ))}
+                  </ScrollableSectionBody>
+                </div>
               </div>
             </div>
           </section>

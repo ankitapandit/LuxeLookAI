@@ -19,6 +19,7 @@ from services.discover_candidates import (
     seed_discover_candidates,
 )
 from services.style_learning import (
+    _canonical_url,
     build_discover_family_signature,
     build_profile_style_seed,
     can_reinforce_discover_family,
@@ -131,12 +132,16 @@ def build_discover_feed(user_id: str, limit: int = 6, timezone_name: Optional[st
     recent_family_keys = get_recent_discover_family_keys(user_state)
     strict_recent_family_keys = set(recent_family_keys[:DISCOVER_STRICT_REPEAT_GAP])
     selected_family_keys: set[str] = set()
+    selected_image_urls: set[str] = set()
     served_families: List[tuple[str, str]] = []
     candidate_pool: List[tuple[int, dict, dict, str, str]] = []
     fallback_pool: List[tuple[int, dict, dict, str, str]] = []
 
     for row in ready_rows:
         card = build_card_from_candidate(row)
+        canonical_image_url = _canonical_url(card.get("image_url") or card.get("display_image_url") or "")
+        if canonical_image_url and canonical_image_url in selected_image_urls:
+            continue
         family_key, family_label, _ = build_discover_family_signature(card.get("style_ids") or [], card.get("style_tags") or [])
         memory = family_memory.get(family_key) if family_key else None
         if family_key:
@@ -162,7 +167,12 @@ def build_discover_feed(user_id: str, limit: int = 6, timezone_name: Optional[st
 
     ordered_candidates = sorted(candidate_pool, key=lambda entry: entry[0]) + fallback_pool
     for _, _, card, family_key, family_label in ordered_candidates:
+        canonical_image_url = _canonical_url(card.get("image_url") or card.get("display_image_url") or "")
+        if canonical_image_url and canonical_image_url in selected_image_urls:
+            continue
         cards.append(card)
+        if canonical_image_url:
+            selected_image_urls.add(canonical_image_url)
         if family_key:
             selected_family_keys.add(family_key)
             served_families.append((family_key, family_label))

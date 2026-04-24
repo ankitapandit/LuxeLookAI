@@ -4,10 +4,10 @@
 
 Built with **Next.js · FastAPI · Supabase · CLIP · Pexels · OpenAI**.
 
-Current user-facing sections are: **Wardrobe · Discover · Event · Archive · Profile · Guide**.
-Supporting flows include **Style Item** (`/style-item`), the dedicated AI profiling photo path inside Profile, and the isolated **Event Scenario Tester** at `/test/event-scenarios`.
+Current user-facing sections are: **Wardrobe · Batch Upload · Discover · Event · Archive · Profile · Guide**.
+Supporting flows include **Batch Review** (`/batch-review/[sessionId]`), **Style Item** (`/style-item`), the dedicated AI profiling photo path inside Profile, and the isolated **Event Scenario Tester** at `/test/event-scenarios`.
 Legacy frontend URLs `/events` and `/outfits` permanently redirect to `/event` and `/archive`.
-Sessions now restore on refresh, the unauthenticated landing page defaults to sign-up, wardrobe uploads show live media-processing status, Discover learns from swipes without wiping learned rails, Discover family memory reduces same-type repetition, structured event briefs are stored as JSON + human summaries, `Beyond your wardrobe` renders as a visual moodboard, route-level page visits are logged first-party, and refreshed outfit batches preserve saved ratings while avoiding exact duplicate looks.
+Sessions now restore on refresh, the unauthenticated landing page defaults to sign-up, new wardrobe items enter through Batch Upload while Wardrobe stays focused on closet management, uploads show live media-processing status, Discover learns from swipes without wiping learned rails, Discover family memory reduces same-type repetition, structured event briefs are stored as JSON + human summaries, `Beyond your wardrobe` renders as a visual moodboard, route-level page visits are logged first-party, and refreshed outfit batches preserve saved ratings while avoiding exact duplicate looks.
 
 For the current system reference, see [`docs/system-architecture.md`](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/docs/system-architecture.md).
 
@@ -29,12 +29,14 @@ luxelook-ai/
 │   ├── main.py                 # App entry point + CORS
 │   ├── config.py               # Environment variable loading
 │   ├── assets/                 # Static recommendation knowledge and calendars
+│   │   ├── brands.json         # Curated brand catalog shared with frontend forms
 │   │   └── fashion_rules/      # JSON rule assets for flattery/polish/trend logic
 │   ├── schema.sql              # Base schema — run first in Supabase SQL Editor
 │   ├── supabase_migrations.sql # All post-schema migrations — run second
 │   ├── routers/                # API route handlers
 │   │   ├── auth.py             # POST /auth/signup, /auth/login
 │   │   ├── activity.py         # POST /activity/page-visit/start, /activity/page-visit/end
+│   │   ├── batch_upload.py     # Batch upload session, verify, reject
 │   │   ├── clothing.py         # Wardrobe CRUD, pagination, trash restore, thumbnail backfill
 │   │   ├── discover.py         # Discover feed, swipes, jobs, status
 │   │   ├── event.py            # Event creation/list routes
@@ -44,7 +46,8 @@ luxelook-ai/
 │   ├── services/               # Business logic layer
 │   │   ├── recommender.py      # Core outfit scoring engine
 │   │   ├── event_appropriate.py # Event-dimension scoring gates (time, venue, weather)
-│   │   ├── clothing_service.py # Upload, tag, embed, duplicate detection
+│   │   ├── clothing_service.py # Upload, tag, embed, duplicate detection, cutout extraction
+│   │   ├── batch_upload_service.py # Batch session orchestration + per-item state
 │   │   ├── discover_service.py # Discover feed assembly + seeded context
 │   │   ├── discover_search.py  # Pexels/mock provider normalization
 │   │   ├── discover_jobs.py    # Durable Discover job queue helpers
@@ -75,7 +78,10 @@ luxelook-ai/
 └── frontend/                   # Next.js TypeScript app
     ├── pages/
     │   ├── index.tsx            # Landing + Auth (login/signup)
-    │   ├── wardrobe.tsx         # Upload, tag, browse wardrobe
+    │   ├── wardrobe.tsx         # Browse, filter, edit, archive, and manage wardrobe
+    │   ├── batch-upload.tsx     # Multi-item wardrobe intake + processing kickoff
+    │   ├── batch-review/
+    │   │   └── [sessionId].tsx  # Verify or reject tagged items from one batch session
     │   ├── discover.tsx         # Swipe-based taste-learning feed
     │   ├── event.tsx            # Describe event → AI parses → outfit suggestions
     │   ├── archive.tsx          # View outfit history + rate suggestions
@@ -99,8 +105,11 @@ luxelook-ai/
     ├── services/
     │   └── api.ts               # All API calls (Axios + fetch)
     ├── utils/
-    │   └── itemDisplay.ts       # Shared wardrobe item naming / display helpers
+    │   ├── itemDisplay.ts       # Shared wardrobe item naming / display helpers
+    │   ├── outfitBackground.ts  # Moodboard palette / gradient preset selection
+    │   └── useImageContentBounds.ts # Cutout halo measurement + compensation
     ├── assets/                  # Static frontend media / guide assets
+    │   └── brands.json          # Curated brand catalog + aliases for upload/edit flows
     └── styles/
         └── globals.css          # LuxeLook design tokens + utility classes
 ```
@@ -289,51 +298,53 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ## Step 4 — First Run
 
 1. **Sign up** on the landing page
-2. **Upload wardrobe items** — drag and drop clothing photos
+2. **Add wardrobe items through Batch Upload** — open **Batch Upload** and queue one or many clothing photos
    - AI auto-tags category, color, season, formality
    - GPT-4o Vision identifies style descriptors (neckline, silhouette, fabric etc.)
    - Duplicate detection flags items that are visually identical
    - If a duplicate already exists, the review flow can now offer to replace the active copy, unarchive the archived copy, or force-add the new upload
-   - Wardrobe uploads save immediately, then generate thumbnails / subject cutouts in the background
-   - A compact activity tray shows per-item processing status while media is being generated
+   - Batch items save immediately, then generate thumbnails / subject cutouts in the background
+   - Batch Review lets you verify or reject newly tagged items before they become part of your final closet
+   - A compact activity tray in Wardrobe shows per-item processing status while media is being generated
+3. **Browse and manage your wardrobe** — use **Wardrobe** for filters, edits, archive/restore, and media-status visibility
    - Wardrobe browsing uses infinite scroll and processed previews for better large-closet performance
    - Supported core categories now include `jumpsuits` and a separate `jewelry` category alongside tops, bottoms, dresses, outerwear, shoes, accessories, sets, swimwear, and loungewear
-3. **Set up your profile** — body type, height, weight, complexion, face shape
+4. **Set up your profile** — body type, height, weight, complexion, face shape
    - Body type calculator from bust/waist/hip measurements
    - Complexion identifier from 3 questions
    - Gender and ethnicity can optionally be stored to improve Discover seeding later
    - Separate AI profiling photo suggests face shape, body type, complexion and hair traits
-4. **Use Discover** — open **Discover / The Edit** to swipe fashion inspiration
+5. **Use Discover** — open **Discover / The Edit** to swipe fashion inspiration
    - Discover seeds a per-user search using profile context and learned style signals
    - Candidate images are cached, filtered to single-person looks, and analyzed before being shown
    - `like`, `love`, and `dislike` interactions build learned preference rows over time
    - Daily swipe pacing is enforced on the user’s local day while timestamps remain stored in UTC
-5. **Create an event** — fill the structured occasion brief (dress code, venue, weather, mood, audience, notes)
+6. **Create an event** — fill the structured occasion brief (dress code, venue, weather, mood, audience, notes)
    - The backend stores both a structured `raw_text_json` payload and a clean human-readable summary
    - Occasion parsing uses the structured brief as prompt context, which improves edge cases such as beach BBQ vs. beach wedding
    - All EventBrief form fields now contribute occasion tokens, and an explicit dress-code selection overrides weaker inferred formality
    - If you choose `Other`, the UI keeps and displays your custom text directly instead of reverting to a generic placeholder label
-6. **Get outfit suggestions** — AI builds complete looks across 8 outfit templates
+7. **Get outfit suggestions** — AI builds complete looks across 8 outfit templates
    (top+bottom+shoes, top+bottom+outerwear+shoes, dress+shoes, dress+outerwear+shoes,
    set+shoes, set+outerwear+shoes, swimwear+shoes, swimwear+outerwear+shoes).
    If the wardrobe is missing item types needed to unlock some templates, an
    **"Unlock more looks"** banner shows actionable hints below the suggestions. If
    a look reappears after refresh, its saved stars are preserved and shown again
    instead of resetting to unrated.
-7. **Style a specific item** — from the wardrobe, go to **Style Item** to build looks around one selected piece
+8. **Style a specific item** — from the wardrobe, go to **Style Item** to build looks around one selected piece
    - complete wardrobe-only outfits reuse the standard suggestion cards and the same structured brief editor as Event
    - the same custom `Other` behavior carries across, so bespoke occasion details stay visible as entered
    - incomplete wardrobes fall back to editorial styling guidance and missing-piece direction
    - `Beyond your wardrobe` now renders as a visual moodboard with wearable-piece imagery plus separate Hair / Makeup finishing chips
-8. **Rate outfits** — 1–5 stars to improve future suggestions
-9. **Regenerate** — "Show me more" for a neutral refresh; "None of these work" to
+9. **Rate outfits** — 1–5 stars to improve future suggestions
+10. **Regenerate** — "Show me more" for a neutral refresh; "None of these work" to
    signal the current batch was wrong; ratings are tracked per combo + occasion context
    so future events of the same type benefit from accumulated feedback. Exact
    duplicate outfit combos are filtered out on refresh so fresh options surface first.
-10. **Reset** — if you've exhausted all combinations for an event a banner appears;
+11. **Reset** — if you've exhausted all combinations for an event a banner appears;
    "Reset & start fresh" clears combo ratings for that occasion context and starts fresh
-11. **Use Guide** — open **Guide** to see the fashion vocabulary and profile explanation layer the app uses for tagging and recommendations
-12. **Scenario-test events** — open `/test/event-scenarios` to run saved EventBrief JSON cases against the real Event recommendation flow without touching your main Event page
+12. **Use Guide** — open **Guide** to see the fashion vocabulary and profile explanation layer the app uses for tagging and recommendations
+13. **Scenario-test events** — open `/test/event-scenarios` to run saved EventBrief JSON cases against the real Event recommendation flow without touching your main Event page
 
 ---
 
@@ -377,6 +388,12 @@ Full interactive docs at [http://localhost:8000/docs](http://localhost:8000/docs
 | POST | `/clothing/purge-deleted` | Hard-delete trash items older than 90 days |
 | POST | `/clothing/backfill-thumbnails` | Generate thumbnails / cutouts for older active wardrobe items missing them |
 | GET | `/clothing/tag-options` | Valid categories, colors for dropdowns |
+| POST | `/batch-upload/session` | Create a new multi-item batch upload session |
+| POST | `/batch-upload/session/{session_id}/items` | Upload and process one image into a batch session |
+| GET | `/batch-upload/session/{session_id}` | Fetch batch session detail and item statuses |
+| GET | `/batch-upload/sessions` | List recent batch upload sessions |
+| POST | `/batch-upload/items/{item_id}/verify` | Verify one tagged batch-upload item |
+| POST | `/batch-upload/items/{item_id}/reject` | Reject one tagged batch-upload item |
 | POST | `/event/create-event` | Create an event from the structured brief and readable summary |
 | GET | `/event/list` | List all user events |
 | POST | `/recommend/generate-outfits` | Generate outfit suggestions, preserving existing ratings for repeated combos |
@@ -430,6 +447,74 @@ New uploads generate thumbnails automatically, and older items can be upgraded t
 | **swimwear** | swimwear style, coverage level, cut, swim-specific fabric type |
 | **loungewear** | Loungewear type, fabric, neckline, sleeve length, strap type, support, structure, waist structure, bottom length |
 | outerwear / shoes / accessories | Category-specific vocabularies |
+
+---
+
+## Outfit Moodboard
+
+Each suggestion is rendered as a moodboard card in two layout variants:
+**editorial** (scatter flatlay with a freer stage) and **stitch** (cleaner,
+structured placement with tighter framing).
+
+**Dynamic backgrounds**
+The card shell and stage background are derived from the outfit’s color palette,
+pattern signals, and formality level. Ten named presets (`warm-ivory` →
+`espresso-silk`) are selected by a priority chain; each applies a CSS gradient
+and optional texture overlay with no image assets required.
+
+**Proportional scaling**
+Every clothing category carries a natural height fraction and aspect ratio that
+reflect real-world proportions. Dresses stay dramatically taller than shoes;
+accessories stay visually lighter. Items within each layout column are scaled
+uniformly so their relative sizes hold even when the outfit mix changes.
+
+**Cutout padding compensation**
+Product cutout PNGs often contain inconsistent transparent halos after
+background removal. The moodboard measures actual non-transparent content bounds
+via an off-screen canvas pass, then expands and offsets an inner wrapper so the
+garment content — not the transparent margin — fills its allocated zone.
+Results are cached per URL, with category heuristics as fallback when pixel
+access is blocked.
+
+**Title, swatches, and hover labels**
+Card titles use the *Stalemate* script font and now sit inside the moodboard
+stage at the top-left. A protected safe zone keeps pieces from colliding with
+the title or color swatches. The swatch cluster sits on a translucent backing
+panel so small accessories remain visible underneath, and hover labels stay
+upright and edge-aware even when item imagery is tilted for moodboard styling.
+
+---
+
+## Seasonal & Context-Aware Scoring
+
+The recommender now evaluates season fit across two complementary layers rather
+than treating season, weather, and time of day as isolated toggles.
+
+**Attribute scoring** (`services/season_rules.py`)
+Fabric weight, sleeve length, fit silhouette, pattern, insulation, and warmth
+descriptor are each scored against the target season using lookup tables. When
+a user signals “slightly warmer” or “slightly cooler,” sleeve/warmth/insulation
+scoring shifts to an adjacent `coverage_season` while fabric and pattern stay
+anchored to the primary season — enabling combinations like “summer fabric,
+spring coverage.”
+
+**Event × context scoring** (`services/event_appropriate.py`)
+Time-of-day, weather, and occasion signals are evaluated as intersecting
+dimensions:
+- **Summer evening** — vivid tropical/neon colors are softened rather than
+  vetoed so jewel and dark tones rise naturally at night
+- **Spring/fall evening** — sleeveless items are coverage-capped and outerwear
+  receives a comfort bonus
+- **Outdoor evening** — layer-friendly looks gain score regardless of season
+- **Rainy conditions** — pale/white items take a practical tonal nudge
+- **Festive/holiday winter** — red, gold, green, and white remain exempt from
+  the colder-season jarring-color penalty
+- **Cool summer night** — light layers are rewarded instead of treated as
+  overbuilt
+
+The result is a more contextual read: “summer, but slightly warmer,” “winter
+daytime without becoming artificially bright,” or “spring evening that still
+reads like spring, just with more coverage.”
 
 ---
 

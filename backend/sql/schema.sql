@@ -500,3 +500,102 @@ create policy "Users can update own outfit ratings"
 -- Run ONLY if you already have a clothing_items table without the pattern column:
 --
 --   alter table clothing_items add column if not exists pattern text;
+
+
+-- ── Batch Upload ───────────────────────────────────────────────────────────────
+-- Columns added to clothing_items for batch ingestion trust tracking.
+-- When running schema.sql fresh these columns are created here.
+-- When upgrading an existing DB run supabase_migrations.sql (v2.6 block).
+
+-- Append columns to clothing_items (safe to run multiple times via IF NOT EXISTS)
+alter table clothing_items add column if not exists verification_status text
+  default 'verified'
+  check (verification_status in ('pending', 'verified', 'rejected'));
+
+alter table clothing_items add column if not exists ingestion_source text
+  default 'manual'
+  check (ingestion_source in ('manual', 'batch_upload'));
+
+
+-- ── upload_batch_sessions ─────────────────────────────────────────────────────
+-- One row per multi-photo upload session.
+
+create table if not exists upload_batch_sessions (
+  id                          uuid primary key default gen_random_uuid(),
+  user_id                     uuid not null references public.users(id) on delete cascade,
+  status                      text not null default 'queued'
+    check (status in ('queued','uploading','processing','awaiting_verification','completed','completed_with_errors')),
+  total_count                 int not null default 0,
+  uploaded_count              int not null default 0,
+  processed_count             int not null default 0,
+  awaiting_verification_count int not null default 0,
+  verified_count              int not null default 0,
+  failed_count                int not null default 0,
+  created_at                  timestamptz not null default now(),
+  updated_at                  timestamptz not null default now(),
+  completed_at                timestamptz
+);
+
+create index if not exists idx_batch_sessions_user
+  on upload_batch_sessions(user_id, created_at desc);
+
+
+-- ── upload_batch_items ────────────────────────────────────────────────────────
+-- One row per image in a batch.
+
+create table if not exists upload_batch_items (
+  id                uuid primary key default gen_random_uuid(),
+  session_id        uuid not null references public.upload_batch_sessions(id) on delete cascade,
+  user_id           uuid not null references public.users(id) on delete cascade,
+  file_name         text,
+  image_url         text,
+  thumbnail_url     text,
+  cutout_url        text,
+  status            text not null default 'queued'
+    check (status in ('queued','uploaded','tagging','tagged','awaiting_verification','verified','rejected','failed')),
+  error_message     text,
+  clothing_item_id  uuid references public.clothing_items(id) on delete set null,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  verified_at       timestamptz
+);
+
+create index if not exists idx_batch_items_session
+  on upload_batch_items(session_id);
+create index if not exists idx_batch_items_user
+  on upload_batch_items(user_id, created_at desc);
+
+
+-- ── RLS — Batch Upload ────────────────────────────────────────────────────────
+
+alter table upload_batch_sessions enable row level security;
+alter table upload_batch_items    enable row level security;
+
+create policy "Users can view own batch sessions"
+  on upload_batch_sessions for select using (auth.uid() = user_id);
+create policy "Users can insert own batch sessions"
+  on upload_batch_sessions for insert with check (auth.uid() = user_id);
+create policy "Users can update own batch sessions"
+  on upload_batch_sessions for update using (auth.uid() = user_id);
+
+create policy "Users can view own batch items"
+  on upload_batch_items for select using (auth.uid() = user_id);
+create policy "Users can insert own batch items"
+  on upload_batch_items for insert with check (auth.uid() = user_id);
+create policy "Users can update own batch items"
+  on upload_batch_items for update using (auth.uid() = user_id);
+
+
+-- ── Table comments — Batch Upload ─────────────────────────────────────────────
+
+comment on table public.upload_batch_sessions is
+  'One row per multi-photo batch upload session. Tracks aggregate counts and overall status as items move through the queued → processing → awaiting_verification → completed pipeline.';
+
+comment on table public.upload_batch_items is
+  'One row per image in a batch upload session. Tracks per-item status, the resulting clothing_item_id once tagging succeeds, and verification timestamps.';
+
+comment on column public.clothing_items.verification_status is
+  'Trust level for this item. Batch-uploaded items start as pending until the user verifies or rejects them. Manual single-uploads default to verified.';
+
+comment on column public.clothing_items.ingestion_source is
+  'How this item entered the wardrobe: manual (single upload flow) or batch_upload.';

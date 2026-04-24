@@ -1,0 +1,2258 @@
+[
+  {
+    "label": "& Other Stories",
+    "slug": "and-other-stories",
+    "coreCategories": [
+      "clothing",
+      "shoes",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Abercrombie & Fitch",
+    "slug": "abercrombie-and-fitch",
+    "coreCategories": [
+      "clothing",
+      "tops",
+      "bottoms",
+      "outerwear"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Acne Studios",
+    "slug": "acne-studios",
+    "coreCategories": [
+      "clothing",
+      "outerwear",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Adidas",
+    "slug": "adidas",
+    "coreCategories": [
+      "shoes",
+      "activewear",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Aesop",
+    "slug": "aesop",
+    "coreCategories": [
+      "lifestyle accessories",
+      "grooming"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Aldo",
+    "slug": "aldo",
+    "coreCategories": [
+      "shoes",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Alexander McQueen",
+    "slug": "alexander-mcqueen",
+    "coreCategories": [
+      "clothing",
+      "shoes",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Alexander Wang",
+    "slug": "alexander-wang",
+    "coreCategories": [
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Alo Yoga",
+    "slug": "alo-yoga",
+    "coreCategories": [
+      "activewear",
+      "sets"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "AllSaints",
+    "slug": "allsaints",
+    "coreCategories": [
+      "clothing",
+      "leather jackets",
+      "dresses"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "American Eagle",
+    "slug": "american-eagle",
+    "coreCategories": [
+      "casualwear",
+      "denim"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ],
+    "aliases": [
+      "American Eagle Outfitters"
+    ]
+  },
+  {
+    "label": "Ami Paris",
+    "slug": "ami-paris",
+    "coreCategories": [
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Ann Taylor",
+    "slug": "ann-taylor",
+    "coreCategories": [
+      "workwear",
+      "dresses"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Anthropologie",
+    "slug": "anthropologie",
+    "coreCategories": [
+      "dresses",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Aritzia",
+    "slug": "aritzia",
+    "coreCategories": [
+      "dresses",
+      "sets",
+      "outerwear"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Asics",
+    "slug": "asics",
+    "coreCategories": [
+      "shoes",
+      "activewear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Athleta",
+    "slug": "athleta",
+    "coreCategories": [
+      "activewear",
+      "outerwear",
+      "sets"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Balenciaga",
+    "slug": "balenciaga",
+    "coreCategories": [
+      "clothing",
+      "shoes",
+      "bags"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Balmain",
+    "slug": "balmain",
+    "coreCategories": [
+      "clothing",
+      "outerwear"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Banana Republic",
+    "slug": "banana-republic",
+    "coreCategories": [
+      "clothing",
+      "workwear"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Bershka",
+    "slug": "bershka",
+    "coreCategories": [
+      "clothing",
+      "trendwear"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Birkenstock",
+    "slug": "birkenstock",
+    "coreCategories": [
+      "shoes"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Bottega Veneta",
+    "slug": "bottega-veneta",
+    "coreCategories": [
+      "bags",
+      "accessories",
+      "shoes"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Brooks",
+    "slug": "brooks",
+    "coreCategories": [
+      "shoes",
+      "activewear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Brunello Cucinelli",
+    "slug": "brunello-cucinelli",
+    "coreCategories": [
+      "luxury clothing",
+      "knitwear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Burberry",
+    "slug": "burberry",
+    "coreCategories": [
+      "outerwear",
+      "scarves",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Calvin Klein",
+    "slug": "calvin-klein",
+    "coreCategories": [
+      "clothing",
+      "underwear",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Canada Goose",
+    "slug": "canada-goose",
+    "coreCategories": [
+      "outerwear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Cartier",
+    "slug": "cartier",
+    "coreCategories": [
+      "jewelry",
+      "watches"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Celine",
+    "slug": "celine",
+    "coreCategories": [
+      "clothing",
+      "bags",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Chanel",
+    "slug": "chanel",
+    "coreCategories": [
+      "clothing",
+      "bags",
+      "jewelry"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Chloe",
+    "slug": "chloe",
+    "coreCategories": [
+      "dresses",
+      "bags",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ],
+    "aliases": [
+      "Chloé"
+    ]
+  },
+  {
+    "label": "Clarks",
+    "slug": "clarks",
+    "coreCategories": [
+      "shoes"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Coach",
+    "slug": "coach",
+    "coreCategories": [
+      "bags",
+      "accessories",
+      "shoes"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Cole Haan",
+    "slug": "cole-haan",
+    "coreCategories": [
+      "shoes",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Comme des Garcons",
+    "slug": "comme-des-garcons",
+    "coreCategories": [
+      "avant-garde clothing"
+    ],
+    "gender": [
+      "unisex"
+    ],
+    "aliases": [
+      "Comme des Garçons"
+    ]
+  },
+  {
+    "label": "Converse",
+    "slug": "converse",
+    "coreCategories": [
+      "shoes"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "COS",
+    "slug": "cos",
+    "coreCategories": [
+      "minimal clothing",
+      "outerwear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Crocs",
+    "slug": "crocs",
+    "coreCategories": [
+      "shoes"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "David Yurman",
+    "slug": "david-yurman",
+    "coreCategories": [
+      "jewelry"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Dior",
+    "slug": "dior",
+    "coreCategories": [
+      "clothing",
+      "bags",
+      "jewelry"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Diesel",
+    "slug": "diesel",
+    "coreCategories": [
+      "denim",
+      "casualwear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Dolce & Gabbana",
+    "slug": "dolce-and-gabbana",
+    "coreCategories": [
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Dr. Martens",
+    "slug": "dr-martens",
+    "coreCategories": [
+      "shoes"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Dsquared2",
+    "slug": "dsquared2",
+    "coreCategories": [
+      "clothing",
+      "denim"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Eddie Bauer",
+    "slug": "eddie-bauer",
+    "coreCategories": [
+      "outdoor clothing"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Everlane",
+    "slug": "everlane",
+    "coreCategories": [
+      "clothing",
+      "shoes"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Express",
+    "slug": "express",
+    "coreCategories": [
+      "clothing"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Farm Rio",
+    "slug": "farm-rio",
+    "coreCategories": [
+      "dresses",
+      "clothing",
+      "resortwear"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Fear of God",
+    "slug": "fear-of-god",
+    "coreCategories": [
+      "streetwear",
+      "luxury basics"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Fendi",
+    "slug": "fendi",
+    "coreCategories": [
+      "clothing",
+      "bags",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Fjallraven",
+    "slug": "fjallraven",
+    "coreCategories": [
+      "outdoor clothing",
+      "bags"
+    ],
+    "gender": [
+      "unisex"
+    ],
+    "aliases": [
+      "Fjällräven"
+    ]
+  },
+  {
+    "label": "Fossil",
+    "slug": "fossil",
+    "coreCategories": [
+      "watches",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Free People",
+    "slug": "free-people",
+    "coreCategories": [
+      "dresses",
+      "tops"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Ganni",
+    "slug": "ganni",
+    "coreCategories": [
+      "contemporary clothing"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Gap",
+    "slug": "gap",
+    "coreCategories": [
+      "basics",
+      "casualwear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Goyard",
+    "slug": "goyard",
+    "coreCategories": [
+      "bags",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Golden Goose",
+    "slug": "golden-goose",
+    "coreCategories": [
+      "shoes"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Gucci",
+    "slug": "gucci",
+    "coreCategories": [
+      "clothing",
+      "accessories",
+      "jewelry"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "H&M",
+    "slug": "h-and-m",
+    "coreCategories": [
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ],
+    "aliases": [
+      "H and M",
+      "HM"
+    ]
+  },
+  {
+    "label": "Helmut Lang",
+    "slug": "helmut-lang",
+    "coreCategories": [
+      "minimal clothing"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Hermes",
+    "slug": "hermes",
+    "coreCategories": [
+      "bags",
+      "belts",
+      "scarves"
+    ],
+    "gender": [
+      "unisex"
+    ],
+    "aliases": [
+      "Hermès"
+    ]
+  },
+  {
+    "label": "Hoka",
+    "slug": "hoka",
+    "coreCategories": [
+      "shoes",
+      "activewear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Hollister",
+    "slug": "hollister",
+    "coreCategories": [
+      "casualwear"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Hugo Boss",
+    "slug": "hugo-boss",
+    "coreCategories": [
+      "formalwear",
+      "clothing"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Isabel Marant",
+    "slug": "isabel-marant",
+    "coreCategories": [
+      "clothing",
+      "shoes"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "J.Crew",
+    "slug": "jcrew",
+    "coreCategories": [
+      "clothing"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Jacquemus",
+    "slug": "jacquemus",
+    "coreCategories": [
+      "clothing",
+      "bags"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Jimmy Choo",
+    "slug": "jimmy-choo",
+    "coreCategories": [
+      "shoes",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Jordan Brand",
+    "slug": "jordan-brand",
+    "coreCategories": [
+      "shoes",
+      "streetwear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Kate Spade",
+    "slug": "kate-spade",
+    "coreCategories": [
+      "bags",
+      "jewelry"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Kendra Scott",
+    "slug": "kendra-scott",
+    "coreCategories": [
+      "jewelry",
+      "accessories"
+    ],
+    "gender": [
+      "women",
+      "unisex"
+    ]
+  },
+  {
+    "label": "Kenzo",
+    "slug": "kenzo",
+    "coreCategories": [
+      "clothing"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Khaite",
+    "slug": "khaite",
+    "coreCategories": [
+      "luxury womenswear"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Lacoste",
+    "slug": "lacoste",
+    "coreCategories": [
+      "clothing",
+      "polos"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Lands' End",
+    "slug": "lands-end",
+    "coreCategories": [
+      "clothing",
+      "outerwear"
+    ],
+    "gender": [
+      "unisex"
+    ],
+    "aliases": [
+      "Lands’ End"
+    ]
+  },
+  {
+    "label": "Lemaire",
+    "slug": "lemaire",
+    "coreCategories": [
+      "minimal clothing"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Levi's",
+    "slug": "levis",
+    "coreCategories": [
+      "denim",
+      "jackets"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Loewe",
+    "slug": "loewe",
+    "coreCategories": [
+      "clothing",
+      "bags",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Longchamp",
+    "slug": "longchamp",
+    "coreCategories": [
+      "bags",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Loro Piana",
+    "slug": "loro-piana",
+    "coreCategories": [
+      "knitwear",
+      "luxury clothing"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Louis Vuitton",
+    "slug": "louis-vuitton",
+    "coreCategories": [
+      "bags",
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "lululemon",
+    "slug": "lululemon",
+    "coreCategories": [
+      "activewear",
+      "sets"
+    ],
+    "gender": [
+      "unisex"
+    ],
+    "aliases": [
+      "Lululemon"
+    ]
+  },
+  {
+    "label": "Madewell",
+    "slug": "madewell",
+    "coreCategories": [
+      "denim",
+      "casualwear"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Mango",
+    "slug": "mango",
+    "coreCategories": [
+      "clothing"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Marc Jacobs",
+    "slug": "marc-jacobs",
+    "coreCategories": [
+      "clothing",
+      "bags"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Massimo Dutti",
+    "slug": "massimo-dutti",
+    "coreCategories": [
+      "clothing"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Max Mara",
+    "slug": "max-mara",
+    "coreCategories": [
+      "outerwear",
+      "luxury clothing"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Mejuri",
+    "slug": "mejuri",
+    "coreCategories": [
+      "jewelry"
+    ],
+    "gender": [
+      "women",
+      "unisex"
+    ]
+  },
+  {
+    "label": "Michael Kors",
+    "slug": "michael-kors",
+    "coreCategories": [
+      "bags",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Miu Miu",
+    "slug": "miu-miu",
+    "coreCategories": [
+      "clothing",
+      "bags"
+    ],
+    "gender": [
+      "women"
+    ],
+    "aliases": [
+      "MiuMiu"
+    ]
+  },
+  {
+    "label": "Moncler",
+    "slug": "moncler",
+    "coreCategories": [
+      "outerwear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Moose Knuckles",
+    "slug": "moose-knuckles",
+    "coreCategories": [
+      "outerwear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "New Balance",
+    "slug": "new-balance",
+    "coreCategories": [
+      "shoes"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Nike",
+    "slug": "nike",
+    "coreCategories": [
+      "shoes",
+      "activewear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Nine West",
+    "slug": "nine-west",
+    "coreCategories": [
+      "shoes",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Off-White",
+    "slug": "off-white",
+    "coreCategories": [
+      "streetwear",
+      "shoes"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Old Navy",
+    "slug": "old-navy",
+    "coreCategories": [
+      "basics",
+      "casualwear",
+      "activewear"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Omega",
+    "slug": "omega",
+    "coreCategories": [
+      "watches"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "On Running",
+    "slug": "on-running",
+    "coreCategories": [
+      "shoes",
+      "activewear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Pandora",
+    "slug": "pandora",
+    "coreCategories": [
+      "jewelry"
+    ],
+    "gender": [
+      "women",
+      "unisex"
+    ]
+  },
+  {
+    "label": "Patagonia",
+    "slug": "patagonia",
+    "coreCategories": [
+      "outdoor clothing"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Pangaia",
+    "slug": "pangaia",
+    "coreCategories": [
+      "sustainable clothing",
+      "sets"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Prada",
+    "slug": "prada",
+    "coreCategories": [
+      "clothing",
+      "bags",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Puma",
+    "slug": "puma",
+    "coreCategories": [
+      "shoes",
+      "activewear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Quince",
+    "slug": "quince",
+    "coreCategories": [
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Ralph Lauren",
+    "slug": "ralph-lauren",
+    "coreCategories": [
+      "clothing"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Ray-Ban",
+    "slug": "ray-ban",
+    "coreCategories": [
+      "sunglasses"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Reebok",
+    "slug": "reebok",
+    "coreCategories": [
+      "shoes",
+      "activewear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Reformation",
+    "slug": "reformation",
+    "coreCategories": [
+      "dresses",
+      "clothing"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Rimowa",
+    "slug": "rimowa",
+    "coreCategories": [
+      "travel bags",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Rolex",
+    "slug": "rolex",
+    "coreCategories": [
+      "watches"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Saint Laurent",
+    "slug": "saint-laurent",
+    "coreCategories": [
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ],
+    "aliases": [
+      "Yves Saint Laurent",
+      "YSL"
+    ]
+  },
+  {
+    "label": "Salvatore Ferragamo",
+    "slug": "salvatore-ferragamo",
+    "coreCategories": [
+      "shoes",
+      "leather goods"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Sam Edelman",
+    "slug": "sam-edelman",
+    "coreCategories": [
+      "shoes",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Sandro",
+    "slug": "sandro",
+    "coreCategories": [
+      "contemporary clothing"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Sezane",
+    "slug": "sezane",
+    "coreCategories": [
+      "clothing",
+      "accessories",
+      "shoes"
+    ],
+    "gender": [
+      "women"
+    ],
+    "aliases": [
+      "Sézane"
+    ]
+  },
+  {
+    "label": "Shein",
+    "slug": "shein",
+    "coreCategories": [
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Skims",
+    "slug": "skims",
+    "coreCategories": [
+      "loungewear",
+      "basics"
+    ],
+    "gender": [
+      "women",
+      "unisex"
+    ]
+  },
+  {
+    "label": "Spanx",
+    "slug": "spanx",
+    "coreCategories": [
+      "shapewear",
+      "clothing"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Steve Madden",
+    "slug": "steve-madden",
+    "coreCategories": [
+      "shoes",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Stone Island",
+    "slug": "stone-island",
+    "coreCategories": [
+      "outerwear"
+    ],
+    "gender": [
+      "men",
+      "unisex"
+    ]
+  },
+  {
+    "label": "Stuart Weitzman",
+    "slug": "stuart-weitzman",
+    "coreCategories": [
+      "shoes"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Supreme",
+    "slug": "supreme",
+    "coreCategories": [
+      "streetwear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Swarovski",
+    "slug": "swarovski",
+    "coreCategories": [
+      "jewelry"
+    ],
+    "gender": [
+      "women",
+      "unisex"
+    ]
+  },
+  {
+    "label": "Ted Baker",
+    "slug": "ted-baker",
+    "coreCategories": [
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Telfar",
+    "slug": "telfar",
+    "coreCategories": [
+      "bags",
+      "clothing"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "The North Face",
+    "slug": "the-north-face",
+    "coreCategories": [
+      "outerwear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Theory",
+    "slug": "theory",
+    "coreCategories": [
+      "workwear",
+      "minimal clothing"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Tiffany & Co.",
+    "slug": "tiffany-and-co",
+    "coreCategories": [
+      "jewelry"
+    ],
+    "gender": [
+      "women",
+      "unisex"
+    ],
+    "aliases": [
+      "Tiffany and Co",
+      "Tiffany"
+    ]
+  },
+  {
+    "label": "Thom Browne",
+    "slug": "thom-browne",
+    "coreCategories": [
+      "tailoring",
+      "clothing"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Timberland",
+    "slug": "timberland",
+    "coreCategories": [
+      "shoes",
+      "boots"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Tom Ford",
+    "slug": "tom-ford",
+    "coreCategories": [
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Tory Burch",
+    "slug": "tory-burch",
+    "coreCategories": [
+      "clothing",
+      "bags",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "UGG",
+    "slug": "ugg",
+    "coreCategories": [
+      "shoes",
+      "boots"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Under Armour",
+    "slug": "under-armour",
+    "coreCategories": [
+      "activewear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Uniqlo",
+    "slug": "uniqlo",
+    "coreCategories": [
+      "basics",
+      "outerwear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Valentino",
+    "slug": "valentino",
+    "coreCategories": [
+      "clothing",
+      "shoes"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Vans",
+    "slug": "vans",
+    "coreCategories": [
+      "shoes"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Versace",
+    "slug": "versace",
+    "coreCategories": [
+      "clothing",
+      "jewelry"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Victoria's Secret",
+    "slug": "victorias-secret",
+    "coreCategories": [
+      "lingerie",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Vuori",
+    "slug": "vuori",
+    "coreCategories": [
+      "activewear",
+      "basics"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Warby Parker",
+    "slug": "warby-parker",
+    "coreCategories": [
+      "eyewear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Zara",
+    "slug": "zara",
+    "coreCategories": [
+      "clothing",
+      "shoes",
+      "accessories"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Zimmermann",
+    "slug": "zimmermann",
+    "coreCategories": [
+      "dresses",
+      "resortwear"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "3sixteen",
+    "slug": "3sixteen",
+    "coreCategories": [
+      "clothing",
+      "denim"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "7 For All Mankind",
+    "slug": "7-for-all-mankind",
+    "coreCategories": [
+      "denim",
+      "clothing"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "A.P.C.",
+    "slug": "apc",
+    "coreCategories": [
+      "clothing",
+      "denim",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ],
+    "aliases": [
+      "APC"
+    ]
+  },
+  {
+    "label": "Aeropostale",
+    "slug": "aeropostale",
+    "coreCategories": [
+      "casualwear",
+      "clothing"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ],
+    "aliases": [
+      "Aéropostale"
+    ]
+  },
+  {
+    "label": "AG Jeans",
+    "slug": "ag-jeans",
+    "coreCategories": [
+      "denim",
+      "clothing"
+    ],
+    "gender": [
+      "unisex"
+    ],
+    "aliases": [
+      "AG Adriano Goldschmied"
+    ]
+  },
+  {
+    "label": "Aime Leon Dore",
+    "slug": "aime-leon-dore",
+    "coreCategories": [
+      "streetwear",
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ],
+    "aliases": [
+      "Aimé Leon Dore"
+    ]
+  },
+  {
+    "label": "Akris",
+    "slug": "akris",
+    "coreCategories": [
+      "luxury clothing",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Alaia",
+    "slug": "alaia",
+    "coreCategories": [
+      "clothing",
+      "shoes",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ],
+    "aliases": [
+      "Alaïa"
+    ]
+  },
+  {
+    "label": "Alex Mill",
+    "slug": "alex-mill",
+    "coreCategories": [
+      "clothing",
+      "outerwear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "American Apparel",
+    "slug": "american-apparel",
+    "coreCategories": [
+      "basics",
+      "clothing"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Anne Fontaine",
+    "slug": "anne-fontaine",
+    "coreCategories": [
+      "clothing",
+      "workwear"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Aquascutum",
+    "slug": "aquascutum",
+    "coreCategories": [
+      "outerwear",
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "AREA",
+    "slug": "area",
+    "coreCategories": [
+      "clothing",
+      "eveningwear"
+    ],
+    "gender": [
+      "women",
+      "unisex"
+    ]
+  },
+  {
+    "label": "Aspinal of London",
+    "slug": "aspinal-of-london",
+    "coreCategories": [
+      "bags",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "AYR",
+    "slug": "ayr",
+    "coreCategories": [
+      "clothing",
+      "denim"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Badgley Mischka",
+    "slug": "badgley-mischka",
+    "coreCategories": [
+      "shoes",
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Bally",
+    "slug": "bally",
+    "coreCategories": [
+      "shoes",
+      "accessories",
+      "bags"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Barbour",
+    "slug": "barbour",
+    "coreCategories": [
+      "outerwear",
+      "clothing"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Baby Phat",
+    "slug": "baby-phat",
+    "coreCategories": [
+      "streetwear",
+      "clothing"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Berluti",
+    "slug": "berluti",
+    "coreCategories": [
+      "shoes",
+      "leather goods",
+      "clothing"
+    ],
+    "gender": [
+      "men",
+      "unisex"
+    ]
+  },
+  {
+    "label": "Beyond Yoga",
+    "slug": "beyond-yoga",
+    "coreCategories": [
+      "activewear",
+      "sets"
+    ],
+    "gender": [
+      "women",
+      "unisex"
+    ]
+  },
+  {
+    "label": "Bode",
+    "slug": "bode",
+    "coreCategories": [
+      "clothing",
+      "outerwear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Brioni",
+    "slug": "brioni",
+    "coreCategories": [
+      "tailoring",
+      "clothing"
+    ],
+    "gender": [
+      "men",
+      "unisex"
+    ]
+  },
+  {
+    "label": "Brooks Brothers",
+    "slug": "brooks-brothers",
+    "coreCategories": [
+      "clothing",
+      "workwear",
+      "tailoring"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Buck Mason",
+    "slug": "buck-mason",
+    "coreCategories": [
+      "clothing",
+      "basics",
+      "outerwear"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Buffalo David Bitton",
+    "slug": "buffalo-david-bitton",
+    "coreCategories": [
+      "denim",
+      "casualwear"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Bulgari",
+    "slug": "bulgari",
+    "coreCategories": [
+      "jewelry",
+      "watches",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ],
+    "aliases": [
+      "BVLGARI"
+    ]
+  },
+  {
+    "label": "Capezio",
+    "slug": "capezio",
+    "coreCategories": [
+      "shoes",
+      "activewear"
+    ],
+    "gender": [
+      "women",
+      "unisex"
+    ]
+  },
+  {
+    "label": "Carhartt",
+    "slug": "carhartt",
+    "coreCategories": [
+      "workwear",
+      "outerwear",
+      "clothing"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Carter's",
+    "slug": "carters",
+    "coreCategories": [
+      "clothing"
+    ],
+    "gender": [
+      "kids",
+      "family"
+    ]
+  },
+  {
+    "label": "Charlotte Russe",
+    "slug": "charlotte-russe",
+    "coreCategories": [
+      "clothing",
+      "shoes",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Charvet",
+    "slug": "charvet",
+    "coreCategories": [
+      "shirts",
+      "accessories"
+    ],
+    "gender": [
+      "men",
+      "unisex"
+    ]
+  },
+  {
+    "label": "Cherokee",
+    "slug": "cherokee",
+    "coreCategories": [
+      "clothing"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Chrome Hearts",
+    "slug": "chrome-hearts",
+    "coreCategories": [
+      "jewelry",
+      "accessories",
+      "clothing"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Club Monaco",
+    "slug": "club-monaco",
+    "coreCategories": [
+      "clothing",
+      "workwear"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Common Projects",
+    "slug": "common-projects",
+    "coreCategories": [
+      "shoes",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Desigual",
+    "slug": "desigual",
+    "coreCategories": [
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Escada",
+    "slug": "escada",
+    "coreCategories": [
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Ethika",
+    "slug": "ethika",
+    "coreCategories": [
+      "basics",
+      "underwear",
+      "activewear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "G-Star",
+    "slug": "g-star",
+    "coreCategories": [
+      "denim",
+      "casualwear"
+    ],
+    "gender": [
+      "unisex"
+    ],
+    "aliases": [
+      "G-Star Raw"
+    ]
+  },
+  {
+    "label": "Gant",
+    "slug": "gant",
+    "coreCategories": [
+      "clothing",
+      "workwear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "J.Lindeberg",
+    "slug": "j-lindeberg",
+    "coreCategories": [
+      "clothing",
+      "sportswear"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Joe Fresh",
+    "slug": "joe-fresh",
+    "coreCategories": [
+      "clothing",
+      "basics"
+    ],
+    "gender": [
+      "men",
+      "women"
+    ]
+  },
+  {
+    "label": "Joseph",
+    "slug": "joseph",
+    "coreCategories": [
+      "clothing",
+      "minimal clothing"
+    ],
+    "gender": [
+      "women",
+      "unisex"
+    ]
+  },
+  {
+    "label": "Karl Kani",
+    "slug": "karl-kani",
+    "coreCategories": [
+      "streetwear",
+      "clothing"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Maison Kitsune",
+    "slug": "maison-kitsune",
+    "coreCategories": [
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ],
+    "aliases": [
+      "Maison Kitsuné"
+    ]
+  },
+  {
+    "label": "Marimekko",
+    "slug": "marimekko",
+    "coreCategories": [
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "women",
+      "unisex"
+    ]
+  },
+  {
+    "label": "Nina Ricci",
+    "slug": "nina-ricci",
+    "coreCategories": [
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "women"
+    ]
+  },
+  {
+    "label": "Obey",
+    "slug": "obey",
+    "coreCategories": [
+      "streetwear",
+      "clothing"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  },
+  {
+    "label": "Pierre Cardin",
+    "slug": "pierre-cardin",
+    "coreCategories": [
+      "clothing",
+      "accessories"
+    ],
+    "gender": [
+      "unisex"
+    ]
+  }
+]
