@@ -37,6 +37,7 @@ create table if not exists clothing_items (
   category           text not null,        -- tops | bottoms | dresses | jumpsuits | shoes | outerwear | accessories | jewelry
   item_type          text not null,        -- core_garment | footwear | outerwear | accessory
   accessory_subtype  text,                 -- necklace | earrings | bracelet | ring | watch | bag | belt | scarf | hat | sunglasses | other (nullable)
+  brand              text,
   color              text,
   pattern            text,                 -- stripes | plaid | floral | polka_dots | animal_print | geometric | abstract (null = solid)
   season             text default 'all',   -- spring | summer | fall | winter | all
@@ -86,6 +87,21 @@ create table if not exists clothing_tag_feedback (
 create index if not exists idx_clothing_tag_feedback_user on clothing_tag_feedback(user_id);
 create index if not exists idx_clothing_tag_feedback_item on clothing_tag_feedback(item_id);
 create index if not exists idx_clothing_tag_feedback_field on clothing_tag_feedback(field_name);
+
+create table if not exists style_direction_feedback (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  event_id uuid not null references events(id) on delete cascade,
+  option_name text not null,
+  feedback_value text not null check (feedback_value in ('up', 'down')),
+  option_snapshot jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, event_id, option_name)
+);
+
+create index if not exists idx_style_direction_feedback_user on style_direction_feedback(user_id);
+create index if not exists idx_style_direction_feedback_event on style_direction_feedback(event_id);
 
 
 -- ── Events ────────────────────────────────────────────────────────────────
@@ -368,6 +384,9 @@ comment on table public.clothing_items is
 comment on table public.clothing_tag_feedback is
 'Wardrobe correction feedback log. Stores per-field before/after edits plus a frozen snapshot of the item context at correction time, so the app can analyze correction patterns and build future prompt-tuning or retraining datasets.';
 
+comment on table public.style_direction_feedback is
+'Stores thumbs up/down feedback on AI-generated Beyond your wardrobe option cards, keyed by user, event, and option name.';
+
 comment on table public.events is
   'User-created event or styling context. Stores a human-readable event summary plus structured JSON input used to derive occasion type, formality, temperature context, setting, and recommendation prompts.';
 
@@ -516,6 +535,8 @@ alter table clothing_items add column if not exists ingestion_source text
   default 'manual'
   check (ingestion_source in ('manual', 'batch_upload'));
 
+alter table clothing_items add column if not exists brand text;
+
 
 -- ── upload_batch_sessions ─────────────────────────────────────────────────────
 -- One row per multi-photo upload session.
@@ -599,3 +620,6 @@ comment on column public.clothing_items.verification_status is
 
 comment on column public.clothing_items.ingestion_source is
   'How this item entered the wardrobe: manual (single upload flow) or batch_upload.';
+
+comment on column public.clothing_items.brand is
+  'Optional brand selected from the curated LuxeLook catalog.';

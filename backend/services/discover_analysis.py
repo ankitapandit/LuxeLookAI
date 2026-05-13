@@ -23,6 +23,8 @@ from config import get_settings
 from ml.tagger import _get_clip_pipeline
 from services.style_catalog import get_style_catalog
 
+DISCOVER_ANALYSIS_VERSION = "discover_pattern_guard_v2"
+
 DIMENSION_ORDER = [
     "silhouette",
     "fabric",
@@ -50,6 +52,45 @@ PERSON_SCENE_LABELS: List[Tuple[str, str]] = [
         "a close-up portrait or tightly cropped image where the outfit is not clearly visible",
     ),
 ]
+
+
+def _focused_outfit_crop(image: Image.Image) -> Image.Image:
+    """
+    Reduce scene contamination for Discover style tags.
+
+    We keep the existing full-image single-person detection, but classify
+    clothing style on a tighter central crop so bouquets, trees, and other
+    off-axis props are less likely to dominate tags like "floral".
+
+    This is intentionally heuristic and easy to revert.
+    """
+    width, height = image.size
+    if width < 320 or height < 320:
+        return image
+
+    portrait_ratio = height / max(width, 1)
+    if portrait_ratio >= 1.2:
+        width_frac = 0.72
+        top_trim = 0.04
+        bottom_trim = 0.03
+    elif portrait_ratio >= 0.9:
+        width_frac = 0.78
+        top_trim = 0.05
+        bottom_trim = 0.04
+    else:
+        width_frac = 0.68
+        top_trim = 0.06
+        bottom_trim = 0.05
+
+    crop_width = max(int(width * width_frac), min(width, 256))
+    left = max((width - crop_width) // 2, 0)
+    right = min(left + crop_width, width)
+    top = max(int(height * top_trim), 0)
+    bottom = min(int(height * (1.0 - bottom_trim)), height)
+
+    if right - left < 160 or bottom - top < 220:
+        return image
+    return image.crop((left, top, right, bottom))
 
 
 def _download_bytes(url: str, timeout: int = 15) -> Tuple[bytes, str]:
@@ -136,24 +177,113 @@ def _style_prompt(row: Dict[str, Any]) -> str:
     return f"a fashion outfit that feels {label}"
 
 
-def _rank_dimension(image: Image.Image, rows: List[Dict[str, Any]]) -> Dict[str, Any] | None:
+def _rank_dimension_candidates(
+    image: Image.Image,
+    rows: List[Dict[str, Any]],
+    limit: int = 3,
+) -> List[Dict[str, Any]]:
     if not rows:
-        return None
+        return []
     label_pairs = [(str(row["style_key"]), _style_prompt(row)) for row in rows]
     results = _classify(image, label_pairs)
     if not results:
-        return None
-    best = results[0]
+        return []
     by_key = {str(row["style_key"]): row for row in rows}
-    matched = by_key.get(str(best.get("key") or ""))
-    if not matched:
+    enriched: List[Dict[str, Any]] = []
+    for index, row in enumerate(results[:limit]):
+        matched = by_key.get(str(row.get("key") or ""))
+        if not matched:
+            continue
+        next_score = float(results[index + 1].get("score") or 0.0) if index + 1 < len(results) else 0.0
+        enriched.append(
+            {
+                "style_key": matched["style_key"],
+                "label": matched.get("label") or matched["style_key"],
+                "dimension": matched.get("dimension"),
+                "score": float(row.get("score") or 0.0),
+                "next_score": next_score,
+                "score_margin": float(row.get("score") or 0.0) - next_score,
+            }
+        )
+    return enriched
+
+
+def _rank_dimension(image: Image.Image, rows: List[Dict[str, Any]]) -> Dict[str, Any] | None:
+    candidates = _rank_dimension_candidates(image, rows, limit=2)
+    return candidates[0] if candidates else None
+
+
+def _passes_pattern_guard(best: Dict[str, Any]) -> bool:
+    style_key = str(best.get("style_key") or "")
+    score = float(best.get("score") or 0.0)
+    margin = float(best.get("score_margin") or 0.0)
+
+    if style_key == "solid":
+        return score >= 0.24
+    if style_key in {"plaid", "animal_print"}:
+        return score >= 0.30 and margin >= 0.03
+    if style_key == "stripe":
+        # Tree trunks, railings, path lines, and long coat edges can mimic stripes.
+        return score >= 0.34 and margin >= 0.05
+    if style_key == "floral":
+        # Bouquet / garden props can falsely trigger floral. Require a clearer win.
+        return score >= 0.36 and margin >= 0.06
+    if style_key == "abstract":
+        # Painterly / busy scenes can leak into this label.
+        return score >= 0.30 and margin >= 0.03
+    if style_key == "geometric":
+        # Sidewalks, brick, railings, and clean urban lines can falsely trigger this.
+        return score >= 0.34 and margin >= 0.05
+    if style_key == "polka_dot":
+        # Leaves / gravel / repeated highlights can masquerade as dot prints.
+        return score >= 0.33 and margin >= 0.05
+    return True
+
+
+def _should_prefer_solid(best: Dict[str, Any], solid_candidate: Dict[str, Any] | None) -> bool:
+    if not solid_candidate:
+        return False
+
+    style_key = str(best.get("style_key") or "")
+    if style_key not in {"floral", "abstract", "geometric", "polka_dot", "stripe"}:
+        return False
+
+    best_score = float(best.get("score") or 0.0)
+    solid_score = float(solid_candidate.get("score") or 0.0)
+    if solid_score < 0.24:
+        return False
+
+    if style_key == "floral":
+        closeness = 0.10
+    elif style_key in {"geometric", "stripe"}:
+        closeness = 0.06
+    else:
+        closeness = 0.04
+    return solid_score >= best_score - closeness
+
+
+def _choose_pattern_tag(image: Image.Image, rows: List[Dict[str, Any]]) -> Dict[str, Any] | None:
+    candidates = _rank_dimension_candidates(image, rows, limit=4)
+    if not candidates:
         return None
-    return {
-        "style_key": matched["style_key"],
-        "label": matched.get("label") or matched["style_key"],
-        "dimension": matched.get("dimension"),
-        "score": float(best.get("score") or 0.0),
-    }
+
+    best = candidates[0]
+    solid_candidate = next((candidate for candidate in candidates if str(candidate.get("style_key")) == "solid"), None)
+    if _should_prefer_solid(best, solid_candidate):
+        return solid_candidate
+
+    if _passes_pattern_guard(best):
+        return best
+
+    # If a noisy pattern only weakly wins, prefer "solid" when it is close.
+    if solid_candidate:
+        best_score = float(best.get("score") or 0.0)
+        solid_score = float(solid_candidate.get("score") or 0.0)
+        if solid_score >= 0.24 and solid_score >= best_score - 0.04:
+            return solid_candidate
+    if solid_candidate and _passes_pattern_guard(solid_candidate):
+        return solid_candidate
+    return None
 
 
 def _extract_style_tags(image: Image.Image) -> List[str]:
@@ -161,7 +291,7 @@ def _extract_style_tags(image: Image.Image) -> List[str]:
     tags: List[str] = []
     for dimension in DIMENSION_ORDER:
         rows = [row for row in catalog if str(row.get("dimension") or "") == dimension]
-        best = _rank_dimension(image, rows)
+        best = _choose_pattern_tag(image, rows) if dimension == "pattern" else _rank_dimension(image, rows)
         if not best:
             continue
         threshold = 0.18 if dimension in {"vibe", "styling_detail"} else 0.24
@@ -224,14 +354,16 @@ def analyze_discover_image(query: str, image_url: str) -> Dict[str, Any]:
 
     image = _load_image(image_url)
     scene = _person_scene_analysis(image)
-    style_tags = _extract_style_tags(image) if scene["single_person"] else []
+    analysis_image = _focused_outfit_crop(image) if scene["single_person"] else image
+    style_tags = _extract_style_tags(analysis_image) if scene["single_person"] else []
     return {
         "single_person": bool(scene["single_person"]),
         "person_count": int(scene["person_count"]),
         "title": _title_from_tags(style_tags),
         "summary": _summary_from_tags(style_tags),
         "style_tags": style_tags,
-        "source_note": "HF CLIP analysis",
+        "analysis_version": DISCOVER_ANALYSIS_VERSION,
+        "source_note": "HF CLIP analysis (focused outfit crop)",
         "scene_label": scene["scene_label"],
         "scene_score": scene["scene_score"],
     }

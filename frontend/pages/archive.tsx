@@ -432,12 +432,7 @@ export default function OutfitsPage() {
 
                       {/* Regenerate button */}
                       {!isGenerating && suggestions.length > 0 && (
-                        <div style={{ marginTop: "16px", textAlign: "right" }}>
-                          <button className="btn-secondary" onClick={() => handleGenerate(ev.id)}
-                            style={{ fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                            <Sparkles size={13} /> Refresh Looks
-                          </button>
-                        </div>
+                        null
                       )}
                     </>
                   )}

@@ -77,6 +77,16 @@ function itemStatusText(s: BatchItemStatus): string {
   }[s] ?? s;
 }
 
+function sessionIsFullyProcessed(session: Pick<BatchSession, "processed_count" | "total_count">): boolean {
+  return session.total_count > 0 && session.processed_count >= session.total_count;
+}
+
+function sessionCanReview(
+  session: Pick<BatchSession, "processed_count" | "total_count" | "awaiting_verification_count">,
+): boolean {
+  return session.awaiting_verification_count > 0 && sessionIsFullyProcessed(session);
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 interface LocalFile {
@@ -250,6 +260,9 @@ export default function BatchUploadPage() {
 
   const isProcessing = session && !TERMINAL_SESSION_STATUSES.has(session.status);
   const isReady      = session && (session.status === "awaiting_verification" || TERMINAL_SESSION_STATUSES.has(session.status));
+  const canReviewCurrentSession = session ? sessionCanReview(session) : false;
+  const reviewBlockedForCurrentSession =
+    session && session.awaiting_verification_count > 0 && !canReviewCurrentSession;
 
   return (
     <>
@@ -427,7 +440,7 @@ export default function BatchUploadPage() {
             </div>
 
             {/* Review CTA */}
-            {isReady && session.awaiting_verification_count > 0 && (
+            {canReviewCurrentSession && (
               <Link
                 href={`/batch-review/${session.id}`}
                 className="btn-primary"
@@ -436,6 +449,28 @@ export default function BatchUploadPage() {
                 <CheckCircle size={15} />
                 Review {session.awaiting_verification_count} tagged item{session.awaiting_verification_count !== 1 ? "s" : ""}
               </Link>
+            )}
+
+            {reviewBlockedForCurrentSession && (
+              <button
+                type="button"
+                disabled
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "10px 16px",
+                  borderRadius: "999px",
+                  border: "1px solid rgba(212,169,106,0.14)",
+                  background: "rgba(255,255,255,0.03)",
+                  color: "rgba(244,238,228,0.48)",
+                  cursor: "not-allowed",
+                }}
+                title="Review unlocks once every item in the batch has finished tagging."
+              >
+                <CheckCircle size={15} />
+                Review unlocks when all items are ready
+              </button>
             )}
 
             {/* Upload more */}
@@ -488,7 +523,7 @@ export default function BatchUploadPage() {
                         {s.failed_count > 0 && ` · ${s.failed_count} failed`}
                       </p>
                     </div>
-                    {s.awaiting_verification_count > 0 ? (
+                    {sessionCanReview(s) ? (
                       <Link
                         href={`/batch-review/${s.id}`}
                         style={{
@@ -500,6 +535,25 @@ export default function BatchUploadPage() {
                       >
                         Review {s.awaiting_verification_count}
                       </Link>
+                    ) : s.awaiting_verification_count > 0 ? (
+                      <button
+                        type="button"
+                        disabled
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: 500,
+                          color: "rgba(244,238,228,0.48)",
+                          background: "rgba(255,255,255,0.03)",
+                          padding: "6px 14px",
+                          border: "1px solid rgba(212,169,106,0.12)",
+                          borderRadius: "6px",
+                          whiteSpace: "nowrap",
+                          cursor: "not-allowed",
+                        }}
+                        title="Review unlocks once every item in the batch has finished tagging."
+                      >
+                        Review when all items are ready
+                      </button>
                     ) : TERMINAL_SESSION_STATUSES.has(s.status) ? (
                       <Link
                         href={`/batch-review/${s.id}`}

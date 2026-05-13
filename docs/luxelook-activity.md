@@ -1,6 +1,6 @@
 # LuxeLook AI Activity Map
 
-Updated: 2026-04-20
+Updated: 2026-05-13
 
 This file is the current source-of-truth activity walkthrough for LuxeLook AI.
 It replaces the older March 2026 activity PDF that still referenced legacy routes such as `/events` and `/outfits`.
@@ -14,6 +14,8 @@ Read this alongside:
 
 - `/` landing + auth
 - `/wardrobe`
+- `/batch-upload`
+- `/batch-review/[sessionId]`
 - `/discover`
 - `/event`
 - `/archive`
@@ -46,7 +48,7 @@ flowchart LR
 
     subgraph APP["LuxeLook AI"]
         AUTH("Sign up / log in")
-        WARDROBE("Upload and correct wardrobe items")
+        WARDROBE("Batch upload, review, and manage wardrobe items")
         DISCOVER("Swipe Discover feed and train preferences")
         EVENT("Generate wardrobe-based event outfits")
         STYLE("Style around one anchor item")
@@ -143,6 +145,7 @@ flowchart TD
     RETURN1["Return wardrobe looks"]
     BUILDSTYLE["Generate 'Beyond your wardrobe' directions"]
     ENRICH["Attach style-direction images"]
+    FEEDBACK["Persist optional style-direction usefulness feedback"]
     RETURN2["Return wardrobe looks + moodboard directions"]
     END([Render Event results])
 
@@ -156,7 +159,8 @@ flowchart TD
     BUILDSTYLE --> ENRICH
     RETURN1 --> END
     ENRICH --> RETURN2
-    RETURN2 --> END
+    RETURN2 --> FEEDBACK
+    FEEDBACK --> END
 ```
 
 ## 1. User opens the app
@@ -207,35 +211,39 @@ sequenceDiagram
     Frontend-->>User: Session restored / authenticated app state
 ```
 
-## 3. Wardrobe upload and correction
+## 3. Batch Upload, review, and wardrobe management
 
 Frontend:
+- [/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/frontend/pages/batch-upload.tsx](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/frontend/pages/batch-upload.tsx)
+- [/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/frontend/pages/batch-review/[sessionId].tsx](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/frontend/pages/batch-review/[sessionId].tsx)
 - [/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/frontend/pages/wardrobe.tsx](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/frontend/pages/wardrobe.tsx)
 - [/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/frontend/services/api.ts](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/frontend/services/api.ts)
 
 Backend:
+- [/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/routers/batch_upload.py](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/routers/batch_upload.py)
 - [/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/routers/clothing.py](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/routers/clothing.py)
+- [/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/services/batch_upload_service.py](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/services/batch_upload_service.py)
 - [/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/services/clothing_service.py](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/services/clothing_service.py)
 - [/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/ml/tagger.py](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/ml/tagger.py)
 - [/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/ml/llm.py](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/ml/llm.py)
 - [/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/ml/embeddings.py](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/backend/ml/embeddings.py)
 
 Flow:
-1. User drops an image into Wardrobe.
-2. Frontend calls `/clothing/tag-preview`.
-3. Backend classifies category, color, season, and formality.
-4. Descriptor extraction runs for the effective category.
-5. Duplicate detection checks whether the item already exists.
-6. User reviews AI tags and can correct category, color, pattern, season, formality, and descriptors.
-7. If the user changes the category during review, preview tagging is rerun for the new category so descriptors refresh before save.
-8. Frontend calls `/clothing/upload-item`.
-9. Backend persists the item and starts background media processing.
-10. Wardrobe shows activity-tray progress for thumbnail/cutout generation.
+1. User starts from **Batch Upload**, not Wardrobe.
+2. Frontend creates or resumes a batch session, then uploads one or many images into that session.
+3. Backend classifies category, color, season, formality, descriptors, and optional brand choices for each item.
+4. Duplicate detection checks whether the item already exists.
+5. A `clothing_items` row is created with ingestion metadata plus media-processing state.
+6. Background media processing generates thumbnails and cutouts with bounded model fallbacks so slow cutouts do not hang indefinitely.
+7. Batch Review stays locked until the full batch is ready, then the user verifies or rejects each tagged item.
+8. Wardrobe is the management surface afterward: browse, filter, edit, archive/restore, and monitor media status.
+9. Brand remains editable later from Wardrobe or Batch Review through the shared curated brand catalog.
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant Wardrobe
+    participant BatchUpload
+    participant BatchAPI as Batch Router
     participant ClothingAPI as Clothing Router
     participant Tagger
     participant LLM
@@ -243,17 +251,17 @@ sequenceDiagram
     participant Storage
     participant DB
 
-    User->>Wardrobe: Drop clothing image
-    Wardrobe->>ClothingAPI: POST /clothing/tag-preview
-    ClothingAPI->>Tagger: Classify category / color / season / formality
-    ClothingAPI->>LLM: Describe descriptors for effective category
-    ClothingAPI-->>Wardrobe: Preview tags + descriptors + duplicate info
-    User->>Wardrobe: Confirm or correct tags
-    Wardrobe->>ClothingAPI: POST /clothing/upload-item
-    ClothingAPI->>ClothingService: Persist clothing item
+    User->>BatchUpload: Upload one or more clothing images
+    BatchUpload->>BatchAPI: POST /batch-upload/session + items
+    BatchAPI->>Tagger: Classify category / color / season / formality
+    BatchAPI->>LLM: Describe descriptors for effective category
+    BatchAPI->>ClothingService: Persist intake + queue media
     ClothingService->>DB: Insert clothing row
     ClothingService->>Storage: Queue / save media artifacts
-    ClothingAPI-->>Wardrobe: Saved item response
+    BatchAPI-->>BatchUpload: Session/item status updates
+    User->>BatchUpload: Open Batch Review when session is ready
+    BatchUpload->>BatchAPI: Verify or reject tagged items
+    BatchAPI-->>BatchUpload: Trusted wardrobe state updated
 ```
 
 ### Correction feedback logging

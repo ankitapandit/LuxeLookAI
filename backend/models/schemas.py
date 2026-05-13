@@ -97,6 +97,7 @@ class ClothingItemCreate(BaseModel):
     category: str                         # e.g. "tops", "bottoms", "shoes", "jewelry"
     item_type: str                        # "core_garment" | "footwear" | "outerwear" | "accessory"
     accessory_subtype: Optional[str] = None  # necklace | earrings | bracelet | ring | watch | bag | belt | scarf | hat | sunglasses | other
+    brand: Optional[str] = None
     color: Optional[str] = None
     pattern: Optional[str] = None         # stripes | plaid | floral | polka_dots | animal_print | geometric | abstract
     season: Optional[str] = None          # spring | summer | fall | winter | all
@@ -400,6 +401,20 @@ class FeedbackRequest(BaseModel):
 class FeedbackResponse(BaseModel):
     outfit_id: UUID
     rating: int
+    message: str
+
+
+class StyleDirectionFeedbackRequest(BaseModel):
+    event_id: UUID
+    option_name: str
+    feedback_value: Literal["up", "down"]
+    option_snapshot: Optional[Dict[str, Any]] = None
+
+
+class StyleDirectionFeedbackResponse(BaseModel):
+    event_id: UUID
+    option_name: str
+    feedback_value: Literal["up", "down"]
     message: str
 
 

@@ -10,6 +10,8 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import multiprocessing
+import time
 import uuid
 from datetime import datetime, timezone, timedelta
 from collections import deque
@@ -28,9 +30,12 @@ TABLE = "clothing_items"
 STORAGE_BUCKET = "clothing-images"
 DUPLICATE_THRESHOLD = 0.95
 MEDIA_PROCESSING_TIMEOUT = timedelta(minutes=15)
+CUTOUT_MODEL_TIMEOUT_SECONDS = 30
+PRIMARY_CUTOUT_MODEL = "isnet-general-use"
+FALLBACK_CUTOUT_MODEL = "u2net"
 
 ITEM_LIST_FIELDS = (
-    "id, user_id, category, item_type, accessory_subtype, color, pattern, "
+    "id, user_id, category, item_type, accessory_subtype, brand, color, pattern, "
     "season, formality_score, image_url, thumbnail_url, cutout_url, "
     "media_status, media_stage, media_error, media_updated_at, "
     "is_active, is_archived, archived_on, deleted_at, "
@@ -59,7 +64,7 @@ def _build_correction_feedback_rows(
 ) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
 
-    tracked_fields = ("category", "color", "season", "formality_score")
+    tracked_fields = ("category", "brand", "color", "season", "formality_score")
     for field in tracked_fields:
         if field not in corrections:
             continue
@@ -120,10 +125,10 @@ def _make_thumbnail_bytes(image_bytes: bytes, max_size: int = 360) -> bytes:
         return out.getvalue()
 
 
-@lru_cache(maxsize=1)
-def _get_rembg_session():
+@lru_cache(maxsize=4)
+def _get_rembg_session(model_name: str = PRIMARY_CUTOUT_MODEL):
     from rembg import new_session
-    return new_session("isnet-general-use")
+    return new_session(model_name)
 
 
 def _color_distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> int:
@@ -262,23 +267,147 @@ def _finalize_cutout_bytes(cutout_bytes: bytes, max_size: int = 900) -> bytes:
         return out.getvalue()
 
 
+def _run_rembg_cutout_once(image_bytes: bytes, model_name: str, max_size: int = 900) -> bytes:
+    from rembg import remove
+
+    started = time.perf_counter()
+    removed = remove(
+        image_bytes,
+        session=_get_rembg_session(model_name),
+        alpha_matting=False,
+    )
+    finalized = _finalize_cutout_bytes(removed, max_size=max_size)
+    logger.info(
+        "cutout_model_completed model=%s duration_ms=%.1f input_bytes=%s output_bytes=%s",
+        model_name,
+        (time.perf_counter() - started) * 1000,
+        len(image_bytes),
+        len(finalized),
+    )
+    return finalized
+
+
+def _cutout_worker_process(
+    image_bytes: bytes,
+    model_name: str,
+    max_size: int,
+    conn: multiprocessing.connection.Connection,
+) -> None:
+    try:
+        conn.send(("ok", _run_rembg_cutout_once(image_bytes, model_name, max_size=max_size)))
+    except Exception as exc:
+        conn.send(("error", str(exc)))
+    finally:
+        conn.close()
+
+
+def _try_rembg_cutout_with_timeout(
+    image_bytes: bytes,
+    model_name: str,
+    max_size: int = 900,
+    timeout_seconds: int = CUTOUT_MODEL_TIMEOUT_SECONDS,
+) -> bytes:
+    started = time.perf_counter()
+    ctx = multiprocessing.get_context("spawn")
+    parent_conn, child_conn = ctx.Pipe(duplex=False)
+    process = ctx.Process(
+        target=_cutout_worker_process,
+        args=(image_bytes, model_name, max_size, child_conn),
+        daemon=True,
+    )
+    process.start()
+    child_conn.close()
+
+    try:
+        if parent_conn.poll(timeout_seconds):
+            status, payload = parent_conn.recv()
+            process.join(timeout=1)
+            if status == "ok":
+                logger.info(
+                    "cutout_model_returned model=%s duration_ms=%.1f timeout_seconds=%s",
+                    model_name,
+                    (time.perf_counter() - started) * 1000,
+                    timeout_seconds,
+                )
+                return payload
+            raise RuntimeError(payload)
+
+        logger.warning(
+            "rembg cutout generation timed out after %ss with model=%s; will fall back",
+            timeout_seconds,
+            model_name,
+        )
+        process.terminate()
+        process.join(timeout=2)
+        raise TimeoutError(f"rembg cutout timed out for model={model_name}")
+    finally:
+        parent_conn.close()
+
+
 def _make_cutout_bytes(image_bytes: bytes, max_size: int = 900) -> bytes:
     """Generate a transparent-background cutout best suited for moodboard compositions."""
+    overall_started = time.perf_counter()
+    logger.info(
+        "cutout_generation_started primary_model=%s fallback_model=%s input_bytes=%s",
+        PRIMARY_CUTOUT_MODEL,
+        FALLBACK_CUTOUT_MODEL,
+        len(image_bytes),
+    )
     try:
-        from rembg import remove
-
-        removed = remove(
+        result = _try_rembg_cutout_with_timeout(
             image_bytes,
-            session=_get_rembg_session(),
-            alpha_matting=True,
-            alpha_matting_foreground_threshold=240,
-            alpha_matting_background_threshold=10,
-            alpha_matting_erode_size=8,
+            PRIMARY_CUTOUT_MODEL,
+            max_size=max_size,
+            timeout_seconds=CUTOUT_MODEL_TIMEOUT_SECONDS,
         )
-        return _finalize_cutout_bytes(removed, max_size=max_size)
+        logger.info(
+            "cutout_generation_finished model=%s total_duration_ms=%.1f",
+            PRIMARY_CUTOUT_MODEL,
+            (time.perf_counter() - overall_started) * 1000,
+        )
+        return result
+    except TimeoutError:
+        try:
+            logger.info("Retrying cutout generation with fallback model=%s", FALLBACK_CUTOUT_MODEL)
+            result = _try_rembg_cutout_with_timeout(
+                image_bytes,
+                FALLBACK_CUTOUT_MODEL,
+                max_size=max_size,
+                timeout_seconds=CUTOUT_MODEL_TIMEOUT_SECONDS,
+            )
+            logger.info(
+                "cutout_generation_finished model=%s total_duration_ms=%.1f",
+                FALLBACK_CUTOUT_MODEL,
+                (time.perf_counter() - overall_started) * 1000,
+            )
+            return result
+        except TimeoutError:
+            logger.warning(
+                "Fallback rembg cutout generation also timed out after %ss with model=%s; using heuristic fallback",
+                CUTOUT_MODEL_TIMEOUT_SECONDS,
+                FALLBACK_CUTOUT_MODEL,
+            )
+            result = _make_cutout_bytes_fallback(image_bytes, max_size=max_size)
+            logger.info(
+                "cutout_generation_finished model=heuristic_fallback total_duration_ms=%.1f",
+                (time.perf_counter() - overall_started) * 1000,
+            )
+            return result
+        except Exception as fallback_exc:
+            logger.warning(
+                "Fallback rembg cutout generation failed after %s timeout: %s",
+                PRIMARY_CUTOUT_MODEL,
+                fallback_exc,
+            )
+            return _make_cutout_bytes_fallback(image_bytes, max_size=max_size)
     except Exception as e:
         logger.warning("rembg cutout generation failed; falling back to heuristic removal: %s", e)
-        return _make_cutout_bytes_fallback(image_bytes, max_size=max_size)
+        result = _make_cutout_bytes_fallback(image_bytes, max_size=max_size)
+        logger.info(
+            "cutout_generation_finished model=heuristic_fallback total_duration_ms=%.1f",
+            (time.perf_counter() - overall_started) * 1000,
+        )
+        return result
 
 
 def _extract_storage_paths(image_url: str = "", thumbnail_url: str = "", cutout_url: str = "") -> List[str]:
@@ -524,6 +653,7 @@ def _upload_mock(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
         "category":          tags["category"],
         "item_type":         tags["item_type"],
         "accessory_subtype": tags.get("accessory_subtype"),
+        "brand":             tags.get("brand"),
         "color":             tags.get("color"),
         "pattern":           tags.get("pattern"),
         "season":            tags.get("season"),
@@ -575,12 +705,15 @@ def _get_items_by_ids_mock(
 def _apply_item_filters_mock(
     items: List[Dict[str, Any]],
     category: Optional[str] = None,
+    brand: Optional[List[str]] = None,
     season: Optional[str] = None,
     formality: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     def matches(item: Dict[str, Any]) -> bool:
         normalized_formality = (formality or "").strip().lower()
         if category and item.get("category") != category:
+            return False
+        if brand and item.get("brand") not in brand:
             return False
         if season:
             item_season = item.get("season")
@@ -616,6 +749,7 @@ def _get_items_page_mock(
     limit: int,
     offset: int,
     category: Optional[str] = None,
+    brand: Optional[List[str]] = None,
     season: Optional[str] = None,
     formality: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -623,6 +757,7 @@ def _get_items_page_mock(
     filtered = _apply_item_filters_mock(
         active_items,
         category=category,
+        brand=brand,
         season=season,
         formality=formality,
     )
@@ -740,6 +875,7 @@ def _upload_real(user_id: str, image_bytes: bytes, filename: str, manual_tags: O
         "category":          tags["category"],
         "item_type":         tags["item_type"],
         "accessory_subtype": tags.get("accessory_subtype"),
+        "brand":             tags.get("brand"),
         "color":             tags.get("color"),
         "pattern":           tags.get("pattern"),
         "season":            tags.get("season"),
@@ -809,6 +945,7 @@ def _get_items_page_real(
     limit: int,
     offset: int,
     category: Optional[str] = None,
+    brand: Optional[List[str]] = None,
     season: Optional[str] = None,
     formality: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -833,6 +970,9 @@ def _get_items_page_real(
     if category:
         query = query.eq("category", category)
         total_count_query = total_count_query.eq("category", category)
+    if brand:
+        query = query.in_("brand", brand)
+        total_count_query = total_count_query.in_("brand", brand)
     if season:
         query = query.eq("season", season)
         total_count_query = total_count_query.eq("season", season)
@@ -1194,9 +1334,18 @@ def _process_item_media_mock(item_id: str, user_id: str, image_bytes: bytes) -> 
 def _process_item_media_real(item_id: str, user_id: str, image_bytes: bytes) -> None:
     thumb_path = f"{user_id}/{item_id}/thumb.webp"
     cutout_path = f"{user_id}/{item_id}/cutout.png"
+    media_started = time.perf_counter()
+    logger.info("media_processing_started item_id=%s user_id=%s input_bytes=%s", item_id, user_id, len(image_bytes))
 
     update_media_status(item_id, user_id, "processing", stage="thumbnail", error=None)
+    thumb_started = time.perf_counter()
     thumbnail_bytes = _make_thumbnail_bytes(image_bytes)
+    logger.info(
+        "media_thumbnail_completed item_id=%s duration_ms=%.1f output_bytes=%s",
+        item_id,
+        (time.perf_counter() - thumb_started) * 1000,
+        len(thumbnail_bytes),
+    )
 
     thumbnail_url = _upload_bytes_to_storage(
         thumb_path,
@@ -1205,7 +1354,14 @@ def _process_item_media_real(item_id: str, user_id: str, image_bytes: bytes) -> 
     )
     update_media_status(item_id, user_id, "processing", stage="cutout", error=None, extra_updates={"thumbnail_url": thumbnail_url})
 
+    cutout_started = time.perf_counter()
     cutout_bytes = _make_cutout_bytes(image_bytes)
+    logger.info(
+        "media_cutout_completed item_id=%s duration_ms=%.1f output_bytes=%s",
+        item_id,
+        (time.perf_counter() - cutout_started) * 1000,
+        len(cutout_bytes),
+    )
     cutout_url = _upload_bytes_to_storage(
         cutout_path,
         cutout_bytes,
@@ -1222,6 +1378,11 @@ def _process_item_media_real(item_id: str, user_id: str, image_bytes: bytes) -> 
             "thumbnail_url": thumbnail_url,
             "cutout_url": cutout_url,
         },
+    )
+    logger.info(
+        "media_processing_finished item_id=%s total_duration_ms=%.1f",
+        item_id,
+        (time.perf_counter() - media_started) * 1000,
     )
 
 
@@ -1286,6 +1447,7 @@ def get_user_items_page(
     limit: int,
     offset: int,
     category: Optional[str] = None,
+    brand: Optional[List[str]] = None,
     season: Optional[str] = None,
     formality: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -1297,6 +1459,7 @@ def get_user_items_page(
             limit=limit,
             offset=offset,
             category=category,
+            brand=brand,
             season=season,
             formality=formality,
         )
@@ -1305,6 +1468,7 @@ def get_user_items_page(
         limit=limit,
         offset=offset,
         category=category,
+        brand=brand,
         season=season,
         formality=formality,
     )
@@ -1485,7 +1649,7 @@ def correct_item_tags(item_id: str, user_id: str, corrections: Dict) -> Optional
 
         existing = (
             db.table(TABLE)
-            .select("id, category, color, season, formality_score, descriptors")
+            .select("id, category, brand, color, season, formality_score, descriptors")
             .eq("id", item_id)
             .eq("user_id", user_id)
             .maybe_single()
@@ -1508,6 +1672,8 @@ def correct_item_tags(item_id: str, user_id: str, corrections: Dict) -> Optional
             "p_formality_score": corrections.get("formality_score"),
             "p_item_type":       corrections.get("item_type"),
             "p_descriptors":     _json.dumps(desc) if desc else None,
+            "p_brand":           corrections.get("brand"),
+            "p_clear_brand":     ("brand" in corrections and corrections.get("brand") is None),
         }
         result = db.rpc("update_clothing_item_tags", rpc_args).execute()
         updated = result.data if result.data else None

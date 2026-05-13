@@ -9,6 +9,7 @@ import EventBriefEditor, {
 } from "@/components/EventBriefEditor";
 import LookAssemblyLoader from "@/components/LookAssemblyLoader";
 import OutfitSuggestionCard from "@/components/OutfitSuggestionCard";
+import StyleDirectionFeedback from "@/components/StyleDirectionFeedback";
 import {
   ClothingItem,
   createEvent,
@@ -16,6 +17,7 @@ import {
   getWardrobeItems,
   OutfitSuggestion,
   rateOutfit,
+  rateStyleDirectionOption,
   StyleDirectionData,
 } from "@/services/api";
 import StyleDirectionMoodboard, { getFinishPieces } from "@/components/StyleDirectionMoodboard";
@@ -36,6 +38,7 @@ export default function EventScenarioTestPage() {
   const [wardrobeMap, setWardrobeMap] = useState<Record<string, ClothingItem>>({});
   const [allSeen, setAllSeen] = useState(false);
   const [coverageHints, setCoverageHints] = useState<string[]>([]);
+  const [styleDirectionFeedbackBusy, setStyleDirectionFeedbackBusy] = useState<Record<string, boolean>>({});
 
   const serializedBrief = useMemo(() => JSON.stringify(serializeEventBrief(brief), null, 2), [brief]);
 
@@ -48,6 +51,7 @@ export default function EventScenarioTestPage() {
     setWardrobeMap({});
     setAllSeen(false);
     setCoverageHints([]);
+    setStyleDirectionFeedbackBusy({});
   }
 
   function loadScenario(id: string) {
@@ -60,6 +64,7 @@ export default function EventScenarioTestPage() {
     setStyleDirectionData(null);
     setAllSeen(false);
     setCoverageHints([]);
+    setStyleDirectionFeedbackBusy({});
   }
 
   function applyJson() {
@@ -124,6 +129,7 @@ export default function EventScenarioTestPage() {
       setAllSeen(outfitData.all_seen ?? false);
       setCoverageHints(outfitData.coverage_hints ?? []);
       setStyleDirectionData(outfitData.style_direction || null);
+      setStyleDirectionFeedbackBusy({});
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string } } };
       toast.error(e?.response?.data?.detail || "Could not run scenario");
@@ -141,6 +147,35 @@ export default function EventScenarioTestPage() {
       toast.success("Rating saved");
     } catch {
       toast.error("Could not save rating");
+    }
+  }
+
+  async function handleStyleDirectionFeedback(optionName: string, feedbackValue: "up" | "down") {
+    if (!eventId || !styleDirectionData) return;
+
+    const option = styleDirectionData.options.find((entry) => entry.name === optionName);
+    if (!option) return;
+
+    setStyleDirectionFeedbackBusy((prev) => ({ ...prev, [optionName]: true }));
+    try {
+      await rateStyleDirectionOption(eventId, optionName, feedbackValue, option);
+      setStyleDirectionData((prev) => (
+        prev
+          ? {
+              ...prev,
+              options: prev.options.map((entry) => (
+                entry.name === optionName
+                  ? { ...entry, user_feedback: feedbackValue }
+                  : entry
+              )),
+            }
+          : prev
+      ));
+      toast.success("Feedback saved");
+    } catch {
+      toast.error("Could not save feedback");
+    } finally {
+      setStyleDirectionFeedbackBusy((prev) => ({ ...prev, [optionName]: false }));
     }
   }
 
@@ -380,6 +415,12 @@ export default function EventScenarioTestPage() {
                               {option.tip}
                             </p>
                           ) : null}
+
+                          <StyleDirectionFeedback
+                            value={option.user_feedback ?? null}
+                            busy={Boolean(styleDirectionFeedbackBusy[option.name])}
+                            onChange={(feedbackValue) => handleStyleDirectionFeedback(option.name, feedbackValue)}
+                          />
                         </div>
                       ))}
                     </div>

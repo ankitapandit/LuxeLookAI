@@ -161,8 +161,8 @@ def _mock_parse_occasion(raw_text: str) -> Dict[str, Any]:
         "exhibition": "exhibition", "show": "show",
     }
     # Setting tokens (medium discriminative power)
-    # Water-body synonyms all map to the canonical beach/pool/resort/swim tokens
-    # so the recommender's _BEACH_TOKENS gate fires correctly for any venue phrasing.
+    # Water-body synonyms map to canonical beach/pool/resort/swim tokens EXCEPT
+    # when a formal dress code is present — see boat/yacht special-case below.
     _SETTING_MAP = {
         # ── canonical beach-adjacent ───────────────────────────────────────
         "beach": "beach", "ocean": "beach", "sea": "beach", "seaside": "beach",
@@ -170,7 +170,7 @@ def _mock_parse_occasion(raw_text: str) -> Dict[str, Any]:
         "waterfront": "beach", "harbour": "beach", "harbor": "beach",
         "marina": "beach", "pier": "beach", "dock": "beach",
         "lake": "beach", "lakeside": "beach", "riverside": "beach",
-        "boat": "beach", "yacht": "beach", "vessel": "beach",
+        # boat / yacht — handled separately below (context-sensitive)
         # ── pool / water-park ──────────────────────────────────────────────
         "pool": "pool", "poolside": "pool", "waterpark": "pool",
         "hot tub": "pool", "jacuzzi": "pool", "spa pool": "pool",
@@ -194,6 +194,31 @@ def _mock_parse_occasion(raw_text: str) -> Dict[str, Any]:
     for kw, tag in {**_ACTIVITY_MAP, **_SETTING_MAP, **_SOCIAL_MAP}.items():
         if kw in text and tag not in tokens:
             tokens.append(tag)
+
+    # ── Boat / yacht context-sensitive token ──────────────────────────────────
+    # A boat or yacht as a VENUE means very different things depending on dress code:
+    #   "boat trip" / "day on the water" / "yacht day"
+    #       → beach token (casual, swimwear/coverup appropriate)
+    #   "boat party cocktail" / "yacht dinner" / "cocktail cruise"
+    #       → rooftop + outdoor tokens (elevated outdoor venue, NO swimwear push)
+    #
+    # The dress code / activity tokens always override the venue's beach implication.
+    _BOAT_KEYWORDS   = {"boat", "yacht", "vessel", "cruise", "sailing", "charter"}
+    _FORMAL_OVERRIDE = {
+        "cocktail", "gala", "dinner", "wedding", "formal", "black tie",
+        "blacktie", "reception", "ceremony", "upscale", "dressy",
+    }
+    if any(k in text for k in _BOAT_KEYWORDS):
+        has_formal_dress_code = any(k in text for k in _FORMAL_OVERRIDE)
+        if has_formal_dress_code:
+            # Treat as an elevated outdoor venue — no beach/swimwear implications
+            for tok in ("rooftop", "outdoor", "evening"):
+                if tok not in tokens:
+                    tokens.append(tok)
+        else:
+            # Casual boat context — beach token appropriate
+            if "beach" not in tokens:
+                tokens.append("beach")
 
     return {
         "occasion_type":       occasion,
@@ -262,7 +287,7 @@ def _real_parse_occasion(raw_text: str) -> Dict[str, Any]:
       "formality_level": <float 0.0-1.0 where 0=very casual, 0.5=smart casual, 0.8=formal, 1.0=black tie>,
       "setting": "one of: indoor, outdoor, mixed",
       "temperature_context": "one of: hot, warm, cool, cold",
-      "event_tokens": ["3-8 semantic tags drawn from the event description — use activity tokens (dinner/interview/wedding/party/cocktail/brunch/gala/concert/ceremony/bbq/picnic/workout), setting tokens (beach/pool/resort/swim/office/restaurant/museum/garden/rooftop/bar/park/lounge/gallery/hotel/club), social context (romantic/professional/friends/family/colleagues), and time of day (morning/afternoon/evening/night). Activity tokens carry the most weight — always include them when present. IMPORTANT water-body mapping: ocean/sea/seaside/coast/shore/waterfront/harbour/marina/pier/dock/lake/lakeside/riverside/boat/yacht → use 'beach' token. pool/poolside/waterpark/hot tub/jacuzzi → use 'pool' token. resort/island retreat → use 'resort' token. swim/swimming → use 'swim' token."]
+      "event_tokens": ["3-8 semantic tags drawn from the event description — use activity tokens (dinner/interview/wedding/party/cocktail/brunch/gala/concert/ceremony/bbq/picnic/workout), setting tokens (beach/pool/resort/swim/office/restaurant/museum/garden/rooftop/bar/park/lounge/gallery/hotel/club), social context (romantic/professional/friends/family/colleagues), and time of day (morning/afternoon/evening/night). Activity tokens carry the most weight — always include them when present. WATER-BODY MAPPING: ocean/sea/seaside/coast/shore/waterfront/harbour/marina/pier/dock/lake/lakeside/riverside → 'beach'. pool/poolside/waterpark/hot tub/jacuzzi → 'pool'. resort/island retreat → 'resort'. swim/swimming → 'swim'. BOAT/YACHT OVERRIDE (critical): boat/yacht/cruise/sailing → 'beach' ONLY for casual contexts (day trip, boat party with no dress code). If a formal dress code is present (cocktail/dinner/gala/wedding/formal/reception/upscale), use 'rooftop' + 'outdoor' instead — never 'beach' — so swimwear is NOT suggested for a cocktail cruise or yacht dinner."]
     }}
 
     Rules:
@@ -639,7 +664,7 @@ Return ONLY valid JSON — no markdown, no code fences:
       "emoji": "one relevant emoji",
       "pieces": [
         {{"label": "Top/Base/Dress", "value": "specific item with color and silhouette"}},
-        {{"label": "Bottom", "value": "only if separate from base"}},
+        {{"label": "Bottom", "value": "specific pants, skirt, or shorts with color and cut — REQUIRED when base is a top/camisole/bodysuit/blouse/crop top; omit ONLY when base is a dress/jumpsuit/set/romper"}},
         {{"label": "Shoes", "value": "specific footwear"}},
         {{"label": "Outerwear", "value": "layer or jacket (skip if hot/summer indoor)"}},
         {{"label": "Bag", "value": "bag style"}},
@@ -656,7 +681,8 @@ Return ONLY valid JSON — no markdown, no code fences:
 Rules:
 - If there is no anchor item, build the look entirely from the occasion and taste signals
 - If there is an anchor item, build around it
-- Omit "Bottom" if the anchor or base is a dress/set/jumpsuit
+- ALWAYS include "Bottom" when Top/Base/Dress is a top, camisole, bodysuit, blouse, tank, tee, or crop top — a top alone is never a complete outfit
+- Omit "Bottom" ONLY when Top/Base/Dress is a dress, jumpsuit, romper, or set (i.e. a self-contained full-body piece)
 - Omit "Outerwear" if occasion is summer/hot/beach indoor
 - Do not reference or depend on the user's wardrobe inventory
 - Be specific: say "ivory ribbed bodysuit" not just "top"
@@ -678,6 +704,44 @@ Rules:
         # Validate basic shape
         if not isinstance(result.get("options"), list):
             raise ValueError("Missing options list")
+        # ── Safety guard: inject missing Bottom when base is a top ────────────
+        # The LLM occasionally omits "Bottom" for tops/camisoles/bodysuits even
+        # though a top alone is never a complete outfit.  Catch this silently.
+        _FULL_BODY_KEYWORDS = {
+            "dress", "jumpsuit", "romper", "set", "playsuit", "overall", "dungaree",
+        }
+        _TOP_ONLY_KEYWORDS = {
+            "top", "camisole", "cami", "bodysuit", "blouse", "tank", "tee",
+            "t-shirt", "shirt", "crop", "bralette", "corset", "bustier", "tube",
+        }
+        for option in result.get("options", []):
+            pieces = option.get("pieces") or []
+            labels = {(p.get("label") or "").strip().lower() for p in pieces}
+            # Find the base piece value
+            base_value = next(
+                (p.get("value") or "" for p in pieces
+                 if (p.get("label") or "").strip().lower() in {"top/base/dress", "base", "top"}),
+                ""
+            ).lower()
+            has_bottom     = any(
+                (p.get("label") or "").strip().lower() == "bottom" for p in pieces
+            )
+            is_full_body   = any(kw in base_value for kw in _FULL_BODY_KEYWORDS)
+            needs_bottom   = not has_bottom and not is_full_body and any(
+                kw in base_value for kw in _TOP_ONLY_KEYWORDS
+            )
+            if needs_bottom:
+                # Insert Bottom right after the Top/Base/Dress slot
+                insert_idx = next(
+                    (i + 1 for i, p in enumerate(pieces)
+                     if (p.get("label") or "").strip().lower() in {"top/base/dress", "base", "top"}),
+                    1,
+                )
+                pieces.insert(insert_idx, {
+                    "label": "Bottom",
+                    "value": "tailored trousers or midi skirt to complete the look",
+                })
+                option["pieces"] = pieces
         return result
     except Exception:
         # Safe fallback

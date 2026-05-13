@@ -62,15 +62,13 @@ def _gender_term(gender: Optional[str]) -> str:
 
 
 def _build_search_query(profile: Dict[str, Any], style_seed: Dict[str, List[str]]) -> str:
-    complexion = (profile.get("complexion") or "").strip().lower()
-    complexion_phrase = f"{complexion} skin" if complexion else ""
     season = _current_season()
     gender = _gender_term(profile.get("gender"))
 
     positive = [term for term in style_seed.get("preferred", []) if term]
     negative = [f"-{term}" for term in style_seed.get("disliked", []) if term]
 
-    parts = [part for part in [complexion_phrase, gender, season, "outfit"] if part]
+    parts = [part for part in [season, gender, "outfit"] if part]
     if positive:
         parts.extend(positive[:3])
     if negative:

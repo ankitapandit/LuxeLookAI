@@ -32,8 +32,109 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | 2.4.1   | 2026-04-14 | Style-direction moodboards, event-token completeness, guide page, scenario testing, and UX reliability polish              |
 | 2.4.2   | 2026-04-20 | Recommendation hardening, Discover repetition control, page-visit logging, and labeling/naming consistency                 |
 | 2.5.0   | 2026-04-24 | Context-aware season scoring, richer outfit moodboards, manual-photo cutout tuning, Discover reliability fixes, and Batch Upload-first wardrobe flow |
+| 2.5.1   | 2026-04-27 | Boat/yacht event parsing fixes, formal-swimwear backstops, and complete Beyond-Wardrobe top-based outfits                 |
+| 2.5.2   | 2026-05-13 | Brand-aware wardrobe editing, style-direction usefulness feedback, Discover tag hardening, and media/UX reliability polish |
 
 ---
+
+## [2.5.2] - 2026-05-13
+
+### Backend
+
+#### Brand Catalog + Wardrobe Metadata
+- Added a curated shared brand catalog in `frontend/assets/brands.json` and `backend/assets/brands.json`, kept alphabetized and normalized with lowercase `coreCategories`, array-based `gender`, and alias support for alternate spellings and storefront variants.
+- Added optional `brand` support to `clothing_items` plus backend validation/normalization helpers in `backend/utils/brands.py`.
+- `tag-options` payloads now include `brands`, and wardrobe pagination can filter server-side across one or many selected brands instead of relying on client-only filtering.
+- Updated the `update_clothing_item_tags(...)` RPC path to support setting or clearing `brand` without disturbing existing color/season/descriptors edits.
+
+#### Style-Direction Feedback Persistence
+- Added a dedicated `style_direction_feedback` persistence path so `Beyond your wardrobe` cards can record thumbs-up / thumbs-down usefulness signals per `event_id + option_name`.
+- Recommendation responses now reattach any saved feedback state when the same event’s style-direction options are regenerated, preventing the UI from losing prior usefulness votes.
+- Mock DB support was extended so the same flow works in local development without Supabase.
+
+#### Discover Query + Analysis Hardening
+- Discover seed queries no longer depend on complexion. The seed now starts from `season + gender + outfit`, with learned likes/dislikes layered in afterward.
+- Added a focused outfit crop for Discover style-tag extraction so person-level eligibility still uses the full image while clothing-oriented tag decisions use a tighter subject-centered crop.
+- Pattern detection is now deliberately conservative:
+  - `floral`, `geometric`, `polka_dot`, `stripe`, `abstract`, `plaid`, and `animal_print` require stronger confidence and margin before being accepted
+  - `solid` now wins whenever a noisy pattern tag is only weakly ahead
+- Introduced `DISCOVER_ANALYSIS_VERSION` tagging and candidate-version filtering so stale cached Discover cards stop surviving classifier updates.
+
+#### Media Pipeline Reliability
+- Cutout generation now uses bounded model fallbacks instead of lingering indefinitely:
+  - `isnet-general-use` gets the first pass
+  - `u2net` is the bounded fallback
+  - heuristic fallback still runs if both rembg attempts fail or time out
+- Disabled `alpha_matting` in the rembg path after repeated Cholesky/positive-definiteness warnings and slow solver behavior on real uploads.
+- Reduced per-model cutout timeout budgets and added clearer cutout/media debug logging to help distinguish thumbnail, segmentation, and storage slowdowns.
+- Added direct-image optimization bypass logic for Supabase Storage URLs so frontend image rendering no longer waits on Next.js server-side proxy fetches that can 504 upstream.
+
+#### Batch Upload Session Correctness
+- Batch sessions no longer advertise `awaiting_verification` prematurely. Review is now gated on the full batch reaching a reviewable or terminal state instead of unlocking as soon as a single item is ready.
+
+### Frontend
+
+#### Wardrobe + Batch Review Brand UI
+- Added optional brand pickers to the shared wardrobe editor and Batch Review editor using the curated shared catalog, with empty/null as the default state instead of a fake placeholder value.
+- Restored the writable color-name input alongside the raw color picker so users can type a color name or hex and still have the backend normalize it on save.
+- Wardrobe cards and archived cards now show brand as an always-visible protected badge on the bottom-right of the image rather than as secondary metadata below the item title.
+- Wardrobe filtering now includes a searchable multi-select brand dropdown plus removable active-filter chips; default `Any / All` states do not render as chips.
+
+#### Event / Style Direction Feedback UX
+- Added `Was this useful?` thumbs up / thumbs down controls to AI style-direction cards on Event, Style Item, and Event Scenario Tester surfaces.
+- Archive no longer shows `Refresh Looks`; the archive view stays focused on history and saved evaluation rather than re-generation.
+
+#### Discover Image Zoom + Card UX
+- Added a hover/focus zoom affordance on the active Discover image.
+- Clicking the zoom affordance opens an in-page modal with stepped zoom levels and a fit-to-page presentation instead of a full-fill takeover.
+
+#### Upload + Review UX
+- Batch Upload now keeps the review CTA disabled and visually greyed out until the entire session is fully processed, with clearer messaging explaining why review is still locked.
+
+### Docs
+- Refreshed release-facing docs for the post-`2.5.0` changes:
+  - `README.md`
+  - `docs/system-architecture.md`
+  - `docs/data-model.md`
+  - `docs/luxelook-activity.md`
+
+## [2.5.1] - 2026-04-27
+
+### Bug Fixes
+
+#### Boat / Yacht Venue Produces Incorrect Swimwear Suggestions (`ml/llm.py`, `services/recommender.py`)
+
+**Problem:** Any mention of "boat" or "yacht" was unconditionally mapped to the
+`beach` event token, triggering the swimwear pipeline regardless of dress code.
+"Cocktail party on a yacht" → swimwear suggestions.
+
+**Fix — token generation (`ml/llm.py`):**
+- Removed `"boat"/"yacht"/"vessel"` from the flat `_SETTING_MAP` hard-mapping.
+- Added a context-sensitive block after token collection:
+  - boat/yacht/cruise/sailing/charter + *no* formal keyword → `"beach"` (casual day trip, bbq on a boat)
+  - boat/yacht + cocktail/gala/dinner/wedding/formal/reception/upscale/dressy → `"rooftop"` + `"outdoor"` (elevated outdoor venue, swimwear pipeline suppressed)
+- Updated the LLM prompt `event_tokens` instruction with an explicit `BOAT/YACHT OVERRIDE` rule so `GPT-4o-mini` applies the same context-sensitive logic.
+
+**Fix — recommender scoring (`services/recommender.py`):**
+- Added swimwear hard-cap: `is_beach AND is_formal_event` → `venue_multiplier ≤ 0.20` as a last-resort backstop if a `beach` token slips through alongside `cocktail`.
+- Beach affinity bonus (`+0.30` swimwear lift) is now gated behind `not is_formal_event`, so a yacht dinner never receives the swimwear ranking boost.
+
+#### Beyond Wardrobe Suggestions Omit Bottom for Top-Based Looks (`ml/llm.py`)
+
+**Problem:** The LLM occasionally omitted the `Bottom` piece when the base was a
+camisole, bodysuit, or crop top, rendering an incomplete outfit (top + shoes +
+accessories, no pants/skirt). The prompt said `only if separate from base`,
+which the model interpreted as optional.
+
+**Fix — prompt (`ml/llm.py`):**
+- `Bottom` slot description changed to: `REQUIRED when base is a top/camisole/bodysuit/blouse/crop top; omit ONLY when base is a dress/jumpsuit/set/romper`.
+- Rules section updated: always include `Bottom` when the base piece is a top-family item such as `camisole`, `bodysuit`, `tank`, `blouse`, `crop`, `tee`, `shirt`, `bralette`, `corset`, or `tube`.
+- Omit rule narrowed to self-contained full-body pieces only: `dress`, `jumpsuit`, `romper`, `set`.
+
+**Fix — post-parse safety guard (`ml/llm.py`):**
+- After JSON parsing, each option is scanned for a missing `Bottom`.
+- If the base piece value contains a top-family keyword and no `Bottom` slot is present, one is injected at the correct position with a generic fallback value.
+- The guard does not fire for full-body pieces such as `dress`, `jumpsuit`, `romper`, `set`, `playsuit`, or `overall`.
 
 ## [2.5.0] - 2026-04-24
 

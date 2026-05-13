@@ -119,9 +119,8 @@ export default function Home() {
           {/* Feature list */}
           <div className="auth-feature-list" style={{ marginTop: "48px", display: "flex", flexDirection: "column", gap: "18px" }}>
             {[
-              { icon: "✦", text: "Describe the event in plain words — dinner, interview, weekend brunch" },
-              { icon: "✦", text: "We read your wardrobe and understand what actually works together" },
-              { icon: "✦", text: "Get a curated shortlist, not a chaotic scroll" },
+              { icon: "✦", text: "Describe the event using pre-defined fields" },
+              { icon: "✦", text: "Get a curated shortlist with a generic advice beyond your wardrobe" },
               { icon: "✦", text: "Rate what you like. Every choice makes the next one smarter" },
             ].map(({ icon, text }) => (
               <div

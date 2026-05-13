@@ -35,7 +35,7 @@ import { getItemDisplayName } from "@/utils/itemDisplay";
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const EMPTY_TAG_OPTIONS: TagOptions = {
-  categories: [], colors: [], seasons: [], formality_levels: [],
+  categories: [], brands: [], colors: [], seasons: [], formality_levels: [],
 };
 
 function debugBatchReview(event: string, details?: Record<string, unknown>) {
@@ -131,6 +131,7 @@ export default function BatchReviewPage() {
       setTagOptLoaded(true);
       debugBatchReview("tag_options_loaded", {
         categories: opts.categories.length,
+        brands: opts.brands.length,
         colors: opts.colors.length,
         seasons: opts.seasons.length,
         formalityLevels: opts.formality_levels.length,
@@ -178,7 +179,7 @@ export default function BatchReviewPage() {
   // ── Save + verify flow ────────────────────────────────────────────────────
 
   async function handleSaveAndVerify(
-    cat: string, color: string, pattern: string,
+    cat: string, brand: string, color: string, pattern: string,
     season: string, formalityLabel: string, descriptors: Record<string, string>
   ) {
     if (!editingBatchItem || !editingClothingItem) return;
@@ -188,6 +189,7 @@ export default function BatchReviewPage() {
       batchItemId,
       clothingItemId,
       category: cat,
+      brand: brand || null,
       color,
       season,
       formalityLabel,
@@ -197,7 +199,15 @@ export default function BatchReviewPage() {
 
     try {
       // 1. Apply tag corrections
-      await correctItem(clothingItemId, { category: cat, color, pattern, season, formality_label: formalityLabel, descriptors });
+      await correctItem(clothingItemId, {
+        category: cat,
+        brand: brand || null,
+        color,
+        pattern,
+        season,
+        formality_label: formalityLabel,
+        descriptors,
+      });
       // 2. Mark verified
       await verifyBatchUploadItem(batchItemId);
       toast.success("Item verified and saved to wardrobe!");
@@ -411,8 +421,8 @@ export default function BatchReviewPage() {
           tagOptionsLoading={tagOptLoading}
           onRequestTagOptions={ensureTagOptions}
           onClose={closeEditor}
-          onSave={(cat, color, pattern, season, formalityLabel, descriptors) =>
-            void handleSaveAndVerify(cat, color, pattern, season, formalityLabel, descriptors)
+          onSave={(cat, brand, color, pattern, season, formalityLabel, descriptors) =>
+            void handleSaveAndVerify(cat, brand, color, pattern, season, formalityLabel, descriptors)
           }
           extraActions={
             <>
@@ -537,6 +547,11 @@ function BatchItemCard({
             {clothingItem.category && (
               <span style={{ fontSize: "11px", color: "var(--muted)", textTransform: "capitalize" }}>
                 {clothingItem.category}
+              </span>
+            )}
+            {clothingItem.brand && (
+              <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+                {clothingItem.brand}
               </span>
             )}
             {clothingItem.season && (

@@ -14,6 +14,7 @@ import Image from "next/image";
 import Navbar from "@/components/layout/Navbar";
 import { FaceShapeTool } from "@/components/FaceShapeTool";
 import { PhotoCropper } from "@/components/PhotoCropper";
+import { shouldBypassImageOptimization } from "@/utils/imageOptimization";
 import {
   AIProfileAnalysis,
   ProfileTraitAnalysis,
@@ -59,10 +60,6 @@ const HAIR_TEXTURE = ["straight", "wavy", "curly", "coily"];
 const HAIR_LENGTH  = ["short", "medium", "long"];
 const AGE_RANGES  = ["under 18", "18–24", "25–34", "35–44", "45–54", "55+"];
 const ALLOWED_UPLOAD_TYPES = ["image/jpeg", "image/png", "image/webp"];
-
-function shouldBypassImageOptimization(src: string): boolean {
-  return src.startsWith("blob:") || src.startsWith("data:");
-}
 
 const BODY_TYPE_GUIDE: Record<string, { desc: string; hint: string }> = {
   hourglass:           { desc: "Bust and hips roughly equal width, waist noticeably narrower", hint: "Bust ≈ Hip, Waist 25%+ smaller than Bust" },

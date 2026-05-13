@@ -8,12 +8,13 @@ import type React from "react";
 import { useState } from "react";
 import Head from "next/head";
 import Navbar from "@/components/layout/Navbar";
-import { createEvent, generateOutfits, resetFeedback, getWardrobeItems, rateOutfit, OutfitSuggestion, ClothingItem, StyleDirectionData } from "@/services/api";
+import { createEvent, generateOutfits, resetFeedback, getWardrobeItems, rateOutfit, rateStyleDirectionOption, OutfitSuggestion, ClothingItem, StyleDirectionData } from "@/services/api";
 import OutfitSuggestionCard from "@/components/OutfitSuggestionCard";
 import EventBriefEditor, { createDefaultEventBriefValues, EventBriefValues, serializeEventBrief, summarizeEventBrief } from "@/components/EventBriefEditor";
 import LookAssemblyLoader from "@/components/LookAssemblyLoader";
 import { CalendarDays, ChevronDown, Sparkles, Info, X, RefreshCw } from "lucide-react";
 import StyleDirectionMoodboard, { getFinishPieces } from "@/components/StyleDirectionMoodboard";
+import StyleDirectionFeedback from "@/components/StyleDirectionFeedback";
 import toast from "react-hot-toast";
 
 export default function EventsPage() {
@@ -32,6 +33,7 @@ export default function EventsPage() {
   // Controls visibility of the "None of these work" tooltip
   const [showBadTip,      setShowBadTip]      = useState(false);
   const [showExpertSuggestion, setShowExpertSuggestion] = useState(true);
+  const [styleDirectionFeedbackBusy, setStyleDirectionFeedbackBusy] = useState<Record<string, boolean>>({});
   const styleOptions = styleDirectionData?.options ?? [];
 
   function resetEventComposer() {
@@ -44,6 +46,7 @@ export default function EventsPage() {
     setCoverageHints([]);
     setShowBadTip(false);
     setShowExpertSuggestion(true);
+    setStyleDirectionFeedbackBusy({});
   }
 
   async function handleGenerate() {
@@ -52,6 +55,7 @@ export default function EventsPage() {
     setAllShownIds([]);
     setAllSeen(false);
     setStyleDirectionData(null);
+    setStyleDirectionFeedbackBusy({});
     try {
       const prompt = summarizeEventBrief(brief, "Event styling request");
       const promptJson = serializeEventBrief(brief);
@@ -81,6 +85,7 @@ export default function EventsPage() {
       setAllSeen(outfitData.all_seen ?? false);
       setCoverageHints(outfitData.coverage_hints ?? []);
       setStyleDirectionData(outfitData.style_direction || null);
+      setStyleDirectionFeedbackBusy({});
     } catch (err: unknown) {
       console.error("[Event] generate looks failed", err);
       const e = err as { response?: { data?: { detail?: string } } };
@@ -94,6 +99,7 @@ export default function EventsPage() {
     if (!eventId) return;
     setLoading(true);
     setSuggestions([]);
+    setStyleDirectionFeedbackBusy({});
     try {
       const [outfitData, items] = await Promise.all([
         // Accumulate all seen IDs so previously-shown combos stay downranked
@@ -109,6 +115,7 @@ export default function EventsPage() {
       setAllSeen(outfitData.all_seen ?? false);
       setCoverageHints(outfitData.coverage_hints ?? []);
       setStyleDirectionData(outfitData.style_direction || null);
+      setStyleDirectionFeedbackBusy({});
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string } } };
       toast.error(e?.response?.data?.detail || "Could not refresh looks");
@@ -125,6 +132,7 @@ export default function EventsPage() {
       setAllSeen(false);
       setSuggestions([]);
       setStyleDirectionData(null);
+      setStyleDirectionFeedbackBusy({});
       toast.success("Feedback reset — generating fresh looks…");
       await handleGenerate();
     } catch {
@@ -139,6 +147,35 @@ export default function EventsPage() {
       toast.success("Rating saved!");
     } catch {
       toast.error("Could not save rating");
+    }
+  }
+
+  async function handleStyleDirectionFeedback(optionName: string, feedbackValue: "up" | "down") {
+    if (!eventId || !styleDirectionData) return;
+
+    const option = styleDirectionData.options.find((entry) => entry.name === optionName);
+    if (!option) return;
+
+    setStyleDirectionFeedbackBusy((prev) => ({ ...prev, [optionName]: true }));
+    try {
+      await rateStyleDirectionOption(eventId, optionName, feedbackValue, option);
+      setStyleDirectionData((prev) => (
+        prev
+          ? {
+              ...prev,
+              options: prev.options.map((entry) => (
+                entry.name === optionName
+                  ? { ...entry, user_feedback: feedbackValue }
+                  : entry
+              )),
+            }
+          : prev
+      ));
+      toast.success("Feedback saved");
+    } catch {
+      toast.error("Could not save feedback");
+    } finally {
+      setStyleDirectionFeedbackBusy((prev) => ({ ...prev, [optionName]: false }));
     }
   }
 
@@ -420,6 +457,12 @@ export default function EventsPage() {
                               {option.tip}
                             </p>
                           ) : null}
+
+                          <StyleDirectionFeedback
+                            value={option.user_feedback ?? null}
+                            busy={Boolean(styleDirectionFeedbackBusy[option.name])}
+                            onChange={(feedbackValue) => handleStyleDirectionFeedback(option.name, feedbackValue)}
+                          />
                         </div>
                       ))}
                     </div>
