@@ -569,6 +569,54 @@ def _build_style_direction(
     return enrich_style_direction_images(raw, event)
 
 
+def _load_style_direction_feedback_map(event_id: str, user_id: str) -> Dict[str, str]:
+    settings = get_settings()
+    if settings.use_mock_auth:
+        from utils.mock_db_store import select_all
+
+        rows = select_all("style_direction_feedback", {"user_id": user_id, "event_id": event_id})
+    else:
+        from utils.db import get_supabase
+
+        result = (
+            get_supabase().table("style_direction_feedback")
+            .select("option_name, feedback_value")
+            .eq("user_id", user_id)
+            .eq("event_id", event_id)
+            .execute()
+        )
+        rows = result.data or []
+
+    feedback_map: Dict[str, str] = {}
+    for row in rows:
+        option_name = str(row.get("option_name") or "").strip()
+        feedback_value = str(row.get("feedback_value") or "").strip()
+        if option_name and feedback_value in {"up", "down"}:
+            feedback_map[option_name] = feedback_value
+    return feedback_map
+
+
+def _attach_style_direction_feedback(style_direction: dict, event_id: str, user_id: str) -> dict:
+    if not style_direction or not style_direction.get("options"):
+        return style_direction
+
+    feedback_map = _load_style_direction_feedback_map(event_id, user_id)
+    if not feedback_map:
+        return style_direction
+
+    enriched_options = []
+    for option in style_direction.get("options", []):
+        option_name = str(option.get("name") or "").strip()
+        enriched_options.append({
+            **option,
+            "user_feedback": feedback_map.get(option_name),
+        })
+    return {
+        **style_direction,
+        "options": enriched_options,
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Persistence
 # ─────────────────────────────────────────────────────────────────────────────
@@ -666,7 +714,11 @@ def generate_outfits(
         )
 
     if not suggestions and anchor_item:
-        style_direction = _build_style_direction(anchor_item, event, user_profile, style_seed)
+        style_direction = _attach_style_direction_feedback(
+            _build_style_direction(anchor_item, event, user_profile, style_seed),
+            str(payload.event_id),
+            user_id,
+        )
         coverage_hints = wardrobe_coverage_gaps(items)
         return {
             "event":           event,
@@ -689,7 +741,11 @@ def generate_outfits(
 
     suggestions = _dedupe_suggestions_by_combo(suggestions)
 
-    style_direction = _build_style_direction(anchor_item, event, user_profile, style_seed)
+    style_direction = _attach_style_direction_feedback(
+        _build_style_direction(anchor_item, event, user_profile, style_seed),
+        str(payload.event_id),
+        user_id,
+    )
 
     # ── Step 7-8: persist + return ─────────────────────────────────────────
     # Strip score_breakdown (not a DB column) before persisting.

@@ -4,9 +4,9 @@ routers/clothing.py — Wardrobe item endpoints
 POST   /clothing/tag-preview   — run AI tagging on an image, return tags WITHOUT saving
 POST   /clothing/upload-item   — save item with final (possibly corrected) tags
 GET    /clothing/items         — list user's wardrobe
-PATCH  /clothing/item/{id}     — correct category/color on an existing item
+PATCH  /clothing/item/{id}     — correct category/color/brand on an existing item
 DELETE /clothing/item/{id}     — remove an item
-GET    /clothing/tag-options   — return valid category + color values for dropdowns
+GET    /clothing/tag-options   — return valid category, brand, + color values for dropdowns
 """
 
 import json
@@ -21,6 +21,7 @@ from services.clothing_service import (
 )
 from ml.tagger import tag_clothing_item, get_taggable_options
 from utils.auth import get_current_user_id
+from utils.brands import normalize_brand_label
 from utils.color_utils import normalize_color
 
 router = APIRouter()
@@ -38,7 +39,7 @@ def _derive_item_type(category: str) -> str:
 @router.get("/tag-options")
 def tag_options():
     """
-    Return the valid category and color values the AI understands.
+    Return the valid category, brand, and color values the app understands.
     The frontend uses this to populate correction dropdowns — this way
     the UI labels always stay in sync with the model's label space.
     """
@@ -105,6 +106,7 @@ async def tag_preview(
 async def upload_item(
     file:              UploadFile = File(..., description="Clothing image (JPG/PNG)"),
     category:          Optional[str] = Form(None),
+    brand:             Optional[str] = Form(None),
     color:             Optional[str] = Form(None),
     pattern:           Optional[str] = Form(None, description="e.g. 'stripes', 'floral'"),
     season:            Optional[str] = Form(None),
@@ -139,6 +141,11 @@ async def upload_item(
     }
     manual_tags: dict = {}
     if category:          manual_tags["category"]          = category
+    if brand is not None:
+        normalized_brand = normalize_brand_label(brand)
+        if brand.strip() and not normalized_brand:
+            raise HTTPException(status_code=400, detail="brand must be one of the curated brand options")
+        manual_tags["brand"] = normalized_brand
     if color:             manual_tags["color"]             = normalize_color(color)
     if pattern:           manual_tags["pattern"]           = pattern
     if item_type:         manual_tags["item_type"]         = item_type
@@ -189,6 +196,7 @@ _FORMALITY_SCORE_MAP = {
 def correct_item(
     item_id:         str,
     category:        Optional[str] = None,
+    brand:           Optional[str] = None,
     color:           Optional[str] = None,
     season:          Optional[str] = None,
     pattern:         Optional[str] = None,
@@ -204,6 +212,11 @@ def correct_item(
     """
     corrections: dict = {}
     if category: corrections["category"] = category
+    if brand is not None:
+        normalized_brand = normalize_brand_label(brand)
+        if brand.strip() and not normalized_brand:
+            raise HTTPException(status_code=400, detail="brand must be one of the curated brand options")
+        corrections["brand"] = normalized_brand
     if color:    corrections["color"]    = normalize_color(color)
     if pattern:  corrections["pattern"]  = pattern
     if season:   corrections["season"]   = season
@@ -245,6 +258,7 @@ def list_items_page(
     limit: int = Query(12, ge=1, le=50),
     offset: int = Query(0, ge=0),
     category: Optional[str] = Query(None),
+    brand: Optional[List[str]] = Query(None),
     season: Optional[str] = Query(None),
     formality: Optional[str] = Query(None),
     user_id: str = Depends(get_current_user_id),
@@ -255,6 +269,7 @@ def list_items_page(
         limit=limit,
         offset=offset,
         category=category,
+        brand=brand,
         season=season,
         formality=formality,
     )

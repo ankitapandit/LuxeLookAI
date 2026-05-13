@@ -2273,6 +2273,27 @@ CREATE INDEX IF NOT EXISTS idx_clothing_tag_feedback_field
 COMMENT ON TABLE public.clothing_tag_feedback IS
 'Wardrobe correction feedback log. Stores per-field before/after edits plus a frozen snapshot of the item context at correction time, so the app can analyze correction patterns and build future prompt-tuning or retraining datasets.';
 
+CREATE TABLE IF NOT EXISTS public.style_direction_feedback (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  event_id uuid not null references public.events(id) on delete cascade,
+  option_name text not null,
+  feedback_value text not null check (feedback_value in ('up', 'down')),
+  option_snapshot jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, event_id, option_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_style_direction_feedback_user
+  ON public.style_direction_feedback (user_id);
+
+CREATE INDEX IF NOT EXISTS idx_style_direction_feedback_event
+  ON public.style_direction_feedback (event_id);
+
+COMMENT ON TABLE public.style_direction_feedback IS
+'Stores thumbs up/down feedback on AI-generated Beyond your wardrobe option cards, keyed by user, event, and option name.';
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- v2.1.1 — unify shared fabric taxonomy across garment categories
 -- Keeps style_taxonomy in sync with the shared fabric vocabulary used in code.
@@ -2692,3 +2713,70 @@ create policy "Users can insert own batch items"
   on public.upload_batch_items for insert with check (auth.uid() = user_id);
 create policy "Users can update own batch items"
   on public.upload_batch_items for update using (auth.uid() = user_id);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v2.7 — Optional brand field on wardrobe items
+-- ─────────────────────────────────────────────────────────────────────────────
+
+alter table public.clothing_items
+  add column if not exists brand text;
+
+comment on column public.clothing_items.brand is
+  'Optional brand selected from the curated LuxeLook catalog.';
+
+CREATE OR REPLACE FUNCTION public.update_clothing_item_tags(
+  p_item_id         uuid,
+  p_user_id         uuid,
+  p_category        text    DEFAULT NULL,
+  p_color           text    DEFAULT NULL,
+  p_season          text    DEFAULT NULL,
+  p_formality_score float   DEFAULT NULL,
+  p_item_type       text    DEFAULT NULL,
+  p_descriptors     text    DEFAULT NULL,
+  p_brand           text    DEFAULT NULL,
+  p_clear_brand     boolean DEFAULT false
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_result      jsonb;
+  v_descriptors jsonb;
+BEGIN
+  IF p_descriptors IS NOT NULL THEN
+    v_descriptors := p_descriptors::jsonb;
+  END IF;
+
+  UPDATE clothing_items
+     SET category        = COALESCE(p_category,        category),
+         color           = COALESCE(p_color,           color),
+         season          = COALESCE(p_season,          season),
+         formality_score = COALESCE(p_formality_score, formality_score),
+         item_type       = COALESCE(p_item_type,       item_type),
+         brand           = CASE
+                             WHEN p_clear_brand THEN NULL
+                             WHEN p_brand IS NOT NULL THEN p_brand
+                             ELSE brand
+                           END,
+         descriptors     = CASE
+                             WHEN v_descriptors IS NOT NULL
+                             THEN COALESCE(descriptors, '{}'::jsonb) || v_descriptors
+                             ELSE descriptors
+                           END
+   WHERE id      = p_item_id
+     AND user_id = p_user_id;
+
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT to_jsonb(ci.*)
+    INTO v_result
+    FROM clothing_items ci
+   WHERE id = p_item_id;
+
+  RETURN v_result;
+END;
+$$;

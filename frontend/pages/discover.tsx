@@ -10,6 +10,7 @@ import Head from "next/head";
 import Image from "next/image";
 import Link from "next/link";
 import Navbar from "@/components/layout/Navbar";
+import { shouldBypassImageOptimization } from "@/utils/imageOptimization";
 import {
   DiscoverCard,
   DiscoverFeedResponse,
@@ -23,7 +24,7 @@ import {
   recomputeDiscoverPreferences,
   UserProfile,
 } from "@/services/api";
-import { Heart, RefreshCw, Sparkles, ThumbsDown, ThumbsUp, User } from "lucide-react";
+import { Heart, Minus, Plus, RefreshCw, Sparkles, ThumbsDown, ThumbsUp, User, X, ZoomIn } from "lucide-react";
 import toast from "react-hot-toast";
 
 const DISCOVER_STATUS_POLL_MS = 60000;
@@ -36,10 +37,6 @@ function titleCase(value: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function shouldBypassImageOptimization(src: string): boolean {
-  return src.startsWith("blob:") || src.startsWith("data:");
 }
 
 function getCardImage(card: DiscoverCard): string {
@@ -66,9 +63,7 @@ function getClientDayKey(): string {
 
 function getProfileGap(profile: UserProfile | null): string[] {
   if (!profile) return ["profile details"];
-  const gaps: string[] = [];
-  if (!profile.complexion) gaps.push("complexion");
-  return gaps;
+  return [];
 }
 
 function PreferenceRail({
@@ -121,18 +116,155 @@ function PreferenceRail({
   );
 }
 
+function DiscoverImageModal({
+  imageSrc,
+  title,
+  zoom,
+  onZoomOut,
+  onZoomIn,
+  onClose,
+}: {
+  imageSrc: string;
+  title: string;
+  zoom: number;
+  onZoomOut: () => void;
+  onZoomIn: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title ? `${title} zoom view` : "Discover image zoom view"}
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 120,
+        background: "rgba(10, 8, 7, 0.82)",
+        backdropFilter: "blur(8px)",
+        display: "grid",
+        placeItems: "center",
+        padding: "24px",
+      }}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          width: "min(76vw, 760px)",
+          height: "min(78vh, 760px)",
+          borderRadius: "30px",
+          border: "1px solid rgba(212,169,106,0.18)",
+          background: "linear-gradient(180deg, rgba(33,27,22,0.98), rgba(17,13,11,0.98))",
+          boxShadow: "0 28px 80px rgba(0,0,0,0.42)",
+          display: "grid",
+          gridTemplateRows: "auto 1fr",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "16px",
+            padding: "18px 18px 14px",
+            borderBottom: "1px solid rgba(255,255,255,0.08)",
+          }}
+        >
+          <div>
+            <p className="type-kicker" style={{ margin: 0, fontSize: "11px", color: "rgba(255,247,237,0.62)", letterSpacing: "0.14em", textTransform: "uppercase" }}>
+              Zoom view
+            </p>
+            <p style={{ margin: "6px 0 0", color: "#FFF7ED", fontSize: "15px", fontWeight: 600 }}>
+              {title || "The Edit"}
+            </p>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={onZoomOut}
+              disabled={zoom <= 1}
+              aria-label="Zoom out"
+              style={{ width: "42px", height: "42px", padding: 0, display: "grid", placeItems: "center" }}
+            >
+              <Minus size={16} />
+            </button>
+            <span style={{ minWidth: "48px", textAlign: "center", color: "#F2D8B2", fontSize: "13px", fontWeight: 700 }}>
+              {zoom.toFixed(1)}x
+            </span>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={onZoomIn}
+              disabled={zoom >= 2}
+              aria-label="Zoom in"
+              style={{ width: "42px", height: "42px", padding: 0, display: "grid", placeItems: "center" }}
+            >
+              <Plus size={16} />
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={onClose}
+              aria-label="Close zoom view"
+              style={{ width: "42px", height: "42px", padding: 0, display: "grid", placeItems: "center" }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div
+          style={{
+            overflow: "auto",
+            display: "grid",
+            placeItems: "center",
+            padding: "22px",
+            background: "radial-gradient(circle at top, rgba(255,255,255,0.05), transparent 40%), #17120D",
+          }}
+        >
+          <div
+            style={{
+              position: "relative",
+              width: "min(100%, 620px)",
+              aspectRatio: "4 / 5",
+              transform: `scale(${zoom})`,
+              transformOrigin: "center center",
+              transition: "transform 160ms ease",
+            }}
+          >
+            <Image
+              src={imageSrc}
+              alt={title || "Discover image"}
+              fill
+              unoptimized={shouldBypassImageOptimization(imageSrc)}
+              sizes="90vw"
+              style={{ objectFit: "contain" }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StackPreview({
   cards,
   activeAction,
   actionsDisabled,
   disabledMessage,
   onAction,
+  onOpenImage,
 }: {
   cards: DiscoverCard[];
   activeAction: "love" | "like" | "dislike" | null;
   actionsDisabled: boolean;
   disabledMessage?: string | null;
   onAction: (action: "love" | "like" | "dislike") => void;
+  onOpenImage: (card: DiscoverCard) => void;
 }) {
   const previews = cards.slice(0, 3);
   const topCard = previews[0];
@@ -253,7 +385,7 @@ function StackPreview({
           onTouchEnd={handleTouchEnd}
           onTouchCancel={resetDrag}
         >
-          <div style={{ position: "relative", height: "clamp(280px, 42svh, 420px)", background: "#1B1510" }}>
+          <div className="discover-image-stage" style={{ position: "relative", height: "clamp(280px, 42svh, 420px)", background: "#1B1510" }}>
             <Image
               src={getCardImage(topCard)}
               alt={topCard.title}
@@ -262,10 +394,39 @@ function StackPreview({
               sizes="(max-width: 1100px) 92vw, 600px"
               style={{ objectFit: "contain" }}
             />
+            <button
+              type="button"
+              className="discover-zoom-trigger"
+              aria-label="Open image zoom view"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpenImage(topCard);
+              }}
+              style={{
+                position: "absolute",
+                right: "16px",
+                top: "16px",
+                width: "44px",
+                height: "44px",
+                zIndex: 3,
+                borderRadius: "14px",
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(18,14,11,0.64)",
+                backdropFilter: "blur(10px)",
+                color: "#FFF7ED",
+                display: "grid",
+                placeItems: "center",
+                cursor: "pointer",
+                transition: "opacity 140ms ease, transform 140ms ease, background 140ms ease",
+              }}
+            >
+              <ZoomIn size={18} />
+            </button>
             <div
               style={{
                 position: "absolute",
                 inset: 0,
+                pointerEvents: "none",
                 background: "linear-gradient(180deg, rgba(13,10,8,0.06) 0%, rgba(13,10,8,0.16) 44%, rgba(13,10,8,0.82) 100%)",
               }}
             />
@@ -417,6 +578,8 @@ export default function DiscoverPage() {
   const [warmingJobId, setWarmingJobId] = useState<string | null>(null);
   const [refreshJobId, setRefreshJobId] = useState<string | null>(null);
   const [refreshingPreferences, setRefreshingPreferences] = useState(false);
+  const [zoomCard, setZoomCard] = useState<DiscoverCard | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
   const seenUrls = useRef<Set<string>>(new Set());
   const warmPollAttempts = useRef(0);
   const refreshPollAttempts = useRef(0);
@@ -750,6 +913,16 @@ export default function DiscoverPage() {
     }
   }
 
+  function handleOpenImageZoom(card: DiscoverCard) {
+    setZoomCard(card);
+    setZoomLevel(1);
+  }
+
+  function handleCloseImageZoom() {
+    setZoomCard(null);
+    setZoomLevel(1);
+  }
+
   const visiblePreferenceRows = preferences.filter(
     (row) => !["garment_type", "season", "occasion"].includes(String(row.dimension || "")),
   );
@@ -823,6 +996,21 @@ export default function DiscoverPage() {
           border: 1px solid rgba(255, 255, 255, 0.08);
           background: rgba(255, 255, 255, 0.03);
           min-height: 0;
+        }
+
+        .discover-image-stage .discover-zoom-trigger {
+          opacity: 0;
+          transform: translateY(-2px);
+        }
+
+        .discover-image-stage:hover .discover-zoom-trigger,
+        .discover-image-stage:focus-within .discover-zoom-trigger {
+          opacity: 1;
+          transform: translateY(0);
+        }
+
+        .discover-image-stage .discover-zoom-trigger:hover {
+          background: rgba(28, 22, 17, 0.82);
         }
 
         .discover-utility-shell {
@@ -1133,6 +1321,7 @@ export default function DiscoverPage() {
                   actionsDisabled={dailyQuotaReached}
                   disabledMessage={dailyQuotaMessage}
                   onAction={(action) => void handleAction(action)}
+                  onOpenImage={handleOpenImageZoom}
                 />
               ) : (
                 <div
@@ -1198,11 +1387,8 @@ export default function DiscoverPage() {
           >
             <p style={{ margin: 0 }}>
               {ignoredCount > 0
-                ? `${ignoredCount} swiped looks are excluded from repeat cards.`
+                ? `${ignoredCount} swiped looks so far.`
                 : "Looks you swipe on will stay out of the repeat pool."}
-            </p>
-            <p style={{ margin: 0 }}>
-              Current card count: {feed.length}
             </p>
           </section>
 
@@ -1238,6 +1424,16 @@ export default function DiscoverPage() {
         </div>
       </main>
       )}
+      {zoomCard ? (
+        <DiscoverImageModal
+          imageSrc={getCardImage(zoomCard)}
+          title={zoomCard.title}
+          zoom={zoomLevel}
+          onZoomOut={() => setZoomLevel((prev) => Math.max(1, Math.round((prev - 0.5) * 10) / 10))}
+          onZoomIn={() => setZoomLevel((prev) => Math.min(2, Math.round((prev + 0.5) * 10) / 10))}
+          onClose={handleCloseImageZoom}
+        />
+      ) : null}
     </>
   );
 }

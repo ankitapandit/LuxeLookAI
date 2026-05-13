@@ -21,21 +21,15 @@ import Image from "next/image";
 import { CheckCircle, X } from "lucide-react";
 import { ClothingItem, TagOptions } from "@/services/api";
 import { getItemDisplayName } from "@/utils/itemDisplay";
+import { shouldBypassImageOptimization } from "@/utils/imageOptimization";
 import {
   SOLID_COLORS,
-  CATEGORY_DESCRIPTORS,
   getDescriptorOptionsForCategory,
   sanitizeDescriptorsForCategory,
   getFormalityEditLabel,
   normalizeToPresetKey,
   formatDescriptorLabel,
 } from "@/utils/wardrobeHelpers";
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function shouldBypassImageOptimization(src: string): boolean {
-  return src.startsWith("blob:") || src.startsWith("data:");
-}
 
 function debugWardrobeItemEditor(event: string, details?: Record<string, unknown>) {
   if (details) console.debug(`[BatchUpload][Editor] ${event}`, details);
@@ -142,6 +136,7 @@ export interface WardrobeItemEditorProps {
   /** Called with the corrected values when user presses Save. */
   onSave: (
     cat: string,
+    brand: string,
     color: string,
     pattern: string,
     season: string,
@@ -165,6 +160,7 @@ export default function WardrobeItemEditor({
   extraActions,
 }: WardrobeItemEditorProps) {
   const [editCat,           setEditCat]           = useState(item.category);
+  const [editBrand,         setEditBrand]         = useState(item.brand || "");
   const [editColor,         setEditColor]         = useState(item.color || "");
   const [editSeason,        setEditSeason]        = useState(item.season || "");
   const [editFormalityLabel, setEditFormalityLabel] = useState(getFormalityEditLabel(item.formality_score));
@@ -176,6 +172,7 @@ export default function WardrobeItemEditor({
   // Reset when item changes
   useEffect(() => {
     setEditCat(item.category);
+    setEditBrand(item.brand || "");
     setEditColor(item.color || "");
     setEditSeason(item.season || "");
     setEditFormalityLabel(getFormalityEditLabel(item.formality_score));
@@ -203,6 +200,9 @@ export default function WardrobeItemEditor({
   const categoryOptions = tagOptions.categories.length > 0
     ? tagOptions.categories
     : [editCat].filter(Boolean);
+  const brandOptions = tagOptions.brands.length > 0
+    ? tagOptions.brands
+    : [editBrand].filter(Boolean);
   const seasonOptions = tagOptions.seasons.length > 0
     ? tagOptions.seasons
     : [{ value: editSeason || "all", label: editSeason || "All seasons" }];
@@ -237,6 +237,11 @@ export default function WardrobeItemEditor({
             <p style={{ color: "var(--muted)", fontSize: "12px", textTransform: "capitalize" }}>
               {getItemDisplayName(item)}
             </p>
+            {item.brand && (
+              <p style={{ color: "var(--muted)", fontSize: "11px", marginTop: "2px" }}>
+                {item.brand}
+              </p>
+            )}
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: "4px" }}>
             <X size={18} />
@@ -278,6 +283,24 @@ export default function WardrobeItemEditor({
               >
                 {categoryOptions.map((c) => (
                   <option key={c} value={c} style={{ textTransform: "capitalize" }}>{c}</option>
+                ))}
+              </select>
+
+              {/* Brand */}
+              <label htmlFor="weditor-brand" style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "6px" }}>
+                Brand
+              </label>
+              <select
+                id="weditor-brand"
+                value={editBrand}
+                onChange={(e) => setEditBrand(e.target.value)}
+                disabled={tagOptionsLoading && tagOptions.brands.length === 0}
+                className="input"
+                style={{ padding: "8px 12px", fontSize: "14px", marginBottom: "20px" }}
+              >
+                <option value=""></option>
+                {brandOptions.map((brand) => (
+                  <option key={brand} value={brand}>{brand}</option>
                 ))}
               </select>
 
@@ -346,8 +369,17 @@ export default function WardrobeItemEditor({
                   onChange={(e) => setEditColor(e.target.value)}
                   style={{ width: "32px", height: "32px", border: "1px solid var(--border)", borderRadius: "6px", cursor: "pointer", padding: "2px" }}
                 />
-                <span style={{ fontSize: "12px", color: "var(--muted)" }}>or pick custom</span>
+                <input
+                  className="input"
+                  value={editColor}
+                  onChange={(e) => setEditColor(e.target.value)}
+                  placeholder="Type a color name or hex"
+                  style={{ flex: 1, minWidth: "180px", padding: "8px 12px", fontSize: "13px" }}
+                />
               </div>
+              <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "-12px", marginBottom: "20px" }}>
+                Entered color names are normalized by the app when you save.
+              </p>
 
               {/* Style details */}
               {Object.keys(allDescriptors).length > 0 && (
@@ -369,12 +401,13 @@ export default function WardrobeItemEditor({
               debugWardrobeItemEditor("save_clicked", {
                 itemId: item.id,
                 category: editCat,
+                brand: editBrand || null,
                 color: editColor,
                 season: editSeason,
                 formalityLabel: editFormalityLabel,
                 descriptorCount: Object.keys(editDescriptors).length,
               });
-              onSave(editCat, editColor, editPattern, editSeason, editFormalityLabel, editDescriptors);
+              onSave(editCat, editBrand, editColor, editPattern, editSeason, editFormalityLabel, editDescriptors);
             }}
             className="btn-primary"
             style={{ display: "flex", alignItems: "center", gap: "6px" }}

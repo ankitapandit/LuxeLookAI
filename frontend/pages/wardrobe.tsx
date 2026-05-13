@@ -19,6 +19,7 @@ import Head from "next/head";
 import Image from "next/image";
 import Link from "next/link";
 import Navbar from "@/components/layout/Navbar";
+import { shouldBypassImageOptimization } from "@/utils/imageOptimization";
 import { getItemDisplayName } from "@/utils/itemDisplay";
 import {
   getTagOptions, correctItem,
@@ -316,10 +317,6 @@ const CATEGORY_FILTER_OPTIONS = [
   "loungewear",
 ];
 
-function shouldBypassImageOptimization(src: string): boolean {
-  return src.startsWith("blob:") || src.startsWith("data:");
-}
-
 function mergeDescriptorGroups(...groups: Array<Record<string, string[]>>): Record<string, string[]> {
   const merged: Record<string, string[]> = {};
   for (const group of groups) {
@@ -472,10 +469,14 @@ export default function WardrobePage() {
   const [deletedLoaded, setDeletedLoaded] = useState(false);
   const [loadingTagOptions, setLoadingTagOptions] = useState(false);
   const [tagOptionsLoaded, setTagOptionsLoaded] = useState(false);
-  const [tagOptions,   setTagOptions]   = useState<TagOptions>({ categories: [], colors: [], seasons: [], formality_levels: [] });
+  const [tagOptions,   setTagOptions]   = useState<TagOptions>({ categories: [], brands: [], colors: [], seasons: [], formality_levels: [] });
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const brandDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const [filterCat,       setFilterCat]       = useState("all");
+  const [filterBrands,    setFilterBrands]    = useState<string[]>([]);
+  const [brandSearch,     setBrandSearch]     = useState("");
+  const [brandDropdownOpen, setBrandDropdownOpen] = useState(false);
   const [filterSeason,    setFilterSeason]    = useState("all");
   const [filterFormality, setFilterFormality] = useState("all");
   const [editingItem, setEditingItem] = useState<ClothingItem | null>(null);
@@ -486,7 +487,7 @@ export default function WardrobePage() {
   const [mediaActivity, setMediaActivity] = useState<Record<string, ClothingItem>>({});
   const [activityExpanded, setActivityExpanded] = useState(false);
 
-  const hasActiveFilters = filterCat !== "all" || filterSeason !== "all" || filterFormality !== "all";
+  const hasActiveFilters = filterCat !== "all" || filterBrands.length > 0 || filterSeason !== "all" || filterFormality !== "all";
 
   const registerMediaItems = useCallback((nextItems: ClothingItem[]) => {
     const relevant = nextItems.filter((item) => isVisibleMediaStatus(item.media_status));
@@ -514,6 +515,7 @@ export default function WardrobePage() {
         limit: PAGE_SIZE,
         offset,
         category: filterCat !== "all" ? filterCat : undefined,
+        brand: filterBrands.length > 0 ? filterBrands : undefined,
         season: filterSeason !== "all" ? filterSeason : undefined,
         formality: filterFormality !== "all" ? filterFormality : undefined,
       });
@@ -521,7 +523,7 @@ export default function WardrobePage() {
       setItems(prev => reset ? result.items : [...prev, ...result.items]);
       setHasMore(result.has_more);
       setTotalCount(result.total_count);
-      if (reset && filterCat === "all" && filterSeason === "all" && filterFormality === "all") {
+      if (reset && filterCat === "all" && filterBrands.length === 0 && filterSeason === "all" && filterFormality === "all") {
         setWardrobeTotalCount(result.total_count);
       }
       registerMediaItems(result.items);
@@ -531,7 +533,7 @@ export default function WardrobePage() {
       if (reset) setLoading(false);
       else setLoadingMore(false);
     }
-  }, [filterCat, filterFormality, filterSeason, registerMediaItems]);
+  }, [filterBrands, filterCat, filterFormality, filterSeason, registerMediaItems]);
 
   const ensureTagOptions = useCallback(async () => {
     if (tagOptionsLoaded || loadingTagOptions) return;
@@ -572,6 +574,22 @@ export default function WardrobePage() {
   useEffect(() => {
     void loadTrashItems();
   }, [loadTrashItems]);
+
+  useEffect(() => {
+    void ensureTagOptions();
+  }, [ensureTagOptions]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (!brandDropdownRef.current) return;
+      if (!brandDropdownRef.current.contains(event.target as Node)) {
+        setBrandDropdownOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const loadMoreItems = useCallback(() => {
     if (loading || loadingMore || !hasMore || showTrash) return;
@@ -688,6 +706,7 @@ export default function WardrobePage() {
   async function handleCorrect(
     itemId: string,
     category: string,
+    brand: string,
     color: string,
     pattern: string,
     season: string,
@@ -697,6 +716,7 @@ export default function WardrobePage() {
     try {
       const updated = await correctItem(itemId, {
         category,
+        brand: brand || null,
         color,
         pattern: pattern || undefined,
         season: season || undefined,
@@ -705,12 +725,17 @@ export default function WardrobePage() {
       });
       const matchesFilters =
         (filterCat === "all" || updated.category === filterCat) &&
+        (filterBrands.length === 0 || (updated.brand ? filterBrands.includes(updated.brand) : false)) &&
         (filterSeason === "all" || updated.season === filterSeason) &&
         (filterFormality === "all" || formalityBucket(updated.formality_score) === filterFormality);
+      const removedFromFilteredView = hasActiveFilters && !matchesFilters;
       setItems(prev => {
         if (!matchesFilters) return prev.filter(i => i.id !== itemId);
         return prev.map(i => i.id === itemId ? { ...i, ...updated } : i);
       });
+      if (removedFromFilteredView) {
+        setTotalCount(prev => Math.max(0, prev - 1));
+      }
       toast.success("Updated!");
     } catch { toast.error("Could not update item"); }
   }
@@ -819,15 +844,12 @@ export default function WardrobePage() {
 
   function clearFilters() {
     setFilterCat("all");
+    setFilterBrands([]);
+    setBrandSearch("");
+    setBrandDropdownOpen(false);
     setFilterSeason("all");
     setFilterFormality("all");
   }
-
-  const activeFilterSummary = [
-    filterCat !== "all" ? `Type: ${filterCat}` : null,
-    filterSeason !== "all" ? `Season: ${filterSeason}` : null,
-    filterFormality !== "all" ? `Dress code: ${filterFormality}` : null,
-  ].filter(Boolean).join(" · ");
 
   const displayedItems = useMemo(() => {
     const next = [...items];
@@ -838,6 +860,62 @@ export default function WardrobePage() {
     });
     return next;
   }, [items]);
+
+  const wardrobeBrands = useMemo(() => (
+    Array.from(
+      new Set(
+        displayedItems
+          .map((item) => item.brand?.trim())
+          .filter((brand): brand is string => Boolean(brand))
+      )
+    ).sort((a, b) => a.localeCompare(b))
+  ), [displayedItems]);
+
+  const allBrandOptions = useMemo(() => {
+    const merged = new Set<string>();
+    tagOptions.brands.forEach((brand) => { if (brand) merged.add(brand); });
+    wardrobeBrands.forEach((brand) => { if (brand) merged.add(brand); });
+    filterBrands.forEach((brand) => { if (brand) merged.add(brand); });
+    return Array.from(merged).sort((a, b) => a.localeCompare(b));
+  }, [filterBrands, tagOptions.brands, wardrobeBrands]);
+
+  const visibleBrandOptions = useMemo(() => {
+    const query = brandSearch.trim().toLowerCase();
+    const base = query
+      ? allBrandOptions.filter((brand) => brand.toLowerCase().includes(query))
+      : (wardrobeBrands.length > 0 ? wardrobeBrands : allBrandOptions);
+    const withSelection = [...filterBrands.filter((brand) => !base.includes(brand)), ...base];
+    return withSelection;
+  }, [allBrandOptions, brandSearch, filterBrands, wardrobeBrands]);
+
+  const activeFilterChips = useMemo(() => {
+    const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
+    if (filterCat !== "all") {
+      chips.push({ key: `type-${filterCat}`, label: `Type: ${filterCat}`, onRemove: () => setFilterCat("all") });
+    }
+    filterBrands.forEach((brand) => {
+      chips.push({
+        key: `brand-${brand}`,
+        label: `Brand: ${brand}`,
+        onRemove: () => setFilterBrands((prev) => prev.filter((value) => value !== brand)),
+      });
+    });
+    if (filterSeason !== "all") {
+      chips.push({ key: `season-${filterSeason}`, label: `Season: ${filterSeason}`, onRemove: () => setFilterSeason("all") });
+    }
+    if (filterFormality !== "all") {
+      chips.push({ key: `formality-${filterFormality}`, label: `Dress code: ${filterFormality}`, onRemove: () => setFilterFormality("all") });
+    }
+    return chips;
+  }, [filterBrands, filterCat, filterFormality, filterSeason]);
+
+  function toggleBrandFilter(brand: string) {
+    setFilterBrands((prev) => (
+      prev.includes(brand)
+        ? prev.filter((value) => value !== brand)
+        : [...prev, brand].sort((a, b) => a.localeCompare(b))
+    ));
+  }
 
   const wardrobeCountLabel = `${hasActiveFilters ? totalCount : wardrobeTotalCount} / ${wardrobeTotalCount}`;
 
@@ -929,6 +1007,29 @@ export default function WardrobePage() {
                         sizes="(max-width: 768px) 50vw, 180px"
                         style={{ objectFit: "cover" }}
                       />
+                      {item.brand && (
+                        <div style={{
+                          position: "absolute",
+                          right: "8px",
+                          bottom: "8px",
+                          maxWidth: "calc(100% - 16px)",
+                          padding: "6px 10px",
+                          borderRadius: "999px",
+                          background: "rgba(17,15,12,0.82)",
+                          border: "1px solid rgba(255,255,255,0.14)",
+                          color: "#FFF7ED",
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          lineHeight: 1.2,
+                          backdropFilter: "blur(8px)",
+                          boxShadow: "0 8px 18px rgba(0,0,0,0.24)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}>
+                          {item.brand}
+                        </div>
+                      )}
                     </div>
                   )}
                   <div style={{ padding: "12px" }}>
@@ -998,6 +1099,122 @@ export default function WardrobePage() {
                 {/* Divider */}
                 <div className="wardrobe-filter-divider" style={{ width: "1px", background: "var(--border)", alignSelf: "stretch", margin: "0 4px" }} />
 
+                {/* Brand */}
+                <div ref={brandDropdownRef} style={{ flex: "1 1 320px", minWidth: "260px", paddingLeft: "20px", paddingRight: "20px", position: "relative" }}>
+                  <p className="type-micro" style={{ fontSize: "10px", fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Brand</p>
+                  <button
+                    type="button"
+                    onClick={() => setBrandDropdownOpen((prev) => !prev)}
+                    style={{
+                      padding: "8px 12px",
+                      fontSize: "12px",
+                      background: "rgba(255,255,255,0.04)",
+                      border: "1px solid var(--border)",
+                      color: "rgba(244,238,228,0.68)",
+                      boxShadow: "none",
+                      width: "100%",
+                      borderRadius: "10px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span style={{ color: "rgba(244,238,228,0.68)" }}>
+                      {filterBrands.length > 0 ? `${filterBrands.length} brand${filterBrands.length === 1 ? "" : "s"} selected` : "Any / All"}
+                    </span>
+                    <span style={{ color: "rgba(244,238,228,0.68)", fontSize: "11px" }}>{brandDropdownOpen ? "▲" : "▼"}</span>
+                  </button>
+                  {brandDropdownOpen && (
+                    <div style={{
+                      position: "absolute",
+                      top: "calc(100% + 8px)",
+                      left: "20px",
+                      right: "20px",
+                      zIndex: 30,
+                      background: "rgba(23,21,18,0.96)",
+                      backdropFilter: "blur(12px)",
+                      border: "1px solid rgba(212,169,106,0.16)",
+                      borderRadius: "12px",
+                      boxShadow: "0 18px 36px rgba(0,0,0,0.38)",
+                      padding: "10px",
+                    }}>
+                      <input
+                        className="input wardrobe-brand-search"
+                        value={brandSearch}
+                        onChange={(e) => setBrandSearch(e.target.value)}
+                        placeholder="Search brands"
+                        style={{
+                          padding: "8px 12px",
+                          fontSize: "12px",
+                          marginBottom: "8px",
+                          background: "rgba(255,255,255,0.03)",
+                          border: "1px solid rgba(212,169,106,0.14)",
+                          boxShadow: "none",
+                          color: "rgba(244,238,228,0.68)",
+                        }}
+                      />
+                      <div style={{
+                        maxHeight: "320px",
+                        overflowY: "auto",
+                        border: "1px solid rgba(212,169,106,0.10)",
+                        borderRadius: "10px",
+                        background: "rgba(255,255,255,0.02)",
+                      }}>
+                        <button
+                          type="button"
+                          onClick={() => setFilterBrands([])}
+                          style={{
+                            width: "100%",
+                            textAlign: "left",
+                            padding: "10px 12px",
+                            fontSize: "12px",
+                            color: "rgba(244,238,228,0.68)",
+                            fontWeight: filterBrands.length === 0 ? 600 : 400,
+                            border: "none",
+                            background: filterBrands.length === 0 ? "rgba(212,169,106,0.08)" : "transparent",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Any / All
+                        </button>
+                        {visibleBrandOptions.map((brand) => (
+                          <label
+                            key={brand}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                              padding: "10px 12px",
+                              fontSize: "12px",
+                              color: "rgba(244,238,228,0.68)",
+                              cursor: "pointer",
+                              borderTop: "1px solid rgba(212,169,106,0.08)",
+                              background: filterBrands.includes(brand) ? "rgba(212,169,106,0.06)" : "transparent",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={filterBrands.includes(brand)}
+                              onChange={() => toggleBrandFilter(brand)}
+                              style={{ accentColor: "var(--gold)" }}
+                            />
+                            <span>{brand}</span>
+                          </label>
+                        ))}
+                      </div>
+                      {brandSearch.trim() && visibleBrandOptions.length === 0 && (
+                        <p style={{ fontSize: "11px", color: "rgba(244,238,228,0.68)", marginTop: "8px" }}>
+                          No brands match that search.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Divider */}
+                <div className="wardrobe-filter-divider" style={{ width: "1px", background: "var(--border)", alignSelf: "stretch", margin: "0 4px" }} />
+
                 {/* Season */}
                 <div style={{ flex: "1 1 300px", minWidth: "240px", paddingLeft: "20px", paddingRight: "20px" }}>
                   <p className="type-micro" style={{ fontSize: "10px", fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Season</p>
@@ -1038,19 +1255,70 @@ export default function WardrobePage() {
               </div>
             )}
 
-            {items.length > 0 && hasActiveFilters && (
+            {items.length > 0 && hasActiveFilters && activeFilterChips.length > 0 && (
               <div style={{
                 display: "flex",
-                alignItems: "center",
+                alignItems: "flex-start",
                 justifyContent: "space-between",
                 gap: "12px",
                 flexWrap: "wrap",
                 marginBottom: "20px",
               }}>
-                <p className="type-helper" style={{ fontSize: "13px", color: "var(--muted)", margin: 0 }}>
-                  Showing filtered results
-                  {activeFilterSummary ? ` · ${activeFilterSummary}` : ""}
-                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <p
+                    className="type-micro"
+                    style={{
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      color: "var(--gold)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.1em",
+                      margin: 0,
+                    }}
+                  >
+                    Filtering on: 
+                  </p>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                  {activeFilterChips.map((chip) => (
+                    <button
+                      key={chip.key}
+                      type="button"
+                      onClick={chip.onRemove}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        padding: "7px 12px",
+                        borderRadius: "999px",
+                        border: "1px solid rgba(212,169,106,0.24)",
+                        background: "rgba(212,169,106,0.10)",
+                        color: "var(--charcoal)",
+                        fontSize: "12px",
+                        fontWeight: 500,
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <span>{chip.label}</span>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: "16px",
+                          height: "16px",
+                          borderRadius: "999px",
+                          background: "rgba(26,26,26,0.08)",
+                          fontSize: "11px",
+                          lineHeight: 1,
+                        }}
+                      >
+                        ×
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                </div>
                 <button
                   className="btn-secondary"
                   onClick={clearFilters}
@@ -1108,8 +1376,8 @@ export default function WardrobePage() {
           tagOptionsLoading={loadingTagOptions}
           onRequestTagOptions={ensureTagOptions}
           onClose={() => setEditingItem(null)}
-          onSave={(cat, color, pattern, season, formalityLabel, nextDescriptors) => {
-            void handleCorrect(editingItem.id, cat, color, pattern, season, formalityLabel, nextDescriptors);
+          onSave={(cat, brand, color, pattern, season, formalityLabel, nextDescriptors) => {
+            void handleCorrect(editingItem.id, cat, brand, color, pattern, season, formalityLabel, nextDescriptors);
             setEditingItem(null);
           }}
         />
@@ -1520,6 +1788,29 @@ function ItemCard({ item, priority = false, onEdit, onRequestDelete, onRequestAr
             {mediaBadge}
           </div>
         )}
+        {item.brand && (
+          <div style={{
+            position: "absolute",
+            right: "8px",
+            bottom: "8px",
+            maxWidth: "calc(100% - 16px)",
+            padding: "6px 10px",
+            borderRadius: "999px",
+            background: "rgba(17,15,12,0.84)",
+            border: "1px solid rgba(255,255,255,0.14)",
+            color: "#FFF7ED",
+            fontSize: "11px",
+            fontWeight: 600,
+            lineHeight: 1.2,
+            backdropFilter: "blur(8px)",
+            boxShadow: "0 8px 18px rgba(0,0,0,0.26)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}>
+            {item.brand}
+          </div>
+        )}
         <div className="card-actions" style={{ position: "absolute", top: "8px", right: "8px", display: "flex", flexDirection: "column", gap: "4px", opacity: 0, transition: "opacity 0.2s ease" }}>
           <ActionBtn onClick={onEdit} icon={<Pencil size={13} />} label="Edit item" />
           <ActionBtn onClick={onRequestArchive} icon={<Archive size={13} color="#D4A96A" />} label="Archive item" />
@@ -1561,7 +1852,10 @@ function ItemCard({ item, priority = false, onEdit, onRequestDelete, onRequestAr
         )}
       </div>
 
-      <style>{`.card:hover .card-actions { opacity: 1 !important; }`}</style>
+      <style>{`
+        .card:hover .card-actions { opacity: 1 !important; }
+        .wardrobe-brand-search::placeholder { color: rgba(244,238,228,0.68); }
+      `}</style>
     </div>
   );
 }
@@ -1581,6 +1875,7 @@ function ItemEditModal({
   onClose: () => void;
   onSave: (
     cat: string,
+    brand: string,
     color: string,
     pattern: string,
     season: string,
@@ -1589,6 +1884,7 @@ function ItemEditModal({
   ) => void;
 }) {
   const [editCat, setEditCat] = useState(item.category);
+  const [editBrand, setEditBrand] = useState(item.brand || "");
   const [editColor, setEditColor] = useState(item.color || "");
   const [editSeason, setEditSeason] = useState(item.season || "");
   const [editFormalityLabel, setEditFormalityLabel] = useState(getFormalityEditLabel(item.formality_score));
@@ -1599,6 +1895,7 @@ function ItemEditModal({
 
   useEffect(() => {
     setEditCat(item.category);
+    setEditBrand(item.brand || "");
     setEditColor(item.color || "");
     setEditSeason(item.season || "");
     setEditFormalityLabel(getFormalityEditLabel(item.formality_score));
@@ -1620,6 +1917,9 @@ function ItemEditModal({
   const editCategoryOptions = tagOptions.categories.length > 0
     ? tagOptions.categories
     : [editCat].filter(Boolean);
+  const editBrandOptions = tagOptions.brands.length > 0
+    ? tagOptions.brands
+    : [editBrand].filter(Boolean);
   const editSeasonOptions = tagOptions.seasons.length > 0
     ? tagOptions.seasons
     : [{ value: editSeason || "all", label: editSeason || "All seasons" }];
@@ -1649,6 +1949,11 @@ function ItemEditModal({
             <p style={{ color: "var(--muted)", fontSize: "12px", textTransform: "capitalize" }}>
               {getItemDisplayName(item)}
             </p>
+            {item.brand && (
+              <p style={{ color: "var(--muted)", fontSize: "11px", marginTop: "2px" }}>
+                {item.brand}
+              </p>
+            )}
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: "4px" }}>
             <X size={18} />
@@ -1685,6 +1990,22 @@ function ItemEditModal({
               {tagOptionsLoading && tagOptions.categories.length === 0 && (
                 <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "-14px", marginBottom: "16px" }}>Loading category options…</p>
               )}
+
+              <label htmlFor="edit-item-brand" style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "6px" }}>Brand</label>
+              <select
+                id="edit-item-brand"
+                name="edit_brand"
+                value={editBrand}
+                onChange={e => setEditBrand(e.target.value)}
+                disabled={tagOptionsLoading && tagOptions.brands.length === 0}
+                className="input"
+                style={{ padding: "8px 12px", fontSize: "14px", marginBottom: "20px" }}
+              >
+                <option value=""></option>
+                {editBrandOptions.map((brand) => (
+                  <option key={brand} value={brand}>{brand}</option>
+                ))}
+              </select>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px", marginBottom: "20px" }}>
                 <div>
@@ -1741,8 +2062,17 @@ function ItemEditModal({
                 <input id="edit-item-colour-custom" name="edit_colour_custom" type="color" value={editColor.startsWith("#") ? editColor : "#ffffff"}
                   onChange={e => setEditColor(e.target.value)}
                   style={{ width: "32px", height: "32px", border: "1px solid var(--border)", borderRadius: "6px", cursor: "pointer", padding: "2px" }} />
-                <span style={{ fontSize: "12px", color: "var(--muted)" }}>or pick custom</span>
+                <input
+                  className="input"
+                  value={editColor}
+                  onChange={e => setEditColor(e.target.value)}
+                  placeholder="Type a color name or hex"
+                  style={{ flex: 1, minWidth: "180px", padding: "8px 12px", fontSize: "13px" }}
+                />
               </div>
+              <p style={{ fontSize: "11px", color: "var(--muted)", marginTop: "-12px", marginBottom: "20px" }}>
+                Entered color names are normalized by the app when you save.
+              </p>
 
               {(() => {
                 const allDescriptors = getDescriptorOptionsForCategory(editCat, editDescriptors);
@@ -1765,7 +2095,7 @@ function ItemEditModal({
 
         <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: "8px", flexShrink: 0, background: "var(--surface)" }}>
           <button
-            onClick={() => onSave(editCat, editColor, editPattern, editSeason, editFormalityLabel, editDescriptors)}
+            onClick={() => onSave(editCat, editBrand, editColor, editPattern, editSeason, editFormalityLabel, editDescriptors)}
             className="btn-primary" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <CheckCircle size={14} /> Save
           </button>

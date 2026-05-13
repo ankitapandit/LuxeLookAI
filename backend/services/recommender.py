@@ -1802,9 +1802,13 @@ def score_appropriateness_v2(items: List[Dict], occasion: Dict) -> Tuple[float, 
         if is_professional and item_formality < 0.35:
             venue_multiplier = min(venue_multiplier, 0.75)
 
-        # Swimwear is only appropriate at beach/pool — penalise anywhere else
+        # Swimwear is only appropriate at beach/pool — penalise anywhere else.
+        # Formal dress codes (cocktail, gala, dinner, wedding) override a beach/boat
+        # venue: a cocktail cruise is not a swimwear occasion regardless of the token.
         if cat == "swimwear" and not is_beach:
             venue_multiplier = min(venue_multiplier, 0.30)
+        if cat == "swimwear" and is_beach and is_formal_event:
+            venue_multiplier = min(venue_multiplier, 0.20)  # cocktail on a boat ≠ swimwear
         # Loungewear is occasion-inappropriate outside home/casual contexts
         if cat == "loungewear" and (is_formal_event or event_formality > 0.55):
             venue_multiplier = min(venue_multiplier, 0.40)
@@ -1830,8 +1834,10 @@ def score_appropriateness_v2(items: List[Dict], occasion: Dict) -> Tuple[float, 
 
     # ── Beach affinity bonus: reward beachwear-first ordering ─────────────────
     # Swimwear outfits score higher than generic casual outfits at beach/pool.
+    # Suppressed entirely when a formal dress code is present (cocktail cruise,
+    # yacht dinner, etc.) — the venue is a boat/beach but swimwear is inappropriate.
     beach_affinity_bonus = 0.0
-    if is_beach:
+    if is_beach and not is_formal_event:
         _LIGHT_BEACH_FABRICS = {"linen", "cotton", "chiffon", "rayon", "bamboo", "mesh"}
         _BEACH_SHOE_TYPES    = {"sandal", "flip", "slide", "espadrille", "mule", "flat"}
         has_swimwear    = any((i.get("category") or "").lower() == "swimwear" for i in items)

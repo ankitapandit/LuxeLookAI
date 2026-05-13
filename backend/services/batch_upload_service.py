@@ -132,7 +132,7 @@ def _recompute_session_counters(session_id: str, user_id: str) -> None:
 
     if all_done and statuses:
         new_status = "completed_with_errors" if failed else "completed"
-    elif awaiting > 0:
+    elif all_terminal and awaiting > 0:
         new_status = "awaiting_verification"
     elif processed > 0:
         new_status = "processing"

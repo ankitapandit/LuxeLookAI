@@ -18,13 +18,15 @@ All timestamps are stored in UTC in the database. Some application logic, such a
 
 ## Domain Overview
 
-LuxeLook AI currently has five main data domains:
+LuxeLook AI currently has seven main data domains:
 
 1. `Identity & profile`
 2. `Wardrobe`
-3. `Occasions & outfit suggestions`
-4. `Style vocabulary / taxonomy`
-5. `Discover taste learning`
+3. `Batch intake & verification`
+4. `Occasions, outfit suggestions, and style-direction feedback`
+5. `Style vocabulary / taxonomy`
+6. `Discover taste learning`
+7. `Route-level product activity`
 
 ## Entity Relationship Diagram
 
@@ -32,15 +34,24 @@ LuxeLook AI currently has five main data domains:
 erDiagram
     AUTH_USERS ||--|| USERS : "provisions"
     USERS ||--o{ CLOTHING_ITEMS : "owns"
+    USERS ||--o{ UPLOAD_BATCH_SESSIONS : "starts"
+    USERS ||--o{ UPLOAD_BATCH_ITEMS : "reviews"
     USERS ||--o{ EVENTS : "creates"
     USERS ||--o{ OUTFIT_SUGGESTIONS : "receives"
+    USERS ||--o{ STYLE_DIRECTION_FEEDBACK : "rates AI style directions"
     EVENTS ||--o{ OUTFIT_SUGGESTIONS : "produces"
+    EVENTS ||--o{ STYLE_DIRECTION_FEEDBACK : "collects usefulness votes"
+    UPLOAD_BATCH_SESSIONS ||--o{ UPLOAD_BATCH_ITEMS : "contains"
+    UPLOAD_BATCH_ITEMS }o--|| CLOTHING_ITEMS : "may create"
 
     USERS ||--o{ DISCOVER_CANDIDATES : "warms"
     USERS ||--o{ DISCOVER_STYLE_INTERACTIONS : "swipes"
     USERS ||--o{ DISCOVER_IGNORED_URLS : "excludes"
+    USERS ||--o{ DISCOVER_USER_STATE : "tracks active Discover days"
+    USERS ||--o{ DISCOVER_FAMILY_MEMORY : "stores family cooldowns"
     USERS ||--o{ USER_STYLE_PREFERENCES : "learns"
     USERS ||--o{ DISCOVER_JOBS : "queues"
+    USERS ||--o{ USER_PAGE_VISITS : "navigates"
 
     STYLE_CATALOG ||--o{ USER_STYLE_PREFERENCES : "references by style_id/style_key"
     STYLE_TAXONOMY }o--o{ CLOTHING_ITEMS : "supplies tagging vocabulary"
@@ -64,6 +75,7 @@ erDiagram
       uuid id PK
       uuid user_id FK
       text category
+      text brand
       text item_type
       text accessory_subtype
       text color
@@ -74,10 +86,40 @@ erDiagram
       text thumbnail_url
       text cutout_url
       jsonb descriptors
+      text verification_status
+      text ingestion_source
       boolean is_active
       boolean is_archived
       timestamptz archived_on
       timestamptz deleted_at
+    }
+
+    UPLOAD_BATCH_SESSIONS {
+      uuid id PK
+      uuid user_id FK
+      text status
+      int total_count
+      int uploaded_count
+      int processed_count
+      int awaiting_verification_count
+      int verified_count
+      int failed_count
+      timestamptz created_at
+      timestamptz completed_at
+    }
+
+    UPLOAD_BATCH_ITEMS {
+      uuid id PK
+      uuid session_id FK
+      uuid user_id FK
+      text file_name
+      text image_url
+      text thumbnail_url
+      text cutout_url
+      text status
+      text error_message
+      uuid clothing_item_id FK
+      timestamptz verified_at
     }
 
     EVENTS {
@@ -100,6 +142,17 @@ erDiagram
       text explanation
       int user_rating
       jsonb card
+    }
+
+    STYLE_DIRECTION_FEEDBACK {
+      uuid id PK
+      uuid user_id FK
+      uuid event_id FK
+      text option_name
+      text feedback_value
+      jsonb option_snapshot
+      timestamptz created_at
+      timestamptz updated_at
     }
 
     STYLE_CATALOG {
@@ -173,6 +226,31 @@ erDiagram
       jsonb result
       int attempts
     }
+
+    DISCOVER_USER_STATE {
+      uuid id PK
+      uuid user_id FK
+      int total_interactions
+      text[] recent_family_keys
+      timestamptz last_discover_at
+    }
+
+    DISCOVER_FAMILY_MEMORY {
+      uuid id PK
+      uuid user_id FK
+      text family_key
+      text family_label
+      int cooldown_until_active_day
+      timestamptz last_discover_active_at
+    }
+
+    USER_PAGE_VISITS {
+      uuid id PK
+      uuid user_id FK
+      text page_name
+      timestamptz entered_at
+      timestamptz left_at
+    }
 ```
 
 ## Lifecycle and Cascade Rules
@@ -181,13 +259,19 @@ The most important cascade rule in the app today:
 
 - Deleting a row in `users` cascades into:
   - `clothing_items`
+  - `upload_batch_sessions`
+  - `upload_batch_items`
   - `events`
   - `outfit_suggestions`
+  - `style_direction_feedback`
   - `discover_candidates`
   - `discover_style_interactions`
   - `discover_ignored_urls`
+  - `discover_user_state`
+  - `discover_family_memory`
   - `user_style_preferences`
   - `discover_jobs`
+  - `user_page_visits`
 
 These Discover tables do **not** cascade into one another directly.
 
@@ -266,6 +350,7 @@ clothing_items:
   id: uuid
   user_id: uuid
   category: text
+  brand: text?
   item_type: text
   accessory_subtype: text?
   color: text?
@@ -281,6 +366,8 @@ clothing_items:
   media_updated_at: timestamptz?
   descriptors: jsonb
   embedding_vector: vector(512)?
+  verification_status: text?
+  ingestion_source: text?
   is_active: boolean
   is_archived: boolean
   archived_on: timestamptz?
@@ -291,11 +378,73 @@ clothing_items:
 
 Notes:
 - `descriptors` is migration-added JSONB and conceptually part of the live schema
+- `brand` is optional and validated against the shared curated catalog instead of free text
 - `is_active = false` plus `is_archived = true` represents the archived state
 - `thumbnail_url` and `cutout_url` are derived media, not user-authored data
 - `embedding_vector` powers duplicate detection and visual similarity
 
-### 4. `public.events`
+### 4. `public.upload_batch_sessions`
+
+Product meaning:
+- one multi-photo intake session for a user
+
+Primary responsibilities:
+- track session-level upload/review progress
+- expose whether a batch is still tagging, ready for review, or terminal
+
+Record sketch:
+
+```yaml
+upload_batch_sessions:
+  id: uuid
+  user_id: uuid
+  status: text
+  total_count: int
+  uploaded_count: int
+  processed_count: int
+  awaiting_verification_count: int
+  verified_count: int
+  failed_count: int
+  created_at: timestamptz
+  completed_at: timestamptz?
+```
+
+Notes:
+- this is operational state, not the final wardrobe truth
+- review now intentionally unlocks only when the full batch is ready instead of when a single item finishes first
+
+### 5. `public.upload_batch_items`
+
+Product meaning:
+- one uploaded image within a batch session
+
+Primary responsibilities:
+- preserve per-file processing state
+- bridge an uploaded photo to the eventual trusted `clothing_items` row
+
+Record sketch:
+
+```yaml
+upload_batch_items:
+  id: uuid
+  session_id: uuid
+  user_id: uuid
+  file_name: text
+  image_url: text
+  thumbnail_url: text?
+  cutout_url: text?
+  status: text
+  error_message: text?
+  clothing_item_id: uuid?
+  verified_at: timestamptz?
+  created_at: timestamptz
+```
+
+Notes:
+- this table decouples “uploaded and being reviewed” from “trusted wardrobe item”
+- rejected batch rows can exist without ever becoming part of the final wardrobe
+
+### 6. `public.events`
 
 Product meaning:
 - a parsed occasion request from the user
@@ -318,7 +467,7 @@ events:
   created_at: timestamptz
 ```
 
-### 5. `public.outfit_suggestions`
+### 7. `public.outfit_suggestions`
 
 Product meaning:
 - one scored outfit recommendation associated with one user and one event
@@ -349,7 +498,34 @@ Notes:
 - `accessory_ids` contains attached finishing pieces, including accessories and jewelry
 - rating is combo-level feedback, not per-item feedback
 
-### 6. `public.style_taxonomy`
+### 8. `public.style_direction_feedback`
+
+Product meaning:
+- one persisted usefulness vote on a `Beyond your wardrobe` option
+
+Primary responsibilities:
+- retain user thumbs up/down sentiment on AI editorial options
+- let regenerated style-direction results preserve prior usefulness feedback for the same event
+
+Record sketch:
+
+```yaml
+style_direction_feedback:
+  id: uuid
+  user_id: uuid
+  event_id: uuid
+  option_name: text
+  feedback_value: text
+  option_snapshot: jsonb
+  created_at: timestamptz
+  updated_at: timestamptz
+```
+
+Notes:
+- this is intentionally separate from `outfit_suggestions.user_rating`
+- wardrobe outfit ratings and editorial usefulness votes are different feedback channels
+
+### 9. `public.style_taxonomy`
 
 Product meaning:
 - the DB-resident fashion vocabulary registry
@@ -381,7 +557,7 @@ Notes:
 - this is closer to a controlled vocabulary / configuration table than a transactional table
 - it feeds tagging, scoring, and vocabulary resolution throughout the app
 
-### 7. `public.style_catalog`
+### 10. `public.style_catalog`
 
 Product meaning:
 - the canonical style-signal catalog used for Discover preference learning
@@ -409,7 +585,7 @@ Difference from `style_taxonomy`:
 - `style_taxonomy` is broad fashion vocabulary/configuration
 - `style_catalog` is the curated style-signal set used by Discover learning
 
-### 8. `public.discover_candidates`
+### 11. `public.discover_candidates`
 
 Product meaning:
 - per-user cached Discover candidates before or after analysis
@@ -453,7 +629,11 @@ Status model:
 - `filtered`
 - `failed`
 
-### 9. `public.discover_style_interactions`
+Important current behavior:
+- analysis is versioned so stale cached Discover cards can be invalidated after classifier logic changes
+- style-tag extraction now uses focused outfit crops plus conservative pattern fallbacks
+
+### 12. `public.discover_style_interactions`
 
 Product meaning:
 - the immutable swipe log for Discover
@@ -493,7 +673,7 @@ This is the source of truth for:
 - local-day quota count
 - later preference recomputes
 
-### 10. `public.discover_ignored_urls`
+### 13. `public.discover_ignored_urls`
 
 Product meaning:
 - per-user exclusion registry for Discover links
@@ -523,7 +703,7 @@ Important current behavior:
 - user-facing excluded counts should reflect actual swiped/ignored links
 - being merely shown in the feed should not permanently exclude a card
 
-### 11. `public.user_style_preferences`
+### 14. `public.user_style_preferences`
 
 Product meaning:
 - the derived, user-specific style profile computed from Discover history
@@ -561,7 +741,7 @@ This table is:
 - rebuildable from `discover_style_interactions`
 - intentionally separate from `users`
 
-### 12. `public.discover_jobs`
+### 15. `public.discover_jobs`
 
 Product meaning:
 - the durable background job queue for Discover
@@ -597,14 +777,87 @@ Typical job types:
 - `seed_discover_candidates`
 - `refresh_style_preferences`
 
+### 16. `public.discover_user_state`
+
+Product meaning:
+- per-user Discover active-day and recent-family serving state
+
+Primary responsibilities:
+- track total Discover interactions
+- preserve recent-family spacing across refreshes
+- allow cooldown logic to run on actual Discover usage days instead of plain wall-clock time
+
+Record sketch:
+
+```yaml
+discover_user_state:
+  id: uuid
+  user_id: uuid
+  total_interactions: int
+  recent_family_keys: text[]
+  last_discover_at: timestamptz?
+  updated_at: timestamptz
+  created_at: timestamptz
+```
+
+### 17. `public.discover_family_memory`
+
+Product meaning:
+- per-user memory row for one learned visual family
+
+Primary responsibilities:
+- cooldown enforcement
+- short-term same-day follow-up memory
+- reducing repeated same-type cards in Discover
+
+Record sketch:
+
+```yaml
+discover_family_memory:
+  id: uuid
+  user_id: uuid
+  family_key: text
+  family_label: text?
+  cooldown_until_active_day: int
+  last_discover_active_at: timestamptz?
+  updated_at: timestamptz
+  created_at: timestamptz
+```
+
+### 18. `public.user_page_visits`
+
+Product meaning:
+- one route-level first-party page-visit record
+
+Primary responsibilities:
+- track product-surface entry/exit without clickstream-style replay
+
+Record sketch:
+
+```yaml
+user_page_visits:
+  id: uuid
+  user_id: uuid
+  page_name: text
+  entered_at: timestamptz
+  left_at: timestamptz?
+  duration_ms: int?
+  updated_at: timestamptz
+  created_at: timestamptz
+```
+
 ## Derived vs Source-of-Truth Tables
 
 ### Primary source-of-truth tables
 - `users`
 - `clothing_items`
+- `upload_batch_sessions`
+- `upload_batch_items`
 - `events`
 - `outfit_suggestions`
+- `style_direction_feedback`
 - `discover_style_interactions`
+- `user_page_visits`
 
 ### Controlled vocabulary / configuration tables
 - `style_taxonomy`
@@ -615,6 +868,8 @@ Typical job types:
 - `discover_ignored_urls`
 - `user_style_preferences`
 - `discover_jobs`
+- `discover_user_state`
+- `discover_family_memory`
 
 ## Storage Buckets
 
@@ -643,6 +898,7 @@ If you are debugging or extending a feature, start here:
 - `Event generation and Archive history`
   - `events`
   - `outfit_suggestions`
+  - `style_direction_feedback`
   - `clothing_items`
 
 - `Discover`
@@ -651,7 +907,17 @@ If you are debugging or extending a feature, start here:
   - `discover_ignored_urls`
   - `user_style_preferences`
   - `discover_jobs`
+  - `discover_user_state`
+  - `discover_family_memory`
   - `style_catalog`
+
+- `Batch Upload and verification`
+  - `upload_batch_sessions`
+  - `upload_batch_items`
+  - `clothing_items`
+
+- `Route-level activity`
+  - `user_page_visits`
 
 - `Vocabulary / tagging / scoring behavior`
   - `style_taxonomy`
@@ -661,8 +927,10 @@ If you are debugging or extending a feature, start here:
 
 The overall model aims to keep:
 - user identity/profile clean
-- wardrobe items durable and media-aware
+- wardrobe items durable, media-aware, and optionally brand-tagged
+- batch intake state explicit before wardrobe trust is granted
 - recommendation history explicit
+- editorial usefulness feedback separate from wardrobe outfit ratings
 - Discover learning explainable and rebuildable
 - style vocabularies configurable without hard-coding everything in app logic
 

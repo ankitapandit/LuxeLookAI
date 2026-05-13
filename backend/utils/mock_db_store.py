@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 _tables: Dict[str, Dict[str, dict]] = {
     "clothing_items":    {},
     "clothing_tag_feedback": {},
+    "style_direction_feedback": {},
     "events":            {},
     "outfit_suggestions": {},
     "style_catalog":     {},

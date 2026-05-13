@@ -15,7 +15,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set
 from httpx import RemoteProtocolError
 
 from config import get_settings
-from services.discover_analysis import analyze_discover_image
+from services.discover_analysis import DISCOVER_ANALYSIS_VERSION, analyze_discover_image
 from services.discover_search import search_discover_images
 from services.style_catalog import get_style_ids_for_tags
 from services.style_learning import _canonical_url
@@ -117,6 +117,7 @@ def load_ready_discover_candidates(user_id: str, exclude_urls: Optional[Iterable
     ready_rows = [
         row for row in rows
         if str(row.get("status") or "") == "ready"
+        and str((row.get("analysis") or {}).get("analysis_version") or "") == DISCOVER_ANALYSIS_VERSION
         and str(row.get("normalized_url") or "") not in excluded
     ]
     return sorted(

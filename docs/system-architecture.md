@@ -29,6 +29,7 @@ LuxeLook AI is a modular monolith:
 - `DB-backed batch upload intake` with verify/reject review before final wardrobe trust is established
 - `hybrid AI` where CLIP / Hugging Face powers local visual understanding and the backend retains a provider abstraction for external search sources
 - `visual style-direction enrichment` for non-wardrobe recommendations, using image search plus structured style-direction pieces
+- `persisted style-direction usefulness feedback` so AI editorial options can retain per-event thumbs-up / thumbs-down signals
 - `dynamic moodboard rendering` with palette-driven backgrounds, proportional placements, and cutout-bound compensation on the frontend
 - `first-party page-visit logging` for route-level product telemetry
 - `family-memory Discover serving state` to reduce repeated same-type cards across active Discover days
@@ -97,8 +98,8 @@ flowchart TB
 1. User starts a batch upload session from the Batch Upload page.
 2. Frontend uploads one or many images into that session.
 3. Backend creates `upload_batch_sessions` and `upload_batch_items` rows and runs tagging for each item.
-4. When tagging succeeds, a `clothing_items` row is created with ingestion metadata and verification state.
-5. Background media tasks generate thumbnails and cutouts for the resulting clothing item.
+4. When tagging succeeds, a `clothing_items` row is created with ingestion metadata, optional curated `brand`, and verification state.
+5. Background media tasks generate thumbnails and cutouts for the resulting clothing item, with bounded cutout-model fallbacks to keep stalled uploads from hanging indefinitely.
 6. The Batch Review flow lets the user verify or reject items before they settle into the trusted wardrobe set.
 7. The Wardrobe page then focuses on browsing, filtering, editing, archiving, and monitoring media status instead of being the primary intake surface.
 
@@ -109,7 +110,7 @@ flowchart TB
 3. Recommender scores wardrobe combinations.
 4. The non-wardrobe style-direction path can build editorial options when the UI requests broader inspiration.
 5. Visual image enrichment can attach representative fashion imagery to wearable style-direction pieces.
-6. Results are stored in `outfit_suggestions`.
+6. Wardrobe outfit results are stored in `outfit_suggestions`, while usefulness votes on AI editorial options are stored in `style_direction_feedback`.
 7. The archive page, event page, and style-item flow render those suggestions and feedback states.
 
 ### 4. Discover / The Edit
@@ -117,7 +118,7 @@ flowchart TB
 1. User opens Discover.
 2. Backend builds a seed query from profile context and learned style signals.
 3. A warm-up job fetches candidates from Pexels.
-4. Candidate analysis filters to single-person fashion images and extracts style tags.
+4. Candidate analysis filters to single-person fashion images and extracts style tags using focused outfit crops plus conservative pattern guards.
 5. Ready candidates are cached in `discover_candidates`.
 6. The feed serves ready candidates to the UI.
 7. User swipes like / love / dislike.
@@ -182,6 +183,7 @@ In this app:
 | `upload_batch_items` | owner, backend | owner, backend | RLS + backend `service_role` | Per-image intake/review state; may create a clothing item |
 | `events` | owner, backend | owner, backend | RLS + backend `service_role` | Event creation depends on the `users` row existing |
 | `outfit_suggestions` | owner, backend | backend; owner can rate | RLS + backend `service_role` | Generated from the recommender |
+| `style_direction_feedback` | owner, backend | owner, backend | RLS + backend `service_role` | Per-event usefulness votes for `Beyond your wardrobe` options |
 | `style_catalog` | authenticated users | backend/admin seeding | read-only | Shared canonical style vocabulary |
 | `style_taxonomy` | backend/admin | backend/admin | service-side / migration-side | Vocabulary for garment tagging and recommendation scoring |
 | `discover_candidates` | owner, backend worker | backend worker | RLS + backend `service_role` | Cache of warm-up candidates |
@@ -228,7 +230,9 @@ erDiagram
     USERS ||--o{ UPLOAD_BATCH_ITEMS : "reviews"
     USERS ||--o{ EVENTS : "creates"
     USERS ||--o{ OUTFIT_SUGGESTIONS : "receives"
+    USERS ||--o{ STYLE_DIRECTION_FEEDBACK : "rates AI style directions"
     EVENTS ||--o{ OUTFIT_SUGGESTIONS : "produces"
+    EVENTS ||--o{ STYLE_DIRECTION_FEEDBACK : "collects usefulness votes"
     UPLOAD_BATCH_SESSIONS ||--o{ UPLOAD_BATCH_ITEMS : "contains"
     UPLOAD_BATCH_ITEMS }o--|| CLOTHING_ITEMS : "may create"
 
@@ -265,6 +269,7 @@ erDiagram
       uuid id PK
       uuid user_id FK
       text category
+      text brand
       text item_type
       text accessory_subtype
       text color
@@ -331,6 +336,17 @@ erDiagram
       text explanation
       int user_rating
       jsonb card
+    }
+
+    STYLE_DIRECTION_FEEDBACK {
+      uuid id PK
+      uuid user_id FK
+      uuid event_id FK
+      text option_name
+      text feedback_value
+      jsonb option_snapshot
+      timestamptz created_at
+      timestamptz updated_at
     }
 
     STYLE_CATALOG {
@@ -471,6 +487,7 @@ Purpose:
 
 Important fields:
 - garment category and subtype
+- optional curated `brand`
 - color, pattern, season, formality
 - media and derivative imagery
 - `verification_status`
@@ -481,6 +498,7 @@ Important fields:
 Notes:
 - manual and batch-uploaded items now share this table
 - batch-created items can remain pending until the review flow verifies or rejects them
+- `brand` is optional and validated against the shared curated catalog rather than free text
 
 #### 4. `public.upload_batch_sessions`
 
@@ -531,7 +549,22 @@ Important fields:
 - `explanation`
 - `user_rating`
 
-#### 8. `public.style_catalog`
+#### 8. `public.style_direction_feedback`
+
+Purpose:
+- persist usefulness votes for AI-generated `Beyond your wardrobe` options
+
+Important fields:
+- `event_id`
+- `option_name`
+- `feedback_value`
+- `option_snapshot`
+
+Why it exists:
+- keeps editorial thumbs-up/down votes separate from wardrobe outfit star ratings
+- allows regenerated style directions for the same event to preserve prior usefulness feedback
+
+#### 9. `public.style_catalog`
 
 Purpose:
 - canonical, human-friendly style vocabulary for Discover learning
@@ -542,7 +575,7 @@ Important fields:
 - `dimension`
 - `aliases`
 
-#### 9. `public.style_taxonomy`
+#### 10. `public.style_taxonomy`
 
 Purpose:
 - larger vocabulary table for garment tagging and scoring
@@ -554,7 +587,7 @@ Important fields:
 - `value`
 - `meta`
 
-#### 10. `public.discover_candidates`
+#### 11. `public.discover_candidates`
 
 Purpose:
 - cached image results warmed up for the Discover feed
@@ -562,8 +595,9 @@ Purpose:
 Why it exists:
 - prevents live search from being the only source of cards
 - lets the worker analyze candidates ahead of time
+- analysis versioning keeps stale cached Discover cards from surviving classifier logic changes
 
-#### 11. `public.discover_style_interactions`
+#### 12. `public.discover_style_interactions`
 
 Purpose:
 - raw swipe history for Discover
@@ -572,7 +606,7 @@ Why it exists:
 - source of truth for taste learning
 - used to recompute derived preference rows
 
-#### 12. `public.discover_ignored_urls`
+#### 13. `public.discover_ignored_urls`
 
 Purpose:
 - per-user ignore list of URLs already acted on
@@ -580,7 +614,7 @@ Purpose:
 Important rule:
 - should be populated by actual interactions, not simply by showing a card
 
-#### 13. `public.user_style_preferences`
+#### 14. `public.user_style_preferences`
 
 Purpose:
 - derived taste profile for a user
@@ -591,7 +625,7 @@ Important fields:
 - `exposure_count`
 - `status`
 
-#### 14. `public.discover_jobs`
+#### 15. `public.discover_jobs`
 
 Purpose:
 - durable job queue for Discover warm-up and recomputation
@@ -599,7 +633,7 @@ Purpose:
 Why it exists:
 - gives the app async execution without introducing a heavier orchestration system
 
-#### 15. `public.discover_user_state`
+#### 16. `public.discover_user_state`
 
 Purpose:
 - per-user Discover active-day state and recent-family history
@@ -608,7 +642,7 @@ Why it exists:
 - lets Discover cooldowns run on actual Discover usage days instead of wall-clock days
 - preserves recent family spacing across feed refreshes
 
-#### 16. `public.discover_family_memory`
+#### 17. `public.discover_family_memory`
 
 Purpose:
 - per-user memory for a learned visual family
@@ -619,7 +653,7 @@ Important fields:
 - `cooldown_until_active_day`
 - `last_discover_active_at`
 
-#### 17. `public.user_page_visits`
+#### 18. `public.user_page_visits`
 
 Purpose:
 - route-level first-party page telemetry

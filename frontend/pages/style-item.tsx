@@ -13,7 +13,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import Navbar from "@/components/layout/Navbar";
+import { shouldBypassImageOptimization } from "@/utils/imageOptimization";
 import OutfitSuggestionCard from "@/components/OutfitSuggestionCard";
+import StyleDirectionFeedback from "@/components/StyleDirectionFeedback";
 import EventBriefEditor, { createDefaultEventBriefValues, EventBriefValues, serializeEventBrief, summarizeEventBrief } from "@/components/EventBriefEditor";
 import LookAssemblyLoader from "@/components/LookAssemblyLoader";
 import {
@@ -23,6 +25,7 @@ import {
   getWardrobeItems,
   OutfitSuggestion,
   rateOutfit,
+  rateStyleDirectionOption,
   StyleDirectionData,
 } from "@/services/api";
 import { getDisplayColorName, getItemDisplayName, getItemDisplaySummary } from "@/utils/itemDisplay";
@@ -49,10 +52,6 @@ function titleCase(value: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function shouldBypassImageOptimization(src: string): boolean {
-  return src.startsWith("blob:") || src.startsWith("data:");
 }
 
 function getImageSrc(item: ClothingItem): string {
@@ -154,6 +153,7 @@ export default function StyleItemPage() {
   const [coverageHints, setCoverageHints] = useState<string[]>([]);
   const [styleDirectionData, setStyleDirectionData] = useState<StyleDirectionData | null>(null);
   const [showExpertSuggestion, setShowExpertSuggestion] = useState(true);
+  const [styleDirectionFeedbackBusy, setStyleDirectionFeedbackBusy] = useState<Record<string, boolean>>({});
   const styleOptions = styleDirectionData?.options ?? [];
 
   useEffect(() => {
@@ -205,6 +205,7 @@ export default function StyleItemPage() {
     setMissingItems([]);
     setCoverageHints([]);
     setStyleDirectionData(null);
+    setStyleDirectionFeedbackBusy({});
     if (resetSession) {
       setEventId(null);
       setAllShownIds([]);
@@ -215,6 +216,7 @@ export default function StyleItemPage() {
     setBrief(createDefaultEventBriefValues());
     clearResults(true);
     setShowExpertSuggestion(true);
+    setStyleDirectionFeedbackBusy({});
   }
 
   function handleSelectItem(itemId: string) {
@@ -275,6 +277,7 @@ export default function StyleItemPage() {
       setMissingItems(response.missing_items || []);
       setCoverageHints(response.coverage_hints || []);
       setStyleDirectionData(response.style_direction || null);
+      setStyleDirectionFeedbackBusy({});
       setAllShownIds((prev) => {
         const nextIds = response.suggestions.map((suggestion) => suggestion.id);
         return moreLooks ? [...prev, ...nextIds] : nextIds;
@@ -301,6 +304,35 @@ export default function StyleItemPage() {
       toast.success("Rating saved!");
     } catch {
       toast.error("Could not save rating");
+    }
+  }
+
+  async function handleStyleDirectionFeedback(optionName: string, feedbackValue: "up" | "down") {
+    if (!eventId || !styleDirectionData) return;
+
+    const option = styleDirectionData.options.find((entry) => entry.name === optionName);
+    if (!option) return;
+
+    setStyleDirectionFeedbackBusy((prev) => ({ ...prev, [optionName]: true }));
+    try {
+      await rateStyleDirectionOption(eventId, optionName, feedbackValue, option);
+      setStyleDirectionData((prev) => (
+        prev
+          ? {
+              ...prev,
+              options: prev.options.map((entry) => (
+                entry.name === optionName
+                  ? { ...entry, user_feedback: feedbackValue }
+                  : entry
+              )),
+            }
+          : prev
+      ));
+      toast.success("Feedback saved");
+    } catch {
+      toast.error("Could not save feedback");
+    } finally {
+      setStyleDirectionFeedbackBusy((prev) => ({ ...prev, [optionName]: false }));
     }
   }
 
@@ -746,6 +778,12 @@ export default function StyleItemPage() {
                           {option.tip}
                         </p>
                       ) : null}
+
+                      <StyleDirectionFeedback
+                        value={option.user_feedback ?? null}
+                        busy={Boolean(styleDirectionFeedbackBusy[option.name])}
+                        onChange={(feedbackValue) => handleStyleDirectionFeedback(option.name, feedbackValue)}
+                      />
                     </div>
                   ))}
                 </div>

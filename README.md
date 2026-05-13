@@ -7,7 +7,7 @@ Built with **Next.js · FastAPI · Supabase · CLIP · Pexels · OpenAI**.
 Current user-facing sections are: **Wardrobe · Batch Upload · Discover · Event · Archive · Profile · Guide**.
 Supporting flows include **Batch Review** (`/batch-review/[sessionId]`), **Style Item** (`/style-item`), the dedicated AI profiling photo path inside Profile, and the isolated **Event Scenario Tester** at `/test/event-scenarios`.
 Legacy frontend URLs `/events` and `/outfits` permanently redirect to `/event` and `/archive`.
-Sessions now restore on refresh, the unauthenticated landing page defaults to sign-up, new wardrobe items enter through Batch Upload while Wardrobe stays focused on closet management, uploads show live media-processing status, Discover learns from swipes without wiping learned rails, Discover family memory reduces same-type repetition, structured event briefs are stored as JSON + human summaries, `Beyond your wardrobe` renders as a visual moodboard, route-level page visits are logged first-party, and refreshed outfit batches preserve saved ratings while avoiding exact duplicate looks.
+Sessions now restore on refresh, the unauthenticated landing page defaults to sign-up, new wardrobe items enter through Batch Upload while Wardrobe stays focused on closet management, uploads show live media-processing status, optional brand selection now runs through a shared curated catalog, Discover learns from swipes without wiping learned rails, Discover family memory reduces same-type repetition, Discover tagging now uses focused outfit crops plus conservative pattern guards, structured event briefs are stored as JSON + human summaries, `Beyond your wardrobe` renders as a visual moodboard with persisted usefulness feedback, route-level page visits are logged first-party, and refreshed outfit batches preserve saved ratings while avoiding exact duplicate looks.
 
 For the current system reference, see [`docs/system-architecture.md`](/Users/anki/Desktop/Code/LuxeLookAI/luxelook-ai/docs/system-architecture.md).
 
@@ -41,7 +41,7 @@ luxelook-ai/
 │   │   ├── discover.py         # Discover feed, swipes, jobs, status
 │   │   ├── event.py            # Event creation/list routes
 │   │   ├── recommendations.py  # POST /recommend/generate-outfits
-│   │   ├── feedback.py         # POST /feedback/rate-outfit
+│   │   ├── feedback.py         # POST /feedback/rate-outfit, /feedback/style-direction
 │   │   └── profile.py          # GET/PUT /profile, POST /profile/photo, /profile/ai-photo
 │   ├── services/               # Business logic layer
 │   │   ├── recommender.py      # Core outfit scoring engine
@@ -70,6 +70,7 @@ luxelook-ai/
 │   ├── utils/
 │       ├── db.py               # Supabase client (service role)
 │       ├── auth.py             # JWT create + verify
+│       ├── brands.py           # Shared brand catalog normalization + alias resolution
 │       ├── mock_auth_store.py  # In-memory auth for local dev
 │       └── mock_db_store.py    # In-memory database for local dev
 │   └── workers/
@@ -94,6 +95,7 @@ luxelook-ai/
     │   ├── layout/Navbar.tsx    # Top navigation
     │   ├── OutfitCard.tsx       # Shared outfit metric card
     │   ├── OutfitMoodboard.tsx  # Editorial outfit presentation board
+    │   ├── StyleDirectionFeedback.tsx # Thumbs up/down usefulness controls for AI style directions
     │   ├── StyleDirectionMoodboard.tsx # Visual board for non-wardrobe style directions
     │   ├── OutfitSuggestionCard.tsx # Shared suggestion wrapper + modal
     │   ├── FaceShapeTool.tsx    # Canvas landmark tool for face shape detection
@@ -106,6 +108,7 @@ luxelook-ai/
     │   └── api.ts               # All API calls (Axios + fetch)
     ├── utils/
     │   ├── itemDisplay.ts       # Shared wardrobe item naming / display helpers
+    │   ├── imageOptimization.ts # Direct-load guard for Supabase / blob / data media URLs
     │   ├── outfitBackground.ts  # Moodboard palette / gradient preset selection
     │   └── useImageContentBounds.ts # Cutout halo measurement + compensation
     ├── assets/                  # Static frontend media / guide assets
@@ -167,9 +170,11 @@ luxelook-ai/
 ### Key runtime metadata produced by the app
 
 - `clothing_items`
-  - category, color, pattern, season, formality, descriptor payloads, processing status, embeddings
+  - category, optional `brand`, color, pattern, season, formality, descriptor payloads, processing status, embeddings
 - `clothing_tag_feedback`
   - correction snapshots showing how users changed AI-generated tags
+- `style_direction_feedback`
+  - per-event thumbs up/down usefulness votes for `Beyond your wardrobe` options
 - `events`
   - human-readable summary plus structured `raw_text_json`
   - enriched fields such as `event_tokens`, `setting`, and `formality_level`
@@ -300,14 +305,16 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 1. **Sign up** on the landing page
 2. **Add wardrobe items through Batch Upload** — open **Batch Upload** and queue one or many clothing photos
    - AI auto-tags category, color, season, formality
+   - Optional brand selection is available during Batch Review and Wardrobe editing through the curated shared brand catalog
    - GPT-4o Vision identifies style descriptors (neckline, silhouette, fabric etc.)
    - Duplicate detection flags items that are visually identical
    - If a duplicate already exists, the review flow can now offer to replace the active copy, unarchive the archived copy, or force-add the new upload
    - Batch items save immediately, then generate thumbnails / subject cutouts in the background
-   - Batch Review lets you verify or reject newly tagged items before they become part of your final closet
+   - Batch Review lets you verify or reject newly tagged items before they become part of your final closet, and review only unlocks once the full batch is ready
    - A compact activity tray in Wardrobe shows per-item processing status while media is being generated
 3. **Browse and manage your wardrobe** — use **Wardrobe** for filters, edits, archive/restore, and media-status visibility
    - Wardrobe browsing uses infinite scroll and processed previews for better large-closet performance
+   - Wardrobe filtering supports searchable multi-select brand filtering, and brand badges render directly on the item image for quick scanning
    - Supported core categories now include `jumpsuits` and a separate `jewelry` category alongside tops, bottoms, dresses, outerwear, shoes, accessories, sets, swimwear, and loungewear
 4. **Set up your profile** — body type, height, weight, complexion, face shape
    - Body type calculator from bust/waist/hip measurements
@@ -315,8 +322,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    - Gender and ethnicity can optionally be stored to improve Discover seeding later
    - Separate AI profiling photo suggests face shape, body type, complexion and hair traits
 5. **Use Discover** — open **Discover / The Edit** to swipe fashion inspiration
-   - Discover seeds a per-user search using profile context and learned style signals
+   - Discover seeds a per-user search from season + gender + learned style signals rather than complexion
    - Candidate images are cached, filtered to single-person looks, and analyzed before being shown
+   - Style tagging now uses a focused outfit crop plus conservative pattern guards to reduce background-driven tags like false `floral` or `geometric`
    - `like`, `love`, and `dislike` interactions build learned preference rows over time
    - Daily swipe pacing is enforced on the user’s local day while timestamps remain stored in UTC
 6. **Create an event** — fill the structured occasion brief (dress code, venue, weather, mood, audience, notes)
@@ -336,6 +344,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    - the same custom `Other` behavior carries across, so bespoke occasion details stay visible as entered
    - incomplete wardrobes fall back to editorial styling guidance and missing-piece direction
    - `Beyond your wardrobe` now renders as a visual moodboard with wearable-piece imagery plus separate Hair / Makeup finishing chips
+   - AI style-direction cards accept persisted thumbs up/down usefulness feedback via `Was this useful?`
 9. **Rate outfits** — 1–5 stars to improve future suggestions
 10. **Regenerate** — "Show me more" for a neutral refresh; "None of these work" to
    signal the current batch was wrong; ratings are tracked per combo + occasion context
@@ -381,13 +390,13 @@ Full interactive docs at [http://localhost:8000/docs](http://localhost:8000/docs
 | GET | `/clothing/items` | List active wardrobe items |
 | GET | `/clothing/items/page` | Paginated wardrobe slice with optional filters |
 | GET | `/clothing/items/media-status` | Poll live media-processing status for active wardrobe items |
-| PATCH | `/clothing/item/{id}` | Correct tags on saved item (category, color, season, formality, descriptors) |
+| PATCH | `/clothing/item/{id}` | Correct tags on saved item (category, brand, color, season, formality, descriptors) |
 | DELETE | `/clothing/item/{id}` | Soft-delete item (moves to trash, restorable) |
 | GET | `/clothing/items/deleted` | List soft-deleted items (trash view) |
 | POST | `/clothing/item/{id}/restore` | Restore a soft-deleted item (with duplicate guard) |
 | POST | `/clothing/purge-deleted` | Hard-delete trash items older than 90 days |
 | POST | `/clothing/backfill-thumbnails` | Generate thumbnails / cutouts for older active wardrobe items missing them |
-| GET | `/clothing/tag-options` | Valid categories, colors for dropdowns |
+| GET | `/clothing/tag-options` | Valid categories, brands, colors, seasons, and formality options for editors |
 | POST | `/batch-upload/session` | Create a new multi-item batch upload session |
 | POST | `/batch-upload/session/{session_id}/items` | Upload and process one image into a batch session |
 | GET | `/batch-upload/session/{session_id}` | Fetch batch session detail and item statuses |
@@ -400,6 +409,7 @@ Full interactive docs at [http://localhost:8000/docs](http://localhost:8000/docs
 | GET | `/recommend/suggestions/{event_id}` | Fetch saved suggestions (de-duped by outfit combo) |
 | POST | `/recommend/reset-feedback` | Clear combo ratings for an occasion context |
 | POST | `/feedback/rate-outfit` | Submit 1–5 star rating |
+| POST | `/feedback/style-direction` | Save thumbs-up/down usefulness feedback for a style-direction option |
 | POST | `/discover/prewarm` | Queue candidate warm-up for Discover |
 | GET | `/discover/feed` | Build the Discover feed from cached/analyzed candidates |
 | POST | `/discover/interaction` | Log a Discover `like` / `love` / `dislike` |
@@ -809,7 +819,7 @@ Run in order:
 1. `backend/schema.sql` — base tables, pgvector extension, RLS policies
 2. `backend/supabase_migrations.sql` — all migrations by version
 
-Key tables: `users`, `clothing_items`, `events`, `outfit_suggestions`, `discover_candidates`, `discover_style_interactions`, `user_style_preferences`, `style_catalog`, `style_taxonomy`, `clothing_tag_feedback`
+Key tables: `users`, `clothing_items`, `upload_batch_sessions`, `upload_batch_items`, `events`, `outfit_suggestions`, `style_direction_feedback`, `discover_candidates`, `discover_style_interactions`, `discover_user_state`, `discover_family_memory`, `user_style_preferences`, `discover_jobs`, `user_page_visits`, `style_catalog`, `style_taxonomy`, `clothing_tag_feedback`
 Storage buckets: `clothing-images` (private), `profile-photos` (public)
 
 `events.raw_text_json` stores the structured event brief payload, while `events.raw_text`
@@ -818,6 +828,7 @@ stores the readable summary used in archive displays and prompt context.
 `style_catalog` is the canonical Discover style vocabulary and can now be seeded from the
 same fallback catalog the app uses in code. `clothing_tag_feedback` stores user corrections
 to AI-assigned wardrobe fields together with a snapshot of the item context at correction time.
+`style_direction_feedback` stores per-event usefulness votes on `Beyond your wardrobe` options so regenerated style directions can preserve prior thumbs-up/down state.
 
 ### SECURITY DEFINER helpers (v1.9.4)
 

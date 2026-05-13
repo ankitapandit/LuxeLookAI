@@ -1,13 +1,10 @@
 import { useState } from "react";
 import Image from "next/image";
 import { ClothingItem, OutfitCard } from "@/services/api";
+import { shouldBypassImageOptimization } from "@/utils/imageOptimization";
 import { getDisplayColorName, getItemDisplayName } from "@/utils/itemDisplay";
 import { getOutfitBackground } from "@/utils/outfitBackground";
 import { useImageContentBounds, getInnerWrapperStyle } from "@/utils/useImageContentBounds";
-
-function shouldBypassImageOptimization(src: string): boolean {
-  return src.startsWith("blob:") || src.startsWith("data:");
-}
 
 function parseColorSwatch(color?: string): { label: string; swatch: string } | null {
   if (!color) return null;

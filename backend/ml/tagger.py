@@ -513,12 +513,14 @@ def get_taggable_options() -> Dict[str, Any]:
     Kept in sync with the model's label lists above.
     """
     from services.taxonomy import get_clip_labels
+    from utils.brands import get_brand_labels
     _clip = get_clip_labels()
     _cats    = _clip.get("category", CATEGORY_LABELS)
     _colors  = _clip.get("color", COLOR_LABELS)
     _seasons = _clip.get("season", SEASON_LABELS)
     return {
         "categories": [v for v, _ in _cats],
+        "brands":     get_brand_labels(),
         "colors":     [v for v, _ in _colors],
         # Season options enriched with human descriptions for the review form
         "seasons": [

@@ -205,6 +205,7 @@ export interface ClothingItem {
   category: string;
   item_type: string;
   accessory_subtype?: string;
+  brand?: string | null;
   color?: string;
   pattern?: string;
   season?: string;
@@ -255,6 +256,7 @@ export interface TagPreview {
  */
 export interface TagOptions {
   categories: string[];
+  brands: string[];
   colors: string[];
   seasons: { value: string; label: string }[];
   formality_levels: { label: string; score: number; description: string }[];
@@ -264,6 +266,7 @@ export interface WardrobePageParams {
   limit: number;
   offset: number;
   category?: string;
+  brand?: string[];
   season?: string;
   formality?: string;
 }
@@ -304,11 +307,12 @@ export async function tagPreview(file: File, categoryOverride?: string): Promise
  */
 export async function uploadClothingItem(
   file: File,
-  overrides?: { category?: string; color?: string; pattern?: string; season?: string; formality_label?: string; descriptors?: Record<string, string> }
+  overrides?: { category?: string; brand?: string | null; color?: string; pattern?: string; season?: string; formality_label?: string; descriptors?: Record<string, string> }
 ): Promise<ClothingItem> {
   const form = new FormData();
   form.append("file", file);
   if (overrides?.category)        form.append("category",        overrides.category);
+  if (overrides?.brand !== undefined && overrides?.brand !== null) form.append("brand", overrides.brand);
   if (overrides?.color)           form.append("color",           overrides.color);
   if (overrides?.pattern)         form.append("pattern",         overrides.pattern);
   if (overrides?.season)          form.append("season",          overrides.season);
@@ -332,10 +336,11 @@ export async function getTagOptions(): Promise<TagOptions> {
 /** Correct any tags on an already-saved item. */
 export async function correctItem(
   itemId: string,
-  corrections: { category?: string; color?: string; pattern?: string; season?: string; formality_label?: string; descriptors?: Record<string, string>  }
+  corrections: { category?: string; brand?: string | null; color?: string; pattern?: string; season?: string; formality_label?: string; descriptors?: Record<string, string>  }
 ): Promise<ClothingItem> {
   const params = new URLSearchParams();
   if (corrections.category)        params.append("category",        corrections.category);
+  if (corrections.brand !== undefined) params.append("brand", corrections.brand ?? "");
   if (corrections.color)           params.append("color",           corrections.color);
   if (corrections.pattern)         params.append("pattern",         corrections.pattern);
   if (corrections.season)          params.append("season",          corrections.season);
@@ -354,7 +359,14 @@ export async function getWardrobeItems(): Promise<ClothingItem[]> {
 
 /** Fetch a paginated slice of wardrobe items for infinite scroll. */
 export async function getWardrobeItemsPage(params: WardrobePageParams): Promise<WardrobePageResponse> {
-  const { data } = await api.get<WardrobePageResponse>("/clothing/items/page", { params });
+  const query = new URLSearchParams();
+  query.append("limit", String(params.limit));
+  query.append("offset", String(params.offset));
+  if (params.category) query.append("category", params.category);
+  params.brand?.forEach((brand) => query.append("brand", brand));
+  if (params.season) query.append("season", params.season);
+  if (params.formality) query.append("formality", params.formality);
+  const { data } = await api.get<WardrobePageResponse>(`/clothing/items/page?${query.toString()}`);
   return data;
 }
 
@@ -656,6 +668,7 @@ export interface StyleDirectionOption {
   pieces: StyleDirectionPiece[];
   why: string;
   tip: string;
+  user_feedback?: "up" | "down" | null;
 }
 
 export interface StyleDirectionData {
@@ -727,6 +740,20 @@ export async function getSuggestions(eventId: string): Promise<OutfitSuggestion[
 /** Submit a 1–5 star rating for an outfit. */
 export async function rateOutfit(outfitId: string, rating: number): Promise<void> {
   await api.post("/feedback/rate-outfit", { outfit_id: outfitId, rating });
+}
+
+export async function rateStyleDirectionOption(
+  eventId: string,
+  optionName: string,
+  feedbackValue: "up" | "down",
+  optionSnapshot?: StyleDirectionOption,
+): Promise<void> {
+  await api.post("/feedback/style-direction", {
+    event_id: eventId,
+    option_name: optionName,
+    feedback_value: feedbackValue,
+    option_snapshot: optionSnapshot,
+  });
 }
 
 // ── Profile ──────────────────────────────────────────────────────────────
